@@ -102,3 +102,30 @@ test('afslut gemmer udfyldte sæt, selvom de ikke er krydset af (#9)', async ({ 
   await page.getByRole('button', { name: 'Historik' }).click();
   await expect(page.getByText('Bænkpres').first()).toBeVisible();
 });
+
+test('viser 🏆 når et sæt slår en rekord (#16)', async ({ page }) => {
+  async function benchSet(weight: string, reps: string) {
+    await page.getByRole('button', { name: 'Start tom træning' }).click();
+    const workout = page.getByRole('region', { name: 'Aktiv træning' });
+    await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+    const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+    await picker.getByPlaceholder('Søg efter øvelse').fill('bænk');
+    await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+    await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+    const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+    await bench.getByLabel('Vægt sæt 1').fill(weight);
+    await bench.getByLabel('Reps sæt 1').fill(reps);
+    await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+    return { workout, bench };
+  }
+
+  const first = await benchSet('80', '5');
+  await expect(first.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0); // første gang er ingen rekord
+  await first.workout.getByRole('button', { name: 'Afslut' }).click();
+  await first.workout.getByRole('button', { name: 'Bekræft' }).click();
+
+  const second = await benchSet('85', '5');
+  await expect(second.bench.getByRole('img', { name: 'Ny rekord: tungeste vægt, estimeret 1RM' })).toBeVisible();
+  await second.bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(second.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0);
+});
