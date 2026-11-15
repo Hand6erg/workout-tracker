@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { AccountSection } from '../components/AccountSection';
 import { ConfirmButton } from '../components/ui';
 import { formatKg, initialState, loadState, toCsv, workoutVolume } from '../lib/logic';
 import { useStore } from '../lib/store';
@@ -45,6 +46,8 @@ export function ProfileView() {
           onChange={(e) => dispatch({ type: 'SET_REST_SECONDS', seconds: Number(e.target.value) })}
         />
       </label>
+
+      <AccountSection />
 
       <h2 className="section">Data</h2>
       <p className="muted">Alt gemmes kun på denne enhed. Tag en backup, hvis du skifter telefon.</p>
