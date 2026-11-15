@@ -4,6 +4,8 @@ import {
   exerciseHistory,
   formatDuration,
   initialState,
+  isoWeek,
+  muscleDistribution,
   IS_STAGING,
   loadState,
   personalRecords,
@@ -15,6 +17,7 @@ import {
   STORAGE_KEY,
   toCsv,
   uncheckedFilledCount,
+  weeklyVolume,
   workoutVolume,
 } from './logic';
 import type { AppState } from './types';
@@ -226,5 +229,56 @@ describe('rekorder', () => {
   it('kropsvægtsøvelser kan slå reps-rekord ved 0 kg', () => {
     const s = logWorkout(initialState(), 'pullup', [['', '8']], T0);
     expect(recordsBrokenBy(s, 'pullup', done('', '10'))).toEqual(['reps']);
+  });
+});
+
+describe('statistik til grafer', () => {
+  function logAt(state: AppState, exerciseId: string, weight: string, reps: string, now: number): AppState {
+    let s = reducer(state, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now });
+  }
+  // Søndag 15. nov. 2026 (uge 46); mandag 16. nov. starter uge 47
+  const SUN = new Date('2026-11-15T10:00:00').getTime();
+  const MON = new Date('2026-11-16T09:00:00').getTime();
+
+  it('beregner ISO-ugenumre', () => {
+    expect(isoWeek(SUN)).toBe(46);
+    expect(isoWeek(MON)).toBe(47);
+    expect(isoWeek(new Date('2027-01-01T12:00:00').getTime())).toBe(53);
+    expect(isoWeek(new Date('2027-01-04T12:00:00').getTime())).toBe(1);
+  });
+
+  it('samler volumen pr. uge, også uger uden træning, ældste først', () => {
+    let s = logAt(initialState(), 'bench', '100', '5', SUN); // uge 46
+    s = logAt(s, 'squat', '100', '3', MON); // uge 47
+    s = logAt(s, 'squat', '50', '2', MON + 3600_000);
+    const weeks = weeklyVolume(s, 4, MON + 86_400_000);
+    expect(weeks.map((w) => w.week)).toEqual([44, 45, 46, 47]);
+    expect(weeks.map((w) => w.volume)).toEqual([0, 0, 500, 400]);
+  });
+
+  it('tom historik giver 0 i alle uger', () => {
+    expect(weeklyVolume(initialState(), 3, SUN).every((w) => w.volume === 0)).toBe(true);
+  });
+
+  it('fordeler sæt og volumen på muskelgrupper', () => {
+    let s = logAt(initialState(), 'bench', '100', '5', SUN);
+    s = logAt(s, 'squat', '100', '3', MON);
+    s = logAt(s, 'squat', '100', '3', MON);
+    const all = muscleDistribution(s, 0);
+    expect(all.map((m) => m.muscle)).toEqual(['Bryst', 'Ryg', 'Ben', 'Skuldre', 'Arme', 'Mave']);
+    expect(all.find((m) => m.muscle === 'Bryst')).toMatchObject({ sets: 1, volume: 500 });
+    expect(all.find((m) => m.muscle === 'Ben')).toMatchObject({ sets: 2, volume: 600 });
+    expect(muscleDistribution(s, MON).find((m) => m.muscle === 'Bryst')!.sets).toBe(0);
+  });
+
+  it('ignorerer ukendte øvelser', () => {
+    const s = logAt(initialState(), 'bench', '100', '5', SUN);
+    s.history[0].exercises[0].exerciseId = 'slettet';
+    expect(muscleDistribution(s, 0).every((m) => m.sets === 0)).toBe(true);
   });
 });
