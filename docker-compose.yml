@@ -1,0 +1,33 @@
+# Løft backend – run locally with:  docker compose up --build
+# API: http://localhost:8787/health
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: loeft
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-loeft-local}
+      POSTGRES_DB: loeft
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U loeft -d loeft"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://loeft:${POSTGRES_PASSWORD:-loeft-local}@db:5432/loeft
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-me-on-server}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:4173,https://hand6erg.github.io}
+    ports:
+      - "8787:8787"
+
+volumes:
+  db-data:
