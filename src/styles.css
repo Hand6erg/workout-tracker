@@ -204,3 +204,11 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .body-form { padding: 12px 14px; margin-bottom: 10px; }
 .body-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .body-grid .field { margin-bottom: 6px; font-size: 0.8rem; }
+.line-chart { width: 100%; height: auto; display: block; }
+.line-chart .grid { stroke: var(--line); stroke-dasharray: 3 4; }
+.line-chart .line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+.line-chart .dot { fill: var(--accent); }
+.line-chart text { fill: var(--muted); font-size: 10px; }
+.line-chart .ylbl { text-anchor: end; }
+.line-chart .xlbl.end { text-anchor: end; }
+.body-chart { margin-bottom: 10px; }

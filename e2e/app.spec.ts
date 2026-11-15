@@ -280,3 +280,20 @@ test('registrerer, viser og sletter kropsmål (#20)', async ({ page }) => {
   await list.getByRole('button', { name: 'Slet?' }).click();
   await expect(body).toContainText('Ingen målinger endnu.');
 });
+
+test('viser graf over kropsmål (#26)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  async function measure(date: string, weight: string) {
+    await body.getByLabel('Dato').fill(date);
+    await body.getByLabel('Vægt (kg)').fill(weight);
+    await body.getByRole('button', { name: 'Gem måling' }).click();
+  }
+  await measure('2026-10-01', '84');
+  await expect(body).toContainText('Tilføj flere målinger for at se en graf.');
+  await measure('2026-11-01', '82,5');
+  await expect(body.getByRole('img', { name: 'Vægt over tid: fra 84 til 82,5 kg' })).toBeVisible();
+  await expect(body).toContainText('Ændring: -1,5 kg');
+  await body.getByRole('button', { name: 'Talje' }).click();
+  await expect(body).toContainText('Tilføj flere målinger for at se en graf.');
+});

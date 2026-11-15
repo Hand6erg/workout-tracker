@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { num, uid } from '../lib/logic';
 import { useStore } from '../lib/store';
+import { LineChart } from './LineChart';
 import { ConfirmButton, Empty } from './ui';
+import type { BodyMeasurement } from '../lib/types';
 
 const dateFmt = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
 const dec = (n: number) => String(n).replace('.', ',');
@@ -9,6 +11,56 @@ const dec = (n: number) => String(n).replace('.', ',');
 function todayInput(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+type Metric = 'weight' | 'bodyFat' | 'waist';
+const METRICS: { key: Metric; label: string; unit: string }[] = [
+  { key: 'weight', label: 'Vægt', unit: 'kg' },
+  { key: 'bodyFat', label: 'Fedt', unit: '%' },
+  { key: 'waist', label: 'Talje', unit: 'cm' },
+];
+
+function BodyChart({ log }: { log: BodyMeasurement[] }) {
+  const [metric, setMetric] = useState<Metric>('weight');
+  const meta = METRICS.find((m) => m.key === metric)!;
+  const points = log
+    .filter((m) => m[metric] !== undefined)
+    .map((m) => ({ t: m.date, value: m[metric] as number }))
+    .sort((a, b) => a.t - b.t);
+  const fmt = (n: number) => dec(Math.round(n * 10) / 10);
+  const first = points[0];
+  const last = points[points.length - 1];
+  const change = last && first ? Math.round((last.value - first.value) * 10) / 10 : 0;
+
+  return (
+    <div className="card chart-card body-chart">
+      <div className="seg" role="group" aria-label="Vis udvikling for">
+        {METRICS.map((m) => (
+          <button key={m.key} aria-pressed={metric === m.key} onClick={() => setMetric(m.key)}>
+            {m.label}
+          </button>
+        ))}
+      </div>
+      {points.length < 2 ? (
+        <p className="muted">Tilføj flere målinger for at se en graf.</p>
+      ) : (
+        <>
+          <LineChart
+            points={points}
+            format={fmt}
+            label={`${meta.label} over tid: fra ${fmt(first.value)} til ${fmt(last.value)} ${meta.unit}`}
+          />
+          <p className="muted">
+            Seneste: <strong>{fmt(last.value)} {meta.unit}</strong> · Ændring:{' '}
+            <strong>
+              {change > 0 ? '+' : ''}
+              {fmt(change)} {meta.unit}
+            </strong>
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Kropsmål under Profil: registrér og se målinger */
@@ -62,6 +114,7 @@ export function BodySection() {
           Gem måling
         </button>
       </div>
+      {state.bodyLog.length > 0 && <BodyChart log={state.bodyLog} />}
       {!state.bodyLog.length ? (
         <Empty>Ingen målinger endnu.</Empty>
       ) : (
