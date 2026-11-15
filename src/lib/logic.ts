@@ -439,7 +439,7 @@ export function roundComplete(w: Workout, we: WorkoutExercise, k: number): boole
 
 export interface ProgressionHint {
   /** Sidste gang: antal arbejdssæt, reps i første sæt og tungeste vægt */
-  last: { sets: number; reps: number; weight: number };
+  last: { sets: number; reps: number; weight: number; repsList: number[] };
   /** Forslag til i dag */
   next: { weight: number; reps: number };
   /** true hvis forslaget er et skridt op */
@@ -455,7 +455,7 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   if (!sets.length) return null;
   const reps = num(sets[0].reps);
   const weight = Math.max(...sets.map((s) => num(s.weight)));
-  const last = { sets: sets.length, reps, weight };
+  const last = { sets: sets.length, reps, weight, repsList: sets.map((s) => num(s.reps)) };
   const allHit = sets.every((s) => num(s.reps) >= reps);
   if (!allHit) return { last, next: { weight, reps }, increase: false };
   const equipment = state.exercises.find((e) => e.id === exerciseId)?.equipment;
@@ -504,6 +504,7 @@ export type Action =
   | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
+  | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
   | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
@@ -620,6 +621,22 @@ export function reducer(state: AppState, action: Action): AppState {
           }
           return { ...e, sets: [...e.sets, next] };
         }),
+      );
+    case 'APPLY_HINT':
+      // Fyld forslaget i de tomme felter på arbejdssæt, der ikke er udført endnu
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) =>
+            s.warmup || s.done
+              ? s
+              : {
+                  ...s,
+                  weight: s.weight || (action.weight > 0 ? String(action.weight).replace('.', ',') : ''),
+                  reps: s.reps || String(action.reps),
+                },
+          ),
+        })),
       );
     case 'ADD_WARMUP_SETS':
       return mapActive(state, (w) =>

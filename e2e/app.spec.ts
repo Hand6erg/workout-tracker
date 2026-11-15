@@ -423,3 +423,24 @@ test('viser stime og ugemål under Profil (#70)', async ({ page }) => {
   await expect(streak).toContainText('1 af 1 træning denne uge ✓');
   await expect(streak).toContainText('🔥 1 uge i træk');
 });
+
+test('viser forslag til næste vægt og udfylder med ét tryk (#72)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  let bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  for (const i of [1, 2, 3]) {
+    await bench.getByLabel(`Vægt sæt ${i}`).fill('60');
+    await bench.getByLabel(`Reps sæt ${i}`).fill('8');
+    await bench.getByRole('button', { name: `Udført sæt ${i}` }).click();
+  }
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  const hint = bench.getByRole('button', { name: /^Sidst: 3 × 8 @ 60 kg\. Prøv 62,5 kg/ });
+  await expect(hint).toBeVisible();
+  await hint.click();
+  for (const i of [1, 2, 3]) await expect(bench.getByLabel(`Vægt sæt ${i}`)).toHaveValue('62,5');
+  await bench.getByLabel('Vægt sæt 1').fill('65');
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('65');
+});
