@@ -18,6 +18,7 @@ import {
   workoutRecords,
   reducer,
   STORAGE_KEY,
+  bodyToCsv,
   toCsv,
   uncheckedFilledCount,
   warmupSets,
@@ -461,5 +462,21 @@ describe('kropsmål (#14)', () => {
     let s = add(initialState(), 'a', T0, { weight: 80 });
     s = add(s, 'b', T0 + 1, { weight: 81 });
     expect(reducer(s, { type: 'DELETE_MEASUREMENT', id: 'a' }).bodyLog.map((m) => m.id)).toEqual(['b']);
+  });
+});
+
+describe('kropsmål i eksport (#31)', () => {
+  it('laver CSV med ældste først og tomme felter', () => {
+    let s = reducer(initialState(), { type: 'ADD_MEASUREMENT', id: 'b', date: new Date('2026-11-02T12:00').getTime(), weight: 82.5, bodyFat: 18 });
+    s = reducer(s, { type: 'ADD_MEASUREMENT', id: 'a', date: new Date('2026-10-01T12:00').getTime(), waist: 90 });
+    expect(bodyToCsv(s)).toBe('Dato,Vægt (kg),Fedt (%),Talje (cm)\n2026-10-01,,,90\n2026-11-02,82.5,18,');
+  });
+
+  it('en backup med kropsmål kan gendannes, og en gammel backup uden virker stadig', () => {
+    const s = reducer(initialState(), { type: 'ADD_MEASUREMENT', id: 'a', date: T0, weight: 80 });
+    expect(loadState(JSON.stringify(s)).bodyLog).toEqual(s.bodyLog);
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.bodyLog;
+    expect(loadState(JSON.stringify(old)).bodyLog).toEqual([]);
   });
 });

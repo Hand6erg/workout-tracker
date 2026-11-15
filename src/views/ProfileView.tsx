@@ -4,6 +4,7 @@ import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
+  bodyToCsv,
   DEFAULT_PLATES,
   formatKg,
   initialState,
@@ -82,6 +83,11 @@ export function ProfileView() {
         >
           Tag backup (JSON)
         </button>
+        {state.bodyLog.length > 0 && (
+          <button className="btn-secondary" onClick={() => download(`kropsmaal-${stamp}.csv`, bodyToCsv(state), 'text/csv')}>
+            Eksportér kropsmål (CSV)
+          </button>
+        )}
         <button className="btn-secondary" onClick={() => fileRef.current?.click()}>
           Gendan backup
         </button>
@@ -100,7 +106,10 @@ export function ProfileView() {
               return;
             }
             dispatch({ type: 'IMPORT_STATE', state: { ...next, active: null, rest: null } });
-            setMsg(`Gendannet ${next.history.length} træninger.`);
+            setMsg(
+              `Gendannet ${next.history.length} træninger` +
+                (next.bodyLog.length ? ` og ${next.bodyLog.length} kropsmål.` : '.'),
+            );
           }}
         />
         <ConfirmButton onConfirm={() => dispatch({ type: 'IMPORT_STATE', state: initialState() })}>
