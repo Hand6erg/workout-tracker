@@ -10,6 +10,7 @@ import {
   reducer,
   STORAGE_KEY,
   toCsv,
+  uncheckedFilledCount,
   workoutVolume,
 } from './logic';
 import type { AppState } from './types';
@@ -60,6 +61,27 @@ describe('træningsflow', () => {
     expect(s.history).toHaveLength(1);
     expect(s.history[0].exercises[0].sets).toHaveLength(1);
     expect(workoutVolume(s.history[0])).toBe(400);
+  });
+
+  it('gemmer udfyldte sæt, der ikke er krydset af, når det vælges (#9)', () => {
+    let s = startWith(initialState());
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '60', reps: '8' } });
+    s = reducer(s, { type: 'ADD_SET', weId: we.id });
+    s = reducer(s, { type: 'ADD_SET', weId: we.id });
+    const empty = s.active!.exercises[0].sets[2];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: empty.id, patch: { weight: '', reps: '' } });
+    expect(uncheckedFilledCount(s.active!)).toBe(2);
+
+    const kept = reducer(s, { type: 'FINISH_WORKOUT', now: T0, includeUnchecked: true });
+    expect(kept.history).toHaveLength(1);
+    expect(kept.history[0].exercises[0].sets).toHaveLength(2);
+    expect(kept.history[0].exercises[0].sets.every((x) => x.done)).toBe(true);
+    expect(workoutVolume(kept.history[0])).toBe(960);
+
+    // Uden valget gemmes kun afkrydsede sæt (her ingen)
+    expect(reducer(s, { type: 'FINISH_WORKOUT', now: T0 }).history).toHaveLength(0);
   });
 
   it('kasserer en træning uden udførte sæt', () => {
