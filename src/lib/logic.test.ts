@@ -534,3 +534,46 @@ describe('supersæt (#12)', () => {
     expect(loadState(JSON.stringify(s)).active!.exercises[0].supersetId).toBeUndefined();
   });
 });
+
+describe('pausetimer i supersæt (#24)', () => {
+  function supersetWorkout() {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench', 'row', 'squat'] });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: s.active!.exercises[0].id });
+    for (const we of s.active!.exercises) {
+      s = reducer(s, { type: 'ADD_SET', weId: we.id });
+      for (const set of s.active!.exercises.find((e) => e.id === we.id)!.sets)
+        s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set.id, patch: { weight: '50', reps: '8' } });
+    }
+    return s;
+  }
+  const tick = (s: AppState, i: number, k: number) => {
+    const we = s.active!.exercises[i];
+    return reducer({ ...s, rest: null }, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[k].id, now: T0 });
+  };
+
+  it('starter ikke pausen midt i runden, men efter sidste øvelse', () => {
+    let s = supersetWorkout();
+    s = tick(s, 0, 0); // bænk sæt 1
+    expect(s.rest).toBeNull();
+    s = tick(s, 1, 0); // roning sæt 1 → runden færdig
+    expect(s.rest).not.toBeNull();
+    s = tick(s, 0, 1); // bænk sæt 2
+    expect(s.rest).toBeNull();
+  });
+
+  it('øvelser uden supersæt starter pausen som før', () => {
+    const s = tick(supersetWorkout(), 2, 0); // squat er ikke i supersættet
+    expect(s.rest).not.toBeNull();
+  });
+
+  it('en øvelse med færre sæt tæller som færdig i de sidste runder', () => {
+    let s = supersetWorkout();
+    const row = s.active!.exercises[1];
+    s = reducer(s, { type: 'REMOVE_SET', weId: row.id, setId: row.sets[1].id });
+    s = tick(s, 0, 0);
+    s = tick(s, 1, 0);
+    s = tick(s, 0, 1); // roning har kun ét sæt → runde 2 er færdig med bænk
+    expect(s.rest).not.toBeNull();
+  });
+});

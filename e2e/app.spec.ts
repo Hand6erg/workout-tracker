@@ -334,3 +334,19 @@ test('kobler øvelser sammen i et supersæt (#18)', async ({ page }) => {
   await group.getByRole('article', { name: 'Militærpres' }).getByRole('button', { name: 'Fjern fra supersæt' }).click();
   await expect(workout.getByRole('group', { name: /^Supersæt/ })).toHaveCount(0);
 });
+
+test('pausetimeren starter først når supersæt-runden er færdig (#24)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+  const ohp = workout.getByRole('article', { name: 'Militærpres' });
+  await bench.getByRole('button', { name: 'Supersæt med næste' }).click();
+  for (const ex of [bench, ohp]) {
+    await ex.getByLabel('Vægt sæt 1').fill('40');
+    await ex.getByLabel('Reps sæt 1').fill('8');
+  }
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toHaveCount(0);
+  await ohp.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toBeVisible();
+});

@@ -369,6 +369,25 @@ export function supersetGroups<T extends { supersetId?: string }>(list: T[]): T[
   return groups;
 }
 
+/** Nummer blandt arbejdssættene (opvarmning tæller ikke) for sættet på plads `idx` */
+function workIdxOf(we: WorkoutExercise, idx: number): number {
+  return we.sets.slice(0, idx).filter((x) => !x.warmup).length;
+}
+
+/**
+ * Er runden færdig? For en øvelse uden supersæt altid ja. I et supersæt først når
+ * arbejdssæt nr. `k` er udført i alle øvelserne (øvelser med færre sæt tæller som færdige).
+ */
+export function roundComplete(w: Workout, we: WorkoutExercise, k: number): boolean {
+  if (!we.supersetId) return true;
+  return w.exercises
+    .filter((e) => e.supersetId === we.supersetId)
+    .every((e) => {
+      const work = e.sets.filter((x) => !x.warmup);
+      return k >= work.length || work[k].done;
+    });
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;
@@ -557,7 +576,7 @@ export function reducer(state: AppState, action: Action): AppState {
       let patch: Partial<SetEntry> = { done: nowDone };
       if (nowDone) {
         // Udfyld tomme felter med sidste gangs tal, ligesom placeholderen viser
-        const workIdx = we.sets.slice(0, idx).filter((x) => !x.warmup).length;
+        const workIdx = workIdxOf(we, idx);
         const prev = set.warmup ? undefined : previousSets(state.history, we.exerciseId)[workIdx];
         const weight = set.weight || prev?.weight || '';
         const reps = set.reps || prev?.reps || '';
@@ -565,11 +584,10 @@ export function reducer(state: AppState, action: Action): AppState {
         patch = { ...patch, weight, reps };
       }
       const next = reducer(state, { type: 'UPDATE_SET', weId: action.weId, setId: action.setId, patch });
+      const startRest = nowDone && state.restSeconds > 0 && (set.warmup || roundComplete(next.active!, we, workIdxOf(we, idx)));
       return {
         ...next,
-        rest: nowDone && state.restSeconds > 0
-          ? { endsAt: action.now + state.restSeconds * 1000, total: state.restSeconds }
-          : next.rest,
+        rest: startRest ? { endsAt: action.now + state.restSeconds * 1000, total: state.restSeconds } : next.rest,
       };
     }
     case 'ADJUST_REST': {
