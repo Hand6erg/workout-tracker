@@ -262,3 +262,21 @@ test('indstilling for stang og skiver bruges af pladeberegneren (#30)', async ({
   await bench.getByRole('button', { name: 'Skiver' }).click();
   await expect(page.getByRole('status', { name: 'Skiver på hver side' })).toHaveText('Hver side: 20 + 20 kg');
 });
+
+test('registrerer, viser og sletter kropsmål (#20)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  const save = body.getByRole('button', { name: 'Gem måling' });
+  await expect(save).toBeDisabled();
+  await body.getByLabel('Vægt (kg)').fill('82,5');
+  await body.getByLabel('Talje (cm)').fill('88');
+  await save.click();
+  const list = body.getByRole('list', { name: 'Målinger' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list).toContainText('82,5 kg · talje 88 cm');
+  await expect(body.getByLabel('Vægt (kg)')).toHaveValue('');
+
+  await list.getByRole('button', { name: 'Slet' }).click();
+  await list.getByRole('button', { name: 'Slet?' }).click();
+  await expect(body).toContainText('Ingen målinger endnu.');
+});
