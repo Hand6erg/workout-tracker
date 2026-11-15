@@ -199,3 +199,5 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .plate-bar .sleeve { width: 40px; height: 12px; background: #9aa0ad; border-radius: 3px; }
 .plate-bar .plate { width: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
 .plate-list { font-size: 1.1rem; font-weight: 600; }
+.chips.wrap { flex-wrap: wrap; overflow: visible; }
+.field-label { color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }

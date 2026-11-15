@@ -226,7 +226,14 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           {we.sets.some((x) => x.warmup) ? 'Beregn opvarmning igen' : 'Tilføj opvarmning'}
         </button>
       )}
-      {plates && <PlateDialog initialWeight={lastWeight} onClose={() => setPlates(false)} />}
+      {plates && (
+        <PlateDialog
+          initialWeight={lastWeight}
+          barWeight={state.barWeight}
+          plates={state.plates}
+          onClose={() => setPlates(false)}
+        />
+      )}
     </article>
   );
 }

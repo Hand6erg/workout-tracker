@@ -17,6 +17,9 @@ export function uid(): string {
   return `${Date.now().toString(36)}-${counter}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+export const DEFAULT_BAR = 20;
+export const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+
 export function initialState(): AppState {
   return {
     version: 1,
@@ -26,6 +29,8 @@ export function initialState(): AppState {
     active: null,
     rest: null,
     restSeconds: 90,
+    barWeight: DEFAULT_BAR,
+    plates: [...DEFAULT_PLATES],
   };
 }
 
@@ -276,9 +281,6 @@ export function muscleDistribution(state: AppState, sinceMs: number): MuscleShar
 
 /* ---------- Plader og opvarmning ---------- */
 
-export const DEFAULT_BAR = 20;
-export const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
-
 export interface PlateResult {
   /** Skiver på HVER side, tungeste først */
   perSide: number[];
@@ -372,6 +374,8 @@ export type Action =
   | { type: 'ADJUST_REST'; delta: number }
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
+  | { type: 'SET_BAR_WEIGHT'; weight: number }
+  | { type: 'TOGGLE_PLATE'; plate: number }
   | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
@@ -459,7 +463,7 @@ export function reducer(state: AppState, action: Action): AppState {
           const work = e.sets.filter((x) => !x.warmup);
           const first = work.find((x) => num(x.weight) > 0);
           if (!first) return e;
-          const warm = warmupSets(num(first.weight), action.barWeight).map(
+          const warm = warmupSets(num(first.weight), action.barWeight ?? state.barWeight).map(
             (ws): SetEntry => ({ ...emptySet(), weight: String(ws.weight).replace('.', ','), reps: String(ws.reps), warmup: true }),
           );
           return { ...e, sets: [...warm, ...work] };
@@ -510,6 +514,15 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, rest: null };
     case 'SET_REST_SECONDS':
       return { ...state, restSeconds: Math.max(0, Math.min(600, Math.round(action.seconds))) };
+    case 'SET_BAR_WEIGHT':
+      return action.weight > 0 && action.weight <= 50 ? { ...state, barWeight: action.weight } : state;
+    case 'TOGGLE_PLATE': {
+      if (!DEFAULT_PLATES.includes(action.plate)) return state;
+      const on = state.plates.includes(action.plate);
+      if (on && state.plates.length === 1) return state; // mindst én skive
+      const plates = on ? state.plates.filter((p) => p !== action.plate) : [...state.plates, action.plate];
+      return { ...state, plates: plates.sort((a, b) => b - a) };
+    }
     case 'ADD_CUSTOM_EXERCISE': {
       const name = action.name.trim();
       if (!name) return state;

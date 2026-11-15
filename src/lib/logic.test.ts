@@ -385,3 +385,40 @@ describe('opvarmningssæt (#25)', () => {
     expect(loaded.active!.exercises[0].sets[0].warmup).toBeUndefined();
   });
 });
+
+describe('stang og skiver (#30)', () => {
+  it('har standardværdier og læser gamle data med dem', () => {
+    const old = { ...initialState() } as Partial<AppState>;
+    delete old.barWeight;
+    delete old.plates;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.barWeight).toBe(20);
+    expect(loaded.plates).toEqual([25, 20, 15, 10, 5, 2.5, 1.25]);
+  });
+
+  it('skifter stangvægt inden for rimelige grænser', () => {
+    expect(reducer(initialState(), { type: 'SET_BAR_WEIGHT', weight: 15 }).barWeight).toBe(15);
+    expect(reducer(initialState(), { type: 'SET_BAR_WEIGHT', weight: 0 }).barWeight).toBe(20);
+  });
+
+  it('slår skiver til og fra, men aldrig den sidste', () => {
+    let s = reducer(initialState(), { type: 'TOGGLE_PLATE', plate: 25 });
+    expect(s.plates).not.toContain(25);
+    expect(platesPerSide(100, s.barWeight, s.plates).perSide).toEqual([20, 20]);
+    s = reducer(s, { type: 'TOGGLE_PLATE', plate: 25 });
+    expect(s.plates[0]).toBe(25);
+    for (const p of [25, 20, 15, 10, 5, 2.5]) s = reducer(s, { type: 'TOGGLE_PLATE', plate: p });
+    expect(reducer(s, { type: 'TOGGLE_PLATE', plate: 1.25 }).plates).toEqual([1.25]);
+    expect(reducer(s, { type: 'TOGGLE_PLATE', plate: 3 })).toBe(s);
+  });
+
+  it('opvarmning bruger den valgte stangvægt', () => {
+    let s = reducer(initialState(), { type: 'SET_BAR_WEIGHT', weight: 15 });
+    s = reducer(s, { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
+    s = reducer(s, { type: 'ADD_WARMUP_SETS', weId: we.id });
+    expect(s.active!.exercises[0].sets[0].weight).toBe('15');
+  });
+});
