@@ -297,7 +297,10 @@ export function reducer(state: AppState, action: Action): AppState {
 
 /* ---------- Gem/indlæs ---------- */
 
-export const STORAGE_KEY = 'loeft-state-v1';
+// Staging-versionen (…/workout-tracker/staging/) ligger på samme domæne som den rigtige app
+// og får derfor sin egen nøgle, så test aldrig kan røre brugerens rigtige data.
+export const STORAGE_KEY: string = import.meta.env.VITE_STORAGE_KEY || 'loeft-state-v1';
+export const IS_STAGING = import.meta.env.VITE_STAGING === '1';
 
 export function loadState(raw: string | null): AppState {
   const base = initialState();

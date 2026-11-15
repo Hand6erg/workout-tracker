@@ -1,8 +1,12 @@
 name: CI og deploy
 
+# main     = den rigtige app:  https://hand6erg.github.io/workout-tracker/
+# staging  = testversionen:    https://hand6erg.github.io/workout-tracker/staging/
+# Begge udgives sammen fra main-kørslen, fordi GitHub Pages kun har én side pr. repo.
+
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
   workflow_dispatch:
 
@@ -34,16 +38,56 @@ jobs:
           name: playwright-report
           path: test-results
           retention-days: 7
-      - uses: actions/upload-pages-artifact@v3
-        if: github.ref == 'refs/heads/main'
-        with:
-          path: dist
 
-  deploy:
-    # Lægger appen på GitHub Pages, når alt er grønt på main.
-    # Kræver at Pages er slået til: Settings → Pages → Source: GitHub Actions.
+  # Når staging er grøn, startes en main-kørsel, som udgiver både main og staging.
+  udgiv-staging:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - run: gh workflow run ci.yml --ref main --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  byg-side:
     needs: test
     if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main
+      - uses: actions/checkout@v4
+        with:
+          ref: staging
+          path: staging
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Byg main
+        working-directory: main
+        run: npm ci && npm run build
+      - name: Byg staging (egne testdata)
+        working-directory: staging
+        run: npm ci && npm run build
+        env:
+          VITE_STAGING: '1'
+          VITE_STORAGE_KEY: loeft-state-staging-v1
+      - run: |
+          mkdir site
+          cp -r main/dist/. site/
+          mkdir site/staging
+          cp -r staging/dist/. site/staging/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    # Kræver at Pages er slået til: Settings → Pages → Source: GitHub Actions.
+    needs: byg-side
     runs-on: ubuntu-latest
     permissions:
       pages: write

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatDuration } from './lib/logic';
+import { formatDuration, IS_STAGING } from './lib/logic';
 import { useNow, useStore } from './lib/store';
 import { ActiveWorkout } from './views/ActiveWorkout';
 import { ExercisesView } from './views/ExercisesView';
@@ -24,6 +24,14 @@ export default function App() {
 
   return (
     <div className="app">
+      {IS_STAGING && (
+        <>
+          <div className="staging-banner" role="status">
+            TESTVERSION – egne testdata, ikke dine rigtige træninger
+          </div>
+          <div className="staging-frame" aria-hidden />
+        </>
+      )}
       <main>
         {tab === 'start' && <StartView onOpenWorkout={() => setWorkoutOpen(true)} />}
         {tab === 'history' && <HistoryView />}

@@ -38,6 +38,11 @@ input, select {
 input:focus, select:focus { outline: none; border-color: var(--accent); }
 
 .app { max-width: 640px; margin: 0 auto; padding-bottom: calc(var(--tabbar-h) + 64px + env(safe-area-inset-bottom)); }
+.staging-banner {
+  position: sticky; top: 0; z-index: 20; background: #f5c400; color: #111; text-align: center;
+  font-size: 0.8rem; font-weight: 600; padding: calc(6px + env(safe-area-inset-top)) 12px 6px;
+}
+.staging-frame { position: fixed; inset: 0; border: 3px solid #f5c400; pointer-events: none; z-index: 50; }
 .page { padding: calc(12px + env(safe-area-inset-top)) 16px 16px; }
 .row-between { display: flex; align-items: center; justify-content: space-between; }
 .stack { display: grid; gap: 10px; }

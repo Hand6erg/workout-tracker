@@ -4,9 +4,11 @@ import {
   exerciseHistory,
   formatDuration,
   initialState,
+  IS_STAGING,
   loadState,
   previousSets,
   reducer,
+  STORAGE_KEY,
   toCsv,
   workoutVolume,
 } from './logic';
@@ -120,5 +122,12 @@ describe('øvelseshistorik og data', () => {
     expect(s.exercises.find((e) => e.id === 'x')).toBeTruthy();
     expect(s.exercises.find((e) => e.id === 'bench')).toBeTruthy();
     expect(loadState('ikke json')).toEqual(initialState());
+  });
+});
+
+describe('gemmenøgle', () => {
+  it('bruger den rigtige nøgle, når det ikke er staging', () => {
+    expect(IS_STAGING).toBe(false);
+    expect(STORAGE_KEY).toBe('loeft-state-v1');
   });
 });

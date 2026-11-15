@@ -73,3 +73,9 @@ test('opretter en egen øvelse', async ({ page }) => {
   await dlg.getByRole('button', { name: 'Gem øvelse' }).click();
   await expect(page.getByRole('button', { name: /Hip thrust.*egen/ })).toBeVisible();
 });
+
+test('den rigtige app viser ikke testbjælken og gemmer under den rigtige nøgle', async ({ page }) => {
+  await expect(page.getByText(/TESTVERSION/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('loeft-state-v1'))).not.toBeNull();
+});
