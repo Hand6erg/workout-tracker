@@ -33,6 +33,7 @@ export function initialState(): AppState {
     plates: [...DEFAULT_PLATES],
     bodyLog: [],
     weeklyGoal: 2,
+    showHints: true,
   };
 }
 
@@ -513,6 +514,7 @@ export type Action =
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
   | { type: 'SET_WEEKLY_GOAL'; goal: number }
+  | { type: 'SET_SHOW_HINTS'; on: boolean }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
@@ -704,6 +706,8 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'DELETE_MEASUREMENT':
       return { ...state, bodyLog: state.bodyLog.filter((m) => m.id !== action.id) };
+    case 'SET_SHOW_HINTS':
+      return { ...state, showHints: action.on };
     case 'SET_WEEKLY_GOAL':
       return { ...state, weeklyGoal: Math.max(1, Math.min(7, Math.round(action.goal) || 1)) };
     case 'SET_BAR_WEIGHT':
