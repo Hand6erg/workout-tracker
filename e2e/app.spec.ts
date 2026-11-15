@@ -170,3 +170,21 @@ test('viser 🏆 på træningskortet i historikken (#28)', async ({ page }) => {
   await expect(cards.nth(0).getByRole('img', { name: 'Ny rekord' })).toBeVisible();
   await expect(cards.nth(1)).not.toContainText('🏆');
 });
+
+test('viser volumen pr. uge under Profil (#17)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const section = page.getByRole('region', { name: 'Volumen pr. uge' });
+  await expect(section).toContainText('Afslut en træning');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(section.getByRole('img', { name: /Volumen pr. uge.*Denne uge: 500 kg/ })).toBeVisible();
+});
