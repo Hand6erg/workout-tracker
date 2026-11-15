@@ -140,26 +140,31 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           </tr>
         </thead>
         <tbody>
-          {we.sets.map((s, i) => {
-            const p = prev[i];
+          {we.sets.map((s, idx) => {
+            // Opvarmningssæt nummereres for sig ("O"), så arbejdssæt beholder 1, 2, 3 …
+            const before = we.sets.slice(0, idx);
+            const i = before.filter((x) => x.warmup === s.warmup).length;
+            const what = s.warmup ? 'opvarmning' : 'sæt';
+            const p = s.warmup ? undefined : prev[i];
             const records = s.done ? recordsBrokenBy(state, we.exerciseId, s) : [];
             return (
               <Fragment key={s.id}>
-              <tr className={s.done ? 'done' : ''}>
+              <tr className={`${s.done ? 'done' : ''} ${s.warmup ? 'warmup' : ''}`}>
                 <td>
                   <button
                     className="set-no"
                     title="Slet sæt"
+                    aria-label={`Slet ${what} ${i + 1}`}
                     onClick={() => dispatch({ type: 'REMOVE_SET', weId: we.id, setId: s.id })}
                   >
-                    {i + 1}
+                    {s.warmup ? 'O' : i + 1}
                   </button>
                 </td>
                 <td className="prev">{p ? `${p.weight || 0}×${p.reps}` : '–'}</td>
                 <td>
                   <input
                     inputMode="decimal"
-                    aria-label={`Vægt sæt ${i + 1}`}
+                    aria-label={`Vægt ${what} ${i + 1}`}
                     placeholder={p?.weight || ''}
                     value={s.weight}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight: e.target.value } })}
@@ -168,7 +173,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 <td>
                   <input
                     inputMode="numeric"
-                    aria-label={`Reps sæt ${i + 1}`}
+                    aria-label={`Reps ${what} ${i + 1}`}
                     placeholder={p?.reps || ''}
                     value={s.reps}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { reps: e.target.value } })}
@@ -177,7 +182,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 <td>
                   <input
                     inputMode="decimal"
-                    aria-label={`RPE sæt ${i + 1}`}
+                    aria-label={`RPE ${what} ${i + 1}`}
                     className="rpe"
                     value={s.rpe}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe: e.target.value } })}
@@ -186,7 +191,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 <td>
                   <button
                     className={`tick ${s.done ? 'on' : ''}`}
-                    aria-label={`Udført sæt ${i + 1}`}
+                    aria-label={`Udført ${what} ${i + 1}`}
                     aria-pressed={s.done}
                     onClick={() => dispatch({ type: 'TOGGLE_SET', weId: we.id, setId: s.id, now: Date.now() })}
                   >
@@ -212,6 +217,15 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
       <button className="btn-secondary wide small" onClick={() => dispatch({ type: 'ADD_SET', weId: we.id })}>
         + Tilføj sæt
       </button>
+      {isBarbell && (
+        <button
+          className="btn-ghost wide small"
+          disabled={!we.sets.some((x) => !x.warmup && num(x.weight) > 0)}
+          onClick={() => dispatch({ type: 'ADD_WARMUP_SETS', weId: we.id })}
+        >
+          {we.sets.some((x) => x.warmup) ? 'Beregn opvarmning igen' : 'Tilføj opvarmning'}
+        </button>
+      )}
       {plates && <PlateDialog initialWeight={lastWeight} onClose={() => setPlates(false)} />}
     </article>
   );

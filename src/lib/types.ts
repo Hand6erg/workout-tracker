@@ -19,6 +19,8 @@ export interface SetEntry {
   reps: string;
   rpe: string;
   done: boolean;
+  /** Opvarmningssæt tæller ikke med i volumen, rekorder og statistik */
+  warmup?: boolean;
 }
 
 export interface WorkoutExercise {

@@ -43,13 +43,18 @@ export function estimate1RM(weight: number, reps: number): number {
   return Math.round(weight * (1 + reps / 30) * 10) / 10;
 }
 
+/** Udført arbejdssæt (ikke opvarmning) */
+export function isWorkSet(s: SetEntry): boolean {
+  return s.done && !s.warmup;
+}
+
 export function setVolume(s: SetEntry): number {
   return num(s.weight) * num(s.reps);
 }
 
 export function workoutVolume(w: Workout): number {
   return w.exercises.reduce(
-    (sum, ex) => sum + ex.sets.filter((s) => s.done).reduce((a, s) => a + setVolume(s), 0),
+    (sum, ex) => sum + ex.sets.filter(isWorkSet).reduce((a, s) => a + setVolume(s), 0),
     0,
   );
 }
@@ -68,7 +73,7 @@ export function bestSet(sets: SetEntry[]): SetEntry | null {
   let best: SetEntry | null = null;
   let bestScore = -1;
   for (const s of sets) {
-    if (!s.done) continue;
+    if (!isWorkSet(s)) continue;
     const score = estimate1RM(num(s.weight), num(s.reps)) || num(s.reps);
     if (score > bestScore) {
       best = s;
@@ -102,7 +107,7 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
   for (const w of history) {
     const ex = w.exercises.find((e) => e.exerciseId === exerciseId);
     if (ex) {
-      const done = ex.sets.filter((s) => s.done);
+      const done = ex.sets.filter(isWorkSet);
       if (done.length) return done;
     }
   }
@@ -130,7 +135,7 @@ interface ScoredSet {
 
 function validSets(sets: SetEntry[], date: number): ScoredSet[] {
   return sets
-    .filter((s) => s.done && num(s.reps) > 0)
+    .filter((s) => isWorkSet(s) && num(s.reps) > 0)
     .map((s) => ({ weight: num(s.weight), reps: num(s.reps), date }));
 }
 
@@ -260,7 +265,7 @@ export function muscleDistribution(state: AppState, sinceMs: number): MuscleShar
       const share = out.get(muscleOf.get(we.exerciseId) as Muscle);
       if (!share) continue;
       for (const s of we.sets) {
-        if (!s.done) continue;
+        if (!isWorkSet(s)) continue;
         share.sets++;
         share.volume += setVolume(s);
       }
@@ -336,7 +341,7 @@ export function exerciseHistory(history: Workout[], exerciseId: string): Exercis
   for (const w of history) {
     for (const ex of w.exercises) {
       if (ex.exerciseId !== exerciseId) continue;
-      const sets = ex.sets.filter((s) => s.done);
+      const sets = ex.sets.filter(isWorkSet);
       if (!sets.length) continue;
       out.push({
         workoutId: w.id,
@@ -360,6 +365,7 @@ export type Action =
   | { type: 'ADD_EXERCISES'; exerciseIds: string[] }
   | { type: 'REMOVE_EXERCISE'; weId: string }
   | { type: 'ADD_SET'; weId: string }
+  | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
   | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
@@ -447,6 +453,18 @@ export function reducer(state: AppState, action: Action): AppState {
           return { ...e, sets: [...e.sets, next] };
         }),
       );
+    case 'ADD_WARMUP_SETS':
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => {
+          const work = e.sets.filter((x) => !x.warmup);
+          const first = work.find((x) => num(x.weight) > 0);
+          if (!first) return e;
+          const warm = warmupSets(num(first.weight), action.barWeight).map(
+            (ws): SetEntry => ({ ...emptySet(), weight: String(ws.weight).replace('.', ','), reps: String(ws.reps), warmup: true }),
+          );
+          return { ...e, sets: [...warm, ...work] };
+        }),
+      );
     case 'REMOVE_SET':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => ({ ...e, sets: e.sets.filter((s) => s.id !== action.setId) })),
@@ -468,7 +486,8 @@ export function reducer(state: AppState, action: Action): AppState {
       let patch: Partial<SetEntry> = { done: nowDone };
       if (nowDone) {
         // Udfyld tomme felter med sidste gangs tal, ligesom placeholderen viser
-        const prev = previousSets(state.history, we.exerciseId)[idx];
+        const workIdx = we.sets.slice(0, idx).filter((x) => !x.warmup).length;
+        const prev = set.warmup ? undefined : previousSets(state.history, we.exerciseId)[workIdx];
         const weight = set.weight || prev?.weight || '';
         const reps = set.reps || prev?.reps || '';
         if (!reps) return state; // kan ikke markere et sæt uden reps
@@ -508,7 +527,7 @@ export function reducer(state: AppState, action: Action): AppState {
       const tpl: Template = {
         id: uid(),
         name: action.name.trim() || w.name,
-        exercises: w.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.length })),
+        exercises: w.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((x) => !x.warmup).length })),
       };
       return { ...state, templates: [...state.templates, tpl] };
     }

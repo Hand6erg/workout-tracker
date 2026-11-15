@@ -42,7 +42,7 @@ export function HistoryView() {
                   return (
                     <tr key={e.id}>
                       <td>
-                        {e.sets.length} × {exerciseById(e.exerciseId)?.name}
+                        {e.sets.filter((x) => !x.warmup).length} × {exerciseById(e.exerciseId)?.name}
                         {records[e.exerciseId] && (
                           <span role="img" aria-label="Ny rekord">
                             {' '}
@@ -105,6 +105,7 @@ function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
               <li key={s.id}>
                 {formatSet(s)}
                 {s.rpe && <span className="muted"> @ RPE {s.rpe}</span>}
+                {s.warmup && <span className="muted"> (opvarmning)</span>}
               </li>
             ))}
           </ol>
