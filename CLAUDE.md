@@ -9,7 +9,8 @@ The owner only describes what to build. Claude builds, tests and pushes on its o
 
 ## The project
 - Workout log app (inspired by Strong, but with its own name and design – never use Strong's name, logo or graphics).
-- Web app/PWA: React 19 + TypeScript + Vite. No backend; data is stored in `localStorage` (key `loeft-state-v1`).
+- Web app/PWA: React 19 + TypeScript + Vite. Data is stored in `localStorage` (key `loeft-state-v1`); the app must always work offline.
+- Backend (in progress, #7): `server/` – Node 22 + TypeScript API (Hono + pg) with PostgreSQL, run with `docker compose up` from the repo root.
 - Mobile first (test at phone width).
 - Hosted on GitHub Pages via `.github/workflows/ci.yml` (`base: './'` in `vite.config.ts`).
   - `main` = the real app: https://hand6erg.github.io/workout-tracker/
@@ -49,6 +50,11 @@ Ideas and bugs live as issues in `Hand6erg/workout-tracker`. Use the GitHub MCP 
 - Make sure there is one open PR `staging` → `main` with a short list of what's new and a `Closes #<nr>` line for each task.
 - After the owner has merged: check that the tasks are closed (close them otherwise), remove `on staging`, and close ideas whose tasks are all closed.
 - Create new issues labelled `idea` yourself if you spot bugs or obvious improvements – but don't build them without `ready`.
+
+## Current priority
+Build ideas in this order (overrides "lowest number first" between ideas; bugs still come first):
+1. #7 Database (PostgreSQL + own API in Docker, see `server/`), then #6 Sync, then #8 Server.
+2. Then the rest by lowest number.
 
 ## Scheduled run (every 5 hours)
 The owner has set up a scheduled task that does three things each time:
