@@ -269,6 +269,60 @@ export function muscleDistribution(state: AppState, sinceMs: number): MuscleShar
   return [...out.values()];
 }
 
+/* ---------- Plader og opvarmning ---------- */
+
+export const DEFAULT_BAR = 20;
+export const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+
+export interface PlateResult {
+  /** Skiver på HVER side, tungeste først */
+  perSide: number[];
+  /** Vægt (i alt) der ikke kan rammes med de tilgængelige skiver */
+  remainder: number;
+  /** true hvis målet er under stangvægten */
+  belowBar: boolean;
+}
+
+/** Hvilke skiver skal på hver side af stangen for at ramme `target` kg? */
+export function platesPerSide(target: number, barWeight = DEFAULT_BAR, plates = DEFAULT_PLATES): PlateResult {
+  if (target < barWeight) return { perSide: [], remainder: 0, belowBar: true };
+  // Regn i gram for at undgå afrundingsfejl med 1,25 kg
+  let side = Math.round(((target - barWeight) / 2) * 1000);
+  const perSide: number[] = [];
+  for (const p of [...plates].sort((a, b) => b - a)) {
+    const g = Math.round(p * 1000);
+    while (g > 0 && side >= g) {
+      perSide.push(p);
+      side -= g;
+    }
+  }
+  return { perSide, remainder: (side * 2) / 1000, belowBar: false };
+}
+
+export interface WarmupSet {
+  weight: number;
+  reps: number;
+}
+
+/** Forslag til opvarmning før et arbejdssæt: tom stang × 10, 40 % × 5, 60 % × 3, 80 % × 2 */
+export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR): WarmupSet[] {
+  if (workingWeight <= barWeight) return [];
+  const steps: [number, number][] = [
+    [0, 10],
+    [0.4, 5],
+    [0.6, 3],
+    [0.8, 2],
+  ];
+  const out: WarmupSet[] = [];
+  for (const [pct, reps] of steps) {
+    const w = pct === 0 ? barWeight : Math.max(barWeight, Math.round((workingWeight * pct) / 2.5) * 2.5);
+    if (w >= workingWeight) continue;
+    if (out.length && out[out.length - 1].weight === w) continue;
+    out.push({ weight: w, reps });
+  }
+  return out;
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;
