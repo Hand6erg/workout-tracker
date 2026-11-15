@@ -137,3 +137,29 @@ test('en tom app henter data fra kontoen ved login', async ({ page }) => {
   await expect(page.getByTestId('total-workouts')).toHaveText('1');
   expect(srv.puts).toBe(0);
 });
+
+test('når appen åbnes, hentes træninger gemt på en anden enhed (#37)', async ({ page }) => {
+  const srv: Srv = {
+    state: { version: 1, exercises: [], templates: [], history: [workout('other', Date.now()), workout('w1', Date.now() - 86_400_000)], active: null, restSeconds: 90 } as never,
+    version: 5,
+    offline: false,
+    puts: 0,
+  };
+  await mockApi(page, srv);
+  await page.goto('/');
+  await page.evaluate((api) => {
+    localStorage.clear();
+    localStorage.setItem('loeft-api-url', api);
+    localStorage.setItem('loeft-account-v1', JSON.stringify({ token: 'tok', email: 'ida@example.com' }));
+    localStorage.setItem('loeft-sync-v1', JSON.stringify({ version: 4, dirty: false, savedAt: Date.now() - 60_000 }));
+    localStorage.setItem(
+      'loeft-state-v1',
+      JSON.stringify({ version: 1, exercises: [], templates: [], history: [{ id: 'w1', name: 'Træning w1', startedAt: Date.now() - 86_400_000, finishedAt: Date.now() - 86_340_000, exercises: [] }], active: null, rest: null, restSeconds: 90 }),
+    );
+  }, API);
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(page.getByTestId('total-workouts')).toHaveText('2');
+  await expect(page.getByRole('status', { name: 'Online-status' })).toHaveText(/^Gemt online kl\. \d\d:\d\d$/);
+  expect(srv.puts).toBe(0);
+});
