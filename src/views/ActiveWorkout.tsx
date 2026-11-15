@@ -7,9 +7,11 @@ import {
   formatDuration,
   num,
   previousSets,
+  progressionHint,
   recordsBrokenBy,
   supersetGroups,
   uncheckedFilledCount,
+  type ProgressionHint,
   type RecordKind,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
@@ -130,10 +132,31 @@ function recordText(kinds: RecordKind[], weight: string): string {
   return `Ny rekord: ${names.join(', ')}`;
 }
 
+const kgText = (n: number) => String(n).replace('.', ',');
+
+function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
+  const { dispatch } = useStore();
+  const { last, next } = hint;
+  const same = last.repsList.every((r) => r === last.reps);
+  const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
+  const lastText = `${repsText}${last.weight ? ` @ ${kgText(last.weight)} kg` : ''}`;
+  const nextText = next.weight && next.weight !== last.weight ? `${kgText(next.weight)} kg` : `${next.reps} reps`;
+  return (
+    <button
+      className="hint"
+      aria-label={`Sidst: ${lastText}. Prøv ${hint.increase ? nextText : 'det samme igen'}. Tryk for at udfylde.`}
+      onClick={() => dispatch({ type: 'APPLY_HINT', weId, weight: next.weight, reps: next.reps })}
+    >
+      Sidst: {lastText} → {hint.increase ? <strong>prøv {nextText}</strong> : 'prøv det samme igen'}
+    </button>
+  );
+}
+
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { state, dispatch, exerciseById } = useStore();
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
+  const hint = progressionHint(state, we.exerciseId);
   const [plates, setPlates] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
   const all = state.active?.exercises ?? [];
@@ -155,6 +178,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           Fjern
         </ConfirmButton>
       </header>
+      {hint && <HintButton weId={we.id} hint={hint} />}
       <table className="sets">
         <thead>
           <tr>

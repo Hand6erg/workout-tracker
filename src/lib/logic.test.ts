@@ -689,7 +689,11 @@ describe('forslag til næste vægt (#71)', () => {
 
   it('foreslår +2,5 kg på stang, når alle sæt blev klaret', () => {
     const h = progressionHint(logged('bench', [['60', '8'], ['60', '8'], ['60', '8']]), 'bench');
-    expect(h).toEqual({ last: { sets: 3, reps: 8, weight: 60 }, next: { weight: 62.5, reps: 8 }, increase: true });
+    expect(h).toEqual({
+      last: { sets: 3, reps: 8, weight: 60, repsList: [8, 8, 8] },
+      next: { weight: 62.5, reps: 8 },
+      increase: true,
+    });
   });
 
   it('foreslår samme vægt, hvis et sæt ikke nåede målet', () => {
@@ -704,5 +708,24 @@ describe('forslag til næste vægt (#71)', () => {
 
   it('intet forslag uden historik', () => {
     expect(progressionHint(initialState(), 'bench')).toBeNull();
+  });
+});
+
+describe('udfyld forslag (#72)', () => {
+  it('fylder kun tomme felter i arbejdssæt, der ikke er udført', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const weId = s.active!.exercises[0].id;
+    s = reducer(s, { type: 'ADD_SET', weId });
+    s = reducer(s, { type: 'ADD_SET', weId });
+    const [a, b] = s.active!.exercises[0].sets;
+    s = reducer(s, { type: 'UPDATE_SET', weId, setId: a.id, patch: { weight: '55', reps: '5', done: true } });
+    s = reducer(s, { type: 'UPDATE_SET', weId, setId: b.id, patch: { reps: '6' } });
+    s = reducer(s, { type: 'APPLY_HINT', weId, weight: 62.5, reps: 8 });
+    expect(s.active!.exercises[0].sets.map((x) => [x.weight, x.reps])).toEqual([
+      ['55', '5'],
+      ['62,5', '6'],
+      ['62,5', '8'],
+    ]);
   });
 });
