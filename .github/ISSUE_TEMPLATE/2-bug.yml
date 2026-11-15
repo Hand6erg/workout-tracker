@@ -1,24 +1,25 @@
-name: 🐞 Fejl
-description: Noget virker ikke som det skal
-labels: ["bug", "klar"]
+name: 🐞 Bug
+description: Something doesn't work as it should
+labels: ["bug", "ready"]
 body:
   - type: textarea
-    id: hvad
+    id: what
     attributes:
-      label: Hvad skete der?
-      placeholder: Fx "Pausetimeren startede ikke efter andet sæt."
+      label: What happened?
+      description: Danish is fine.
+      placeholder: E.g. "The rest timer didn't start after the second set."
     validations:
       required: true
   - type: textarea
-    id: forventet
+    id: expected
     attributes:
-      label: Hvad havde du forventet?
+      label: What did you expect?
   - type: input
-    id: enhed
+    id: device
     attributes:
-      label: Telefon / browser
-      placeholder: Fx iPhone 15, Safari
+      label: Phone / browser
+      placeholder: E.g. iPhone 15, Safari
   - type: textarea
-    id: billeder
+    id: images
     attributes:
-      label: Screenshot (valgfrit)
+      label: Screenshot (optional)
