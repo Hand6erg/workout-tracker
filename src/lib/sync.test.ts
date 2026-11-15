@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasOwnData, initialState, mergeStates, reducer, syncPayload } from './logic';
+import { hasOwnData, initialState, loadState, mergeStates, reducer, syncPayload, trackedReducer } from './logic';
 import { emptyMeta, parseMeta, readRemote, SYNC_DEBOUNCE_MS, SYNC_KEY, SYNC_RETRY_MS, SyncEngine, type SyncMeta, type SyncStatus } from './sync';
 import type { AppState, Workout } from './types';
 
@@ -39,6 +39,76 @@ describe('fletning', () => {
     expect(parseMeta('{')).toEqual(emptyMeta());
     expect(parseMeta(JSON.stringify({ version: 2, dirty: true, savedAt: 5 }))).toEqual({ version: 2, dirty: true, savedAt: 5 });
     expect(SYNC_KEY).toBe('loeft-sync-v1');
+  });
+});
+
+describe('fletning mellem to enheder (#38)', () => {
+  const tpl = (id: string, name: string, updatedAt?: number) => ({ id, name, exercises: [], ...(updatedAt ? { updatedAt } : {}) });
+
+  it('mister eller dublerer ingen træninger, når begge enheder har logget offline', () => {
+    const base = withHistory(w('a', 1));
+    const phone = trackedReducer(base, { type: 'IMPORT_STATE', state: withHistory(w('p', 3), w('a', 1)) });
+    const pc = withHistory(w('c', 2), w('a', 1));
+    const m1 = mergeStates(phone, pc);
+    const m2 = mergeStates(pc, phone);
+    expect(m1.history.map((x) => x.id)).toEqual(['p', 'c', 'a']);
+    expect(m2.history.map((x) => x.id)).toEqual(['p', 'c', 'a']);
+    // Fletter man igen, sker der ikke mere
+    expect(mergeStates(m1, m2).history).toHaveLength(3);
+  });
+
+  it('en slettet træning forbliver slettet – også når den anden enhed stadig har den', () => {
+    const both = withHistory(w('a', 2), w('b', 1));
+    const phone = trackedReducer(both, { type: 'DELETE_WORKOUT', workoutId: 'a', at: 50 });
+    expect(phone.deleted).toEqual({ a: 50 });
+    const pc = both; // har ikke hørt om sletningen
+    expect(mergeStates(pc, phone).history.map((x) => x.id)).toEqual(['b']);
+    expect(mergeStates(phone, pc).history.map((x) => x.id)).toEqual(['b']);
+    expect(mergeStates(pc, phone).deleted).toEqual({ a: 50 });
+  });
+
+  it('slettede kropsmål og skabeloner forbliver også slettede', () => {
+    const s0: AppState = { ...initialState(), bodyLog: [{ id: 'm1', date: 1, weight: 80 }] };
+    const s1 = trackedReducer(s0, { type: 'DELETE_MEASUREMENT', id: 'm1', at: 9 });
+    const s2 = trackedReducer(s1, { type: 'DELETE_TEMPLATE', templateId: s0.templates[0].id, at: 9 });
+    const m = mergeStates(s0, s2);
+    expect(m.bodyLog).toHaveLength(0);
+    expect(m.templates.map((t) => t.id)).not.toContain(s0.templates[0].id);
+  });
+
+  it('skabeloner: den nyeste ændring vinder, uanset hvilken enhed', () => {
+    const local = { ...initialState(), templates: [tpl('t', 'Gammel', 10), tpl('only-local', 'L')] };
+    const remote = { ...initialState(), templates: [tpl('t', 'Ny', 20), tpl('only-remote', 'R')] };
+    const m = mergeStates(local, remote);
+    expect(m.templates.find((t) => t.id === 't')?.name).toBe('Ny');
+    expect(m.templates.map((t) => t.id)).toEqual(expect.arrayContaining(['only-local', 'only-remote']));
+    expect(mergeStates(remote, local).templates.find((t) => t.id === 't')?.name).toBe('Ny');
+  });
+
+  it('egne øvelser får tidsstempel og den nyeste vinder', () => {
+    const s = trackedReducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'x', name: 'Hip thrust', muscle: 'Ben', equipment: 'Stang', at: 77 });
+    expect(s.exercises.find((e) => e.id === 'x')?.updatedAt).toBe(77);
+    expect(s.exercises.filter((e) => e.updatedAt).length).toBe(1);
+    const older = { ...initialState(), exercises: [{ id: 'x', name: 'Gammelt navn', muscle: 'Ben' as const, equipment: 'Stang' as const, custom: true, updatedAt: 5 }] };
+    expect(mergeStates(older, s).exercises.find((e) => e.id === 'x')?.name).toBe('Hip thrust');
+  });
+
+  it('indstillinger: den enhed, der ændrede dem senest, vinder', () => {
+    const phone = trackedReducer(initialState(), { type: 'SET_REST_SECONDS', seconds: 120, at: 100 });
+    const pc = trackedReducer(trackedReducer(initialState(), { type: 'SET_BAR_WEIGHT', weight: 15, at: 200 }), { type: 'SET_WEEKLY_GOAL', goal: 4, at: 200 });
+    const m = mergeStates(phone, pc);
+    expect(m).toMatchObject({ barWeight: 15, weeklyGoal: 4, settingsAt: 200 });
+    expect(mergeStates(pc, phone)).toMatchObject({ barWeight: 15, weeklyGoal: 4, settingsAt: 200 });
+    expect(phone.settingsAt).toBe(100);
+  });
+
+  it('flet og fjern-fra-server ændrer ikke tidsstempler, og gamle data uden felterne kan læses', () => {
+    const s = trackedReducer(initialState(), { type: 'MERGE_REMOTE', remote: initialState() });
+    expect(s.settingsAt).toBe(0);
+    const old = loadState(JSON.stringify({ version: 1, exercises: [], templates: [], history: [w('a', 1)], active: null, rest: null, restSeconds: 90 }));
+    expect(old.deleted).toEqual({});
+    expect(old.settingsAt).toBe(0);
+    expect(mergeStates(old, withHistory(w('b', 2))).history.map((x) => x.id)).toEqual(['b', 'a']);
   });
 });
 

@@ -10,6 +10,8 @@ export interface Exercise {
   muscle: Muscle;
   equipment: Equipment;
   custom?: boolean;
+  /** Hvornår en egen øvelse sidst blev ændret (til fletning mellem enheder) */
+  updatedAt?: number;
 }
 
 export interface SetEntry {
@@ -49,6 +51,8 @@ export interface Template {
   id: string;
   name: string;
   exercises: TemplateExercise[];
+  /** Hvornår skabelonen sidst blev ændret (til fletning mellem enheder) */
+  updatedAt?: number;
 }
 
 export interface RestTimer {
@@ -86,4 +90,8 @@ export interface AppState {
   weeklyGoal: number;
   /** Vis forslag til næste vægt under træningen */
   showHints: boolean;
+  /** Hvornår indstillingerne sidst blev ændret (0 = aldrig). Den nyeste ændring vinder ved fletning. */
+  settingsAt: number;
+  /** Slettede træninger, skabeloner, øvelser og kropsmål: id → tidspunkt. Så de forbliver slettede på alle enheder. */
+  deleted: Record<string, number>;
 }

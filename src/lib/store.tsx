@@ -1,6 +1,6 @@
-import { createContext, useContext, useEffect, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { ACCOUNT_KEY, API_URL_OVERRIDE_KEY, parseAccount, resolveApiUrl, type Account } from './account';
-import { hasOwnData, loadState, reducer, STORAGE_KEY, type Action } from './logic';
+import { hasOwnData, loadState, STORAGE_KEY, trackedReducer, type Action } from './logic';
 import { parseMeta, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
 import type { AppState, Exercise } from './types';
 
@@ -27,7 +27,9 @@ function readStorage(key = STORAGE_KEY): string | null {
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, null, () => loadState(readStorage()));
+  const [state, rawDispatch] = useReducer(trackedReducer, null, () => loadState(readStorage()));
+  // Hver handling får et tidspunkt, så ændringer kan flettes korrekt mellem enheder (#38)
+  const dispatch: Dispatch<Action> = useCallback((a: Action) => rawDispatch({ ...a, at: Date.now() }), []);
 
   const stateRef = useRef(state);
   stateRef.current = state;

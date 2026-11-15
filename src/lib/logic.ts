@@ -34,6 +34,8 @@ export function initialState(): AppState {
     bodyLog: [],
     weeklyGoal: 2,
     showHints: true,
+    settingsAt: 0,
+    deleted: {},
   };
 }
 
@@ -759,24 +761,99 @@ export function reducer(state: AppState, action: Action): AppState {
 
 /* ---------- Online-gemning: flet to versioner ---------- */
 
-function unionById<T extends { id: string }>(mine: T[], theirs: T[]): T[] {
-  const ids = new Set(mine.map((x) => x.id));
-  return [...mine, ...theirs.filter((x) => !ids.has(x.id))];
+const SETTINGS = ['restSeconds', 'barWeight', 'plates', 'weeklyGoal', 'showHints'] as const;
+
+type Stamped = { id: string; updatedAt?: number };
+
+/**
+ * Noterer, hvad en lokal handling ændrede, så to enheder kan flettes korrekt:
+ * slettede ting får en "gravsten", ændrede skabeloner/øvelser og indstillinger får et tidsstempel.
+ */
+export function stampChanges(prev: AppState, next: AppState, now: number): AppState {
+  if (prev === next) return next;
+  let out = next;
+  const deleted: Record<string, number> = {};
+  const gone = <T extends { id: string }>(before: T[], after: T[]) => {
+    const ids = new Set(after.map((x) => x.id));
+    for (const x of before) if (!ids.has(x.id)) deleted[x.id] = now;
+  };
+  if (prev.history !== next.history) gone(prev.history, next.history);
+  if (prev.templates !== next.templates) gone(prev.templates, next.templates);
+  if (prev.exercises !== next.exercises) gone(prev.exercises, next.exercises);
+  if (prev.bodyLog !== next.bodyLog) gone(prev.bodyLog, next.bodyLog);
+  if (Object.keys(deleted).length) out = { ...out, deleted: { ...out.deleted, ...deleted } };
+
+  const touch = <T extends Stamped>(before: T[], after: T[]): T[] => {
+    const old = new Map(before.map((x) => [x.id, x]));
+    let changed = false;
+    const res = after.map((x) => {
+      if (old.get(x.id) === x) return x;
+      changed = true;
+      return { ...x, updatedAt: now };
+    });
+    return changed ? res : after;
+  };
+  if (prev.templates !== next.templates) out = { ...out, templates: touch(prev.templates, out.templates) };
+  if (prev.exercises !== next.exercises) out = { ...out, exercises: touch(prev.exercises, out.exercises) };
+  if (SETTINGS.some((k) => prev[k] !== next[k])) out = { ...out, settingsAt: now };
+  return out;
+}
+
+/** Union efter id uden slettede. Ved samme id vinder den nyeste ændring (lige = den lokale). */
+function mergeById<T extends Stamped>(mine: T[], theirs: T[], deleted: Record<string, number>): T[] {
+  const byId = new Map(mine.map((x) => [x.id, x]));
+  for (const t of theirs) {
+    const m = byId.get(t.id);
+    if (!m || (t.updatedAt ?? 0) > (m.updatedAt ?? 0)) byId.set(t.id, t);
+  }
+  const order = [...new Set([...mine.map((x) => x.id), ...theirs.map((x) => x.id)])];
+  return order.filter((id) => !(id in deleted)).map((id) => byId.get(id)!);
 }
 
 /**
- * Fletter data fra serveren ind i de lokale data. Intet lokalt forsvinder:
- * træninger, skabeloner og øvelser samles efter id, og ved samme id vinder den lokale udgave.
+ * Fletter data fra serveren ind i de lokale data (#38):
+ * - træninger og kropsmål samles efter id (lokal udgave vinder ved samme id) – intet tabes eller dubleres
+ * - skabeloner og egne øvelser: den nyeste ændring vinder
+ * - indstillinger: den enhed, der ændrede dem senest, vinder
+ * - slettede ting forbliver slettede på begge enheder
  */
 export function mergeStates(local: AppState, remote: AppState): AppState {
+  const deleted: Record<string, number> = { ...(remote.deleted ?? {}) };
+  for (const [id, at] of Object.entries(local.deleted ?? {})) deleted[id] = Math.max(at, deleted[id] ?? 0);
+  const remoteSettingsNewer = (remote.settingsAt ?? 0) > (local.settingsAt ?? 0);
+  const settings = remoteSettingsNewer
+    ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] ?? local[k]]), ['settingsAt', remote.settingsAt]])
+    : {};
+  const active = local.active ?? remote.active ?? null;
   return {
     ...local,
-    exercises: unionById(local.exercises, remote.exercises ?? []),
-    templates: unionById(local.templates, remote.templates ?? []),
-    history: unionById(local.history, remote.history ?? []).sort((a, b) => b.startedAt - a.startedAt),
-    active: local.active ?? remote.active ?? null,
-    bodyLog: unionById(local.bodyLog ?? [], remote.bodyLog ?? []).sort((a, b) => b.date - a.date),
+    ...settings,
+    deleted,
+    exercises: mergeById(local.exercises, remote.exercises ?? [], deleted),
+    templates: mergeById(local.templates, remote.templates ?? [], deleted),
+    history: mergeById(
+      local.history.map((w) => ({ ...w, updatedAt: 1 })),
+      (remote.history ?? []).map((w) => ({ ...w, updatedAt: 0 })),
+      deleted,
+    )
+      .map(({ updatedAt: _u, ...w }) => w)
+      .sort((a, b) => b.startedAt - a.startedAt),
+    active: active && active.id in deleted ? null : active,
+    bodyLog: mergeById(
+      (local.bodyLog ?? []).map((m) => ({ ...m, updatedAt: 1 })),
+      (remote.bodyLog ?? []).map((m) => ({ ...m, updatedAt: 0 })),
+      deleted,
+    )
+      .map(({ updatedAt: _u, ...m }) => m)
+      .sort((a, b) => b.date - a.date),
   };
+}
+
+/** Reducer der også noterer ændringer til fletning. `at` = tidspunkt for handlingen. */
+export function trackedReducer(state: AppState, action: Action & { at?: number }): AppState {
+  const next = reducer(state, action);
+  if (action.type === 'MERGE_REMOTE' || action.type === 'IMPORT_STATE') return next;
+  return stampChanges(state, next, action.at ?? Date.now());
 }
 
 /** Det, der sendes til serveren (pausetimeren hører kun til denne enhed). */
