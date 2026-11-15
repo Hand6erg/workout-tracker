@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
+import { PlateDialog } from '../components/PlateDialog';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import { doneSetCount, formatDuration, num, previousSets, recordsBrokenBy, uncheckedFilledCount, type RecordKind } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
@@ -110,11 +111,19 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { state, dispatch, exerciseById } = useStore();
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
+  const [plates, setPlates] = useState(false);
+  const isBarbell = ex?.equipment === 'Stang';
+  const lastWeight = [...we.sets].reverse().find((s) => s.weight)?.weight ?? '';
 
   return (
     <article className="ex-block" aria-label={ex?.name}>
       <header>
         <h3>{ex?.name ?? 'Ukendt øvelse'}</h3>
+        {isBarbell && (
+          <button className="btn-ghost small" onClick={() => setPlates(true)}>
+            Skiver
+          </button>
+        )}
         <ConfirmButton className="btn-ghost small" confirmText="Fjern?" onConfirm={() => dispatch({ type: 'REMOVE_EXERCISE', weId: we.id })}>
           Fjern
         </ConfirmButton>
@@ -203,6 +212,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
       <button className="btn-secondary wide small" onClick={() => dispatch({ type: 'ADD_SET', weId: we.id })}>
         + Tilføj sæt
       </button>
+      {plates && <PlateDialog initialWeight={lastWeight} onClose={() => setPlates(false)} />}
     </article>
   );
 }

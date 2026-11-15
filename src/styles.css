@@ -128,6 +128,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .title-input { background: none; font-size: 1.6rem; font-weight: 700; padding: 8px 0; border-radius: 0; }
 .ex-block { background: var(--surface); border-radius: var(--radius); padding: 12px; margin: 12px 0; }
 .ex-block header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.ex-block header h3 { flex: 1; }
 .ex-block h3 { color: var(--accent); }
 .sets { width: 100%; border-collapse: separate; border-spacing: 0 4px; font-size: 0.92rem; }
 .sets th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; padding: 2px; }
@@ -190,3 +191,9 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .hbars li.low .fill { background: #f5c400; }
 .hbars li.low .num small { color: #f5c400; }
 .small-print { font-size: 0.75rem; margin-top: 6px; }
+
+/* Pladeberegner */
+.plate-bar { display: flex; align-items: center; gap: 3px; height: 110px; margin: 12px 0 6px; }
+.plate-bar .sleeve { width: 40px; height: 12px; background: #9aa0ad; border-radius: 3px; }
+.plate-bar .plate { width: 16px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25); }
+.plate-list { font-size: 1.1rem; font-weight: 600; }
