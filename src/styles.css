@@ -86,6 +86,8 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .list-row .check { color: var(--accent); font-weight: 700; }
 .field { display: grid; gap: 6px; margin-bottom: 14px; color: var(--muted); font-size: 0.9rem; }
 
+.error { color: var(--danger); margin: 0 0 8px; }
+.account-card { display: grid; gap: 4px; }
 .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }
 .kpis div { background: var(--surface); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 4px; }
 .kpis small { color: var(--muted); }
