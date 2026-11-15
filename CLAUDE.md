@@ -39,9 +39,10 @@ Idéer og fejl ligger som issues i `Hand6erg/workout-tracker`. Brug REST (`gh ap
 - Når du tager et issue: fjern `klar`, sæt `i gang`.
 - Tag issues med `klar` i rækkefølge: `bug` først, derefter laveste nummer.
 - Er beskrivelsen for uklar til at bygge: skriv et kort spørgsmål på dansk som kommentar, sæt `spørgsmål` (fjern `i gang`), og gå videre til næste.
-- Commit-besked slutter med `Lukker #<nr>`, så issuet lukkes automatisk, når staging merges til `main`.
+- Commit-besked slutter med `Closes #<nr>` (GitHub forstår kun engelske nøgleord – `Lukker` virker ikke), så issuet lukkes automatisk, når staging merges til `main`.
 - Efter push til `staging`: skift `i gang` til `på staging`, og kommentér på issuet på dansk – hvad er lavet, og hvordan det prøves på https://hand6erg.github.io/workout-tracker/staging/ (CI udgiver et par minutter efter push).
-- Sørg for at der er en åben PR `staging` → `main` med en kort dansk liste over, hvad der er nyt, og `Lukker #<nr>` for hver opgave.
+- Sørg for at der er en åben PR `staging` → `main` med en kort dansk liste over, hvad der er nyt, og en linje `Closes #<nr>` for hver opgave (engelsk nøgleord, ellers lukkes issues ikke).
+- Når ejeren har merget: tjek at opgaverne er lukket (luk dem ellers selv), fjern `på staging`, og luk idéer hvor alle opgaver er lukket.
 - Opret selv nye issues med label `idé`, hvis du opdager fejl eller oplagte forbedringer undervejs – men byg dem ikke uden `klar`.
 
 ## Automatisk kørsel (hvert 5. time)
