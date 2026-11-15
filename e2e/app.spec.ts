@@ -382,3 +382,23 @@ test('supersæt bevares i skabelon og vises i historikken (#29)', async ({ page 
   await tpl.getByRole('button', { name: /^Start/ }).click();
   await expect(page.getByRole('group', { name: 'Supersæt: Bænkpres + Roning' })).toBeVisible();
 });
+
+test('kalender i Historik markerer træningsdage og åbner træningen (#69)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const cal = page.getByRole('region', { name: /^Kalender / });
+  await expect(cal).toContainText('1 træning i');
+  await cal.getByRole('button', { name: /: Push$/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Push' })).toBeVisible();
+  await page.getByRole('button', { name: 'Luk' }).click();
+
+  await cal.getByRole('button', { name: 'Forrige måned' }).click();
+  await expect(cal.getByRole('button', { name: /: Push$/ })).toHaveCount(0);
+});
