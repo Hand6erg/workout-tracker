@@ -14,7 +14,7 @@ function download(name: string, content: string, type: string) {
 }
 
 export function ProfileView() {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
   const total = state.history.reduce((a, w) => a + workoutVolume(w), 0);
@@ -50,7 +50,11 @@ export function ProfileView() {
       <AccountSection />
 
       <h2 className="section">Data</h2>
-      <p className="muted">Alt gemmes kun på denne enhed. Tag en backup, hvis du skifter telefon.</p>
+      <p className="muted">
+        {account
+          ? 'Alt gemmes på denne enhed og online på din konto.'
+          : 'Alt gemmes kun på denne enhed. Tag en backup, hvis du skifter telefon.'}
+      </p>
       <div className="stack">
         <button className="btn-secondary" onClick={() => download(`loeft-${stamp}.csv`, toCsv(state), 'text/csv')}>
           Eksportér CSV

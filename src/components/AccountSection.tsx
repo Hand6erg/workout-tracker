@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from 'react';
 import { authenticate, type AuthMode } from '../lib/account';
 import { useStore } from '../lib/store';
+import type { SyncStatus } from '../lib/sync';
 import { ConfirmButton } from './ui';
 
 /** "Konto" i Profil: opret konto / log ind / log ud. Lokale data røres aldrig. */
 export function AccountSection() {
-  const { apiUrl, account, setAccount } = useStore();
+  const { state, apiUrl, account, setAccount, sync, resolveSync } = useStore();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,7 +29,29 @@ export function AccountSection() {
         <div className="card account-card">
           <small className="muted">Logget ind som</small>
           <strong data-testid="account-email">{account.email}</strong>
+          <SyncLine sync={sync} />
         </div>
+        {sync.kind === 'choose' && (
+          <div className="card choose" role="group" aria-label="Vælg hvilke data du vil beholde">
+            <p>
+              Der ligger allerede data på din konto ({sync.remote.state.history.length} træninger), og telefonen har også
+              data ({state.history.length} træninger). Hvad vil du beholde?
+            </p>
+            <button className="btn-primary" onClick={() => resolveSync('merge')}>
+              Flet begge
+            </button>
+            <button className="btn-secondary" onClick={() => resolveSync('phone')}>
+              Behold telefonens
+            </button>
+            <ConfirmButton
+              className="btn-secondary"
+              confirmText="Tryk igen – telefonens data erstattes"
+              onConfirm={() => resolveSync('online')}
+            >
+              Brug dem online
+            </ConfirmButton>
+          </div>
+        )}
         <ConfirmButton className="btn-secondary wide" onConfirm={() => setAccount(null)}>
           Log ud
         </ConfirmButton>
@@ -92,5 +115,26 @@ export function AccountSection() {
       </form>
       <p className="muted">Med en konto kan dine træninger gemmes online, så de ikke forsvinder.</p>
     </section>
+  );
+}
+
+const clock = (t: number) => {
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
+
+function SyncLine({ sync }: { sync: SyncStatus }) {
+  const text = {
+    idle: '',
+    choose: '',
+    saving: 'Gemmer online…',
+    saved: sync.kind === 'saved' ? `Gemt online kl. ${clock(sync.at)}` : '',
+    offline: 'Venter på net – ændringer er gemt på telefonen og sendes, når du er online igen.',
+    error: 'Kunne ikke gemme online lige nu. Prøver igen om lidt.',
+  }[sync.kind];
+  return (
+    <small role="status" aria-label="Online-status" className={`sync-line ${sync.kind}`}>
+      {text}
+    </small>
   );
 }
