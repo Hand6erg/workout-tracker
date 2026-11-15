@@ -1,4 +1,5 @@
 import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
+import { MUSCLES } from './types';
 import type {
   AppState,
   Equipment,
@@ -199,6 +200,73 @@ export function workoutRecords(state: AppState, workoutId: string): Record<strin
 /** Antal rekorder i en træning (hver type tæller én gang pr. øvelse) */
 export function recordCount(records: Record<string, RecordKind[]>): number {
   return Object.values(records).reduce((n, k) => n + k.length, 0);
+}
+
+/* ---------- Statistik til grafer ---------- */
+
+const DAY_MS = 86_400_000;
+
+/** Mandag kl. 00:00 (lokal tid) i ugen der indeholder `t` */
+export function startOfWeek(t: number): number {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d.getTime();
+}
+
+/** ISO-ugenummer */
+export function isoWeek(t: number): number {
+  const d = new Date(startOfWeek(t));
+  d.setDate(d.getDate() + 3); // torsdag i samme uge afgør året
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round((d.getTime() - startOfWeek(jan4.getTime())) / (7 * DAY_MS) - 3 / 7);
+}
+
+export interface WeekVolume {
+  weekStart: number;
+  week: number;
+  volume: number;
+}
+
+/** Samlet løftet vægt pr. uge for de seneste `weeks` uger (ældste først, også uger med 0) */
+export function weeklyVolume(state: AppState, weeks: number, now: number): WeekVolume[] {
+  const starts: number[] = [];
+  let ws = startOfWeek(now);
+  for (let i = 0; i < weeks; i++) {
+    starts.unshift(ws);
+    ws = startOfWeek(ws - DAY_MS); // et døgn før mandag = forrige uge (tåler sommertid)
+  }
+  const out = starts.map((weekStart) => ({ weekStart, week: isoWeek(weekStart), volume: 0 }));
+  for (const w of state.history) {
+    const i = starts.indexOf(startOfWeek(w.startedAt));
+    if (i >= 0) out[i].volume += workoutVolume(w);
+  }
+  return out;
+}
+
+export interface MuscleShare {
+  muscle: Muscle;
+  sets: number;
+  volume: number;
+}
+
+/** Udførte sæt og volumen pr. muskelgruppe for træninger fra `sinceMs` (0 = alt) */
+export function muscleDistribution(state: AppState, sinceMs: number): MuscleShare[] {
+  const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
+  const out = new Map<Muscle, MuscleShare>(MUSCLES.map((m) => [m, { muscle: m, sets: 0, volume: 0 }]));
+  for (const w of state.history) {
+    if (w.startedAt < sinceMs) continue;
+    for (const we of w.exercises) {
+      const share = out.get(muscleOf.get(we.exerciseId) as Muscle);
+      if (!share) continue;
+      for (const s of we.sets) {
+        if (!s.done) continue;
+        share.sets++;
+        share.volume += setVolume(s);
+      }
+    }
+  }
+  return [...out.values()];
 }
 
 export interface ExerciseHistoryEntry {
