@@ -179,3 +179,14 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .bar-chart .hl rect { fill: var(--accent); }
 .bar-chart text { fill: var(--muted); font-size: 10px; text-anchor: middle; }
 .bar-chart .hl text { fill: var(--text); font-weight: 600; }
+.seg { display: flex; gap: 6px; margin-bottom: 10px; }
+.seg button { flex: 1; padding: 8px; border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 0.85rem; }
+.seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.hbars { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 10px; }
+.hbars li { display: grid; grid-template-columns: 64px 1fr 76px; align-items: center; gap: 10px; font-size: 0.9rem; }
+.hbars .track { height: 10px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+.hbars .fill { display: block; height: 100%; background: var(--accent); border-radius: 6px; }
+.hbars .num { text-align: right; color: var(--muted); }
+.hbars li.low .fill { background: #f5c400; }
+.hbars li.low .num small { color: #f5c400; }
+.small-print { font-size: 0.75rem; margin-top: 6px; }

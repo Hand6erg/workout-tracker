@@ -188,3 +188,30 @@ test('viser volumen pr. uge under Profil (#17)', async ({ page }) => {
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
   await expect(section.getByRole('img', { name: /Volumen pr. uge.*Denne uge: 500 kg/ })).toBeVisible();
 });
+
+test('viser fordeling på muskelgrupper under Profil (#23)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Ben' }).click();
+  const squat = page.getByRole('article', { name: 'Squat' });
+  await squat.getByLabel('Vægt sæt 1').fill('100');
+  await squat.getByLabel('Reps sæt 1').fill('5');
+  await squat.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const section = page.getByRole('region', { name: 'Muskelgrupper' });
+  await expect(section.getByRole('listitem').filter({ hasText: 'Ben' })).toContainText('1 sæt');
+  await expect(section.getByRole('listitem').filter({ hasText: 'Bryst' })).toContainText('1 sæt');
+  const all = section.getByRole('button', { name: 'Alt' });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(section.getByRole('button', { name: 'Sidste 4 uger' })).toHaveAttribute('aria-pressed', 'false');
+});
