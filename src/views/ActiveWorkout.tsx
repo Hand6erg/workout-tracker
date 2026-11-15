@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
-import { ConfirmButton, Empty } from '../components/ui';
-import { doneSetCount, formatDuration, previousSets } from '../lib/logic';
+import { ConfirmButton, Empty, Modal } from '../components/ui';
+import { doneSetCount, formatDuration, previousSets, uncheckedFilledCount } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
 import type { WorkoutExercise } from '../lib/types';
 
@@ -9,10 +9,13 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   const { state, dispatch } = useStore();
   const now = useNow();
   const [picking, setPicking] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const w = state.active;
   if (!w) return null;
 
   const done = doneSetCount(w);
+  const unchecked = uncheckedFilledCount(w);
+  const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
 
   return (
     <section className="workout" aria-label="Aktiv træning">
@@ -23,13 +26,19 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         <span className="timer" data-testid="elapsed">
           {formatDuration(now - w.startedAt)}
         </span>
-        <ConfirmButton
-          className="btn-primary"
-          confirmText={done ? 'Bekræft' : 'Ingen sæt – kassér?'}
-          onConfirm={() => dispatch({ type: 'FINISH_WORKOUT', now: Date.now() })}
-        >
-          Afslut
-        </ConfirmButton>
+        {unchecked > 0 ? (
+          <button className="btn-primary" onClick={() => setFinishing(true)}>
+            Afslut
+          </button>
+        ) : (
+          <ConfirmButton
+            className="btn-primary"
+            confirmText={done ? 'Bekræft' : 'Intet udfyldt – kassér?'}
+            onConfirm={() => finish(false)}
+          >
+            Afslut
+          </ConfirmButton>
+        )}
       </header>
 
       <div className="workout-body">
@@ -56,6 +65,27 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
 
       <RestBar />
 
+      {finishing && (
+        <Modal title="Afslut træning" onClose={() => setFinishing(false)}>
+          <div className="stack">
+            <p>
+              {unchecked === 1 ? '1 sæt er udfyldt' : `${unchecked} sæt er udfyldt`}, men ikke krydset af. Skal de gemmes
+              med?
+            </p>
+            <button className="btn-primary wide" onClick={() => finish(true)}>
+              Gem alle udfyldte sæt
+            </button>
+            {done > 0 && (
+              <button className="btn-secondary wide" onClick={() => finish(false)}>
+                Gem kun afkrydsede sæt ({done})
+              </button>
+            )}
+            <button className="btn-secondary wide" onClick={() => setFinishing(false)}>
+              Fortsæt træningen
+            </button>
+          </div>
+        </Modal>
+      )}
       {picking && (
         <ExercisePicker
           onClose={() => setPicking(false)}

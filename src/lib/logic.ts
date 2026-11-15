@@ -57,6 +57,11 @@ export function doneSetCount(w: Workout): number {
   return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0);
 }
 
+/** Sæt hvor der er skrevet reps, men som ikke er krydset af */
+export function uncheckedFilledCount(w: Workout): number {
+  return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => !s.done && s.reps.trim() !== '').length, 0);
+}
+
 /** Bedste sæt (højeste estimerede 1RM) for en øvelse i en træning */
 export function bestSet(sets: SetEntry[]): SetEntry | null {
   let best: SetEntry | null = null;
@@ -135,7 +140,7 @@ export function exerciseHistory(history: Workout[], exerciseId: string): Exercis
 export type Action =
   | { type: 'START_WORKOUT'; templateId?: string; now: number }
   | { type: 'CANCEL_WORKOUT' }
-  | { type: 'FINISH_WORKOUT'; now: number }
+  | { type: 'FINISH_WORKOUT'; now: number; includeUnchecked?: boolean }
   | { type: 'RENAME_WORKOUT'; name: string }
   | { type: 'ADD_EXERCISES'; exerciseIds: string[] }
   | { type: 'REMOVE_EXERCISE'; weId: string }
@@ -194,7 +199,12 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'FINISH_WORKOUT': {
       if (!state.active) return state;
       const exercises = state.active.exercises
-        .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done) }))
+        .map((e) => ({
+          ...e,
+          sets: e.sets
+            .filter((s) => s.done || (action.includeUnchecked && s.reps.trim() !== ''))
+            .map((s) => ({ ...s, done: true })),
+        }))
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return { ...state, active: null, rest: null };
       const done: Workout = { ...state.active, exercises, finishedAt: action.now };

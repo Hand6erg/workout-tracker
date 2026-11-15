@@ -79,3 +79,26 @@ test('den rigtige app viser ikke testbjælken og gemmer under den rigtige nøgle
   await page.getByRole('button', { name: 'Start tom træning' }).click();
   await expect.poll(() => page.evaluate(() => localStorage.getItem('loeft-state-v1'))).not.toBeNull();
 });
+
+test('afslut gemmer udfyldte sæt, selvom de ikke er krydset af (#9)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByPlaceholder('Søg efter øvelse').fill('bænk');
+  await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+
+  const bench = workout.getByRole('article', { name: 'Bænkpres' });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Afslut træning' });
+  await expect(dialog).toContainText('1 sæt er udfyldt');
+  await dialog.getByRole('button', { name: 'Gem alle udfyldte sæt' }).click();
+
+  await expect(workout).toHaveCount(0);
+  await page.getByRole('button', { name: 'Historik' }).click();
+  await expect(page.getByText('Bænkpres').first()).toBeVisible();
+});
