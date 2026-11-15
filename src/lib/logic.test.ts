@@ -9,6 +9,7 @@ import {
   IS_STAGING,
   loadState,
   personalRecords,
+  platesPerSide,
   previousSets,
   recordCount,
   recordsBrokenBy,
@@ -17,6 +18,7 @@ import {
   STORAGE_KEY,
   toCsv,
   uncheckedFilledCount,
+  warmupSets,
   weeklyVolume,
   workoutVolume,
 } from './logic';
@@ -280,5 +282,49 @@ describe('statistik til grafer', () => {
     const s = logAt(initialState(), 'bench', '100', '5', SUN);
     s.history[0].exercises[0].exerciseId = 'slettet';
     expect(muscleDistribution(s, 0).every((m) => m.sets === 0)).toBe(true);
+  });
+});
+
+describe('plader og opvarmning', () => {
+  it('finder skiver pr. side', () => {
+    expect(platesPerSide(100)).toEqual({ perSide: [25, 15], remainder: 0, belowBar: false });
+    expect(platesPerSide(60)).toEqual({ perSide: [20], remainder: 0, belowBar: false });
+    expect(platesPerSide(22.5)).toEqual({ perSide: [1.25], remainder: 0, belowBar: false });
+    expect(platesPerSide(20)).toEqual({ perSide: [], remainder: 0, belowBar: false });
+  });
+
+  it('melder rest, når vægten ikke kan rammes præcist', () => {
+    expect(platesPerSide(21)).toEqual({ perSide: [], remainder: 1, belowBar: false });
+    expect(platesPerSide(103)).toMatchObject({ perSide: [25, 15, 1.25], remainder: 0.5 });
+  });
+
+  it('håndterer vægt under stangen og andre stænger/skiver', () => {
+    expect(platesPerSide(15).belowBar).toBe(true);
+    expect(platesPerSide(100, 20, [20, 10, 5]).perSide).toEqual([20, 20]);
+    expect(platesPerSide(50, 15).perSide).toEqual([15, 2.5]);
+  });
+
+  it('foreslår opvarmning afrundet til 2,5 kg', () => {
+    expect(warmupSets(100)).toEqual([
+      { weight: 20, reps: 10 },
+      { weight: 40, reps: 5 },
+      { weight: 60, reps: 3 },
+      { weight: 80, reps: 2 },
+    ]);
+    expect(warmupSets(67)).toEqual([
+      { weight: 20, reps: 10 },
+      { weight: 27.5, reps: 5 },
+      { weight: 40, reps: 3 },
+      { weight: 52.5, reps: 2 },
+    ]);
+  });
+
+  it('springer trin over, der giver samme vægt eller er for tunge', () => {
+    expect(warmupSets(40)).toEqual([
+      { weight: 20, reps: 10 },
+      { weight: 25, reps: 3 },
+      { weight: 32.5, reps: 2 },
+    ]);
+    expect(warmupSets(20)).toEqual([]);
   });
 });
