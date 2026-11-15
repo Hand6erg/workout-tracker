@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
 import { BarChart } from '../components/BarChart';
 import { ConfirmButton, Empty } from '../components/ui';
-import { formatKg, initialState, loadState, toCsv, weeklyVolume, workoutVolume } from '../lib/logic';
+import { formatKg, initialState, loadState, muscleDistribution, toCsv, weeklyVolume, workoutVolume } from '../lib/logic';
 import { useStore } from '../lib/store';
 
 function download(name: string, content: string, type: string) {
@@ -36,6 +36,7 @@ export function ProfileView() {
       </div>
 
       <WeeklyVolume />
+      <MuscleSplit />
 
       <h2 className="section">Indstillinger</h2>
       <label className="field">
@@ -118,6 +119,51 @@ function WeeklyVolume() {
           </p>
         </div>
       )}
+    </section>
+  );
+}
+
+function MuscleSplit() {
+  const { state } = useStore();
+  const [period, setPeriod] = useState<'4w' | 'all'>('4w');
+  const since = period === 'all' ? 0 : Date.now() - 28 * 86_400_000;
+  const shares = muscleDistribution(state, since);
+  const total = shares.reduce((n, m) => n + m.sets, 0);
+  const max = Math.max(1, ...shares.map((m) => m.sets));
+  const avg = total / shares.length;
+
+  return (
+    <section aria-label="Muskelgrupper">
+      <h2 className="section">Muskelgrupper</h2>
+      <div className="seg" role="group" aria-label="Periode">
+        <button aria-pressed={period === '4w'} onClick={() => setPeriod('4w')}>
+          Sidste 4 uger
+        </button>
+        <button aria-pressed={period === 'all'} onClick={() => setPeriod('all')}>
+          Alt
+        </button>
+      </div>
+      {!total ? (
+        <Empty>Ingen udførte sæt i perioden.</Empty>
+      ) : (
+        <ul className="card hbars">
+          {shares.map((m) => {
+            const low = m.sets < avg * 0.5;
+            return (
+              <li key={m.muscle} className={low ? 'low' : ''}>
+                <span className="name">{m.muscle}</span>
+                <span className="track" aria-hidden>
+                  <span className="fill" style={{ width: `${(100 * m.sets) / max}%` }} />
+                </span>
+                <span className="num">
+                  {m.sets} sæt{low && <small> · lidt</small>}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {total > 0 && <p className="muted small-print">"Lidt" = under halvdelen af gennemsnittet for dine muskelgrupper.</p>}
     </section>
   );
 }
