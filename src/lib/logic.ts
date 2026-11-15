@@ -108,6 +108,80 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
   return [];
 }
 
+/* ---------- Rekorder ---------- */
+
+export type RecordKind = 'heaviest' | '1rm' | 'reps';
+
+export interface PersonalRecords {
+  /** Tungeste vægt løftet (med reps og dato) */
+  heaviest?: { weight: number; reps: number; date: number };
+  /** Højeste estimerede 1RM */
+  best1RM?: { value: number; weight: number; reps: number; date: number };
+  /** Flest reps pr. vægt, nøgle = vægt i kg */
+  repsAtWeight: Record<string, { reps: number; date: number }>;
+}
+
+interface ScoredSet {
+  weight: number;
+  reps: number;
+  date: number;
+}
+
+function validSets(sets: SetEntry[], date: number): ScoredSet[] {
+  return sets
+    .filter((s) => s.done && num(s.reps) > 0)
+    .map((s) => ({ weight: num(s.weight), reps: num(s.reps), date }));
+}
+
+function recordsFrom(sets: ScoredSet[]): PersonalRecords {
+  const r: PersonalRecords = { repsAtWeight: {} };
+  for (const s of sets) {
+    if (s.weight > 0 && (!r.heaviest || s.weight > r.heaviest.weight)) r.heaviest = { ...s };
+    const e = estimate1RM(s.weight, s.reps);
+    if (e > 0 && (!r.best1RM || e > r.best1RM.value)) r.best1RM = { value: e, ...s };
+    const key = String(s.weight);
+    if (!r.repsAtWeight[key] || s.reps > r.repsAtWeight[key].reps) r.repsAtWeight[key] = { reps: s.reps, date: s.date };
+  }
+  return r;
+}
+
+function historySets(history: Workout[], exerciseId: string): ScoredSet[] {
+  return history.flatMap((w) =>
+    w.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => validSets(e.sets, w.startedAt)),
+  );
+}
+
+/** Rekorder for en øvelse ud fra afsluttede træninger */
+export function personalRecords(state: AppState, exerciseId: string): PersonalRecords {
+  return recordsFrom(historySets(state.history, exerciseId));
+}
+
+/**
+ * Hvilke rekorder slår et udført sæt? Sammenlignes med afsluttede træninger og
+ * de udførte sæt før det i den aktive træning. Første gang en øvelse laves er ingen rekord.
+ */
+export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEntry): RecordKind[] {
+  const [candidate] = validSets([set], 0);
+  if (!candidate) return [];
+  const earlier: ScoredSet[] = historySets(state.history, exerciseId);
+  outer: for (const we of state.active?.exercises ?? []) {
+    if (we.exerciseId !== exerciseId) continue;
+    for (const s of we.sets) {
+      if (s.id === set.id) break outer;
+      earlier.push(...validSets([s], 0));
+    }
+  }
+  if (!earlier.length) return [];
+  const prev = recordsFrom(earlier);
+  const broken: RecordKind[] = [];
+  if (candidate.weight > 0 && prev.heaviest && candidate.weight > prev.heaviest.weight) broken.push('heaviest');
+  const e = estimate1RM(candidate.weight, candidate.reps);
+  if (e > 0 && prev.best1RM && e > prev.best1RM.value) broken.push('1rm');
+  const atWeight = prev.repsAtWeight[String(candidate.weight)];
+  if (atWeight && candidate.reps > atWeight.reps) broken.push('reps');
+  return broken;
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;
