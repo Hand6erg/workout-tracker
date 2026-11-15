@@ -155,7 +155,8 @@ export type Action =
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
   | { type: 'DELETE_WORKOUT'; workoutId: string }
-  | { type: 'IMPORT_STATE'; state: AppState };
+  | { type: 'IMPORT_STATE'; state: AppState }
+  | { type: 'MERGE_REMOTE'; remote: AppState };
 
 function emptySet(): SetEntry {
   return { id: uid(), weight: '', reps: '', rpe: '', done: false };
@@ -302,7 +303,41 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, history: state.history.filter((w) => w.id !== action.workoutId) };
     case 'IMPORT_STATE':
       return action.state;
+    case 'MERGE_REMOTE':
+      return mergeStates(state, action.remote);
   }
+}
+
+/* ---------- Online-gemning: flet to versioner ---------- */
+
+function unionById<T extends { id: string }>(mine: T[], theirs: T[]): T[] {
+  const ids = new Set(mine.map((x) => x.id));
+  return [...mine, ...theirs.filter((x) => !ids.has(x.id))];
+}
+
+/**
+ * Fletter data fra serveren ind i de lokale data. Intet lokalt forsvinder:
+ * træninger, skabeloner og øvelser samles efter id, og ved samme id vinder den lokale udgave.
+ */
+export function mergeStates(local: AppState, remote: AppState): AppState {
+  return {
+    ...local,
+    exercises: unionById(local.exercises, remote.exercises ?? []),
+    templates: unionById(local.templates, remote.templates ?? []),
+    history: unionById(local.history, remote.history ?? []).sort((a, b) => b.startedAt - a.startedAt),
+    active: local.active ?? remote.active ?? null,
+  };
+}
+
+/** Det, der sendes til serveren (pausetimeren hører kun til denne enhed). */
+export function syncPayload(state: AppState): Omit<AppState, 'rest'> {
+  const { rest: _rest, ...rest } = state;
+  return rest;
+}
+
+/** Har enheden data, der er værd at beholde? (træninger, egne øvelser eller en igangværende træning) */
+export function hasOwnData(state: AppState): boolean {
+  return state.history.length > 0 || !!state.active || state.exercises.some((e) => e.custom);
 }
 
 /* ---------- Gem/indlæs ---------- */

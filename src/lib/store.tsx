@@ -1,6 +1,7 @@
-import { createContext, useContext, useEffect, useReducer, useState, type Dispatch, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { ACCOUNT_KEY, API_URL_OVERRIDE_KEY, parseAccount, resolveApiUrl, type Account } from './account';
-import { loadState, reducer, STORAGE_KEY, type Action } from './logic';
+import { hasOwnData, loadState, reducer, STORAGE_KEY, type Action } from './logic';
+import { parseMeta, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
 import type { AppState, Exercise } from './types';
 
 interface Store {
@@ -11,6 +12,8 @@ interface Store {
   apiUrl: string | null;
   account: Account | null;
   setAccount: (a: Account | null) => void;
+  sync: SyncStatus;
+  resolveSync: (choice: Choice) => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -26,11 +29,21 @@ function readStorage(key = STORAGE_KEY): string | null {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, null, () => loadState(readStorage()));
 
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const prevState = useRef(state);
+  const engineRef = useRef<SyncEngine | null>(null);
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch {
       /* fx privat browsing – appen virker stadig, men gemmer ikke */
+    }
+    // Gemt lokalt – nu må ændringen sendes online
+    if (prevState.current !== state) {
+      prevState.current = state;
+      engineRef.current?.notifyChange();
     }
   }, [state]);
 
@@ -41,13 +54,53 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     try {
       if (a) localStorage.setItem(ACCOUNT_KEY, JSON.stringify(a));
       else localStorage.removeItem(ACCOUNT_KEY);
+      // Ny konto eller logget ud: kobling til serveren starter forfra (lokale data røres ikke)
+      localStorage.removeItem(SYNC_KEY);
     } catch {
       /* ignorer */
     }
   };
 
+  const [sync, setSync] = useState<SyncStatus>({ kind: 'idle' });
+  useEffect(() => {
+    setSync({ kind: 'idle' });
+    if (!apiUrl || !account) return;
+    const engine = new SyncEngine({
+      apiUrl,
+      token: account.token,
+      fetchFn: (...args) => fetch(...args),
+      getState: () => stateRef.current,
+      replaceState: (s) => dispatch({ type: 'IMPORT_STATE', state: s }),
+      mergeRemote: (remote) => dispatch({ type: 'MERGE_REMOTE', remote }),
+      hasOwnData,
+      loadMeta: () => parseMeta(readStorage(SYNC_KEY)),
+      saveMeta: (m) => {
+        try {
+          localStorage.setItem(SYNC_KEY, JSON.stringify(m));
+        } catch {
+          /* ignorer */
+        }
+      },
+      onStatus: setSync,
+      onUnauthorized: () => setAccount(null),
+    });
+    engineRef.current = engine;
+    void engine.start();
+    const onOnline = () => void engine.flush();
+    window.addEventListener('online', onOnline);
+    return () => {
+      engine.stop();
+      engineRef.current = null;
+      window.removeEventListener('online', onOnline);
+    };
+  }, [apiUrl, account]);
+
+  const resolveSync = (choice: Choice) => {
+    if (sync.kind === 'choose') void engineRef.current?.resolve(choice, sync.remote);
+  };
+
   const map = new Map(state.exercises.map((e) => [e.id, e]));
-  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount, sync, resolveSync }}>{children}</Ctx.Provider>;
 }
 
 export function useStore(): Store {
