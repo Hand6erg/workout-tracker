@@ -182,6 +182,25 @@ export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEnt
   return broken;
 }
 
+/** Rekorder slået i en afsluttet træning (pr. øvelse), sammenlignet med træninger før den */
+export function workoutRecords(state: AppState, workoutId: string): Record<string, RecordKind[]> {
+  const w = state.history.find((x) => x.id === workoutId);
+  if (!w) return {};
+  const before: AppState = { ...state, history: state.history.filter((x) => x.startedAt < w.startedAt), active: w };
+  const out: Record<string, RecordKind[]> = {};
+  for (const we of w.exercises) {
+    const kinds = new Set<RecordKind>(out[we.exerciseId] ?? []);
+    for (const s of we.sets) for (const k of recordsBrokenBy(before, we.exerciseId, s)) kinds.add(k);
+    if (kinds.size) out[we.exerciseId] = [...kinds];
+  }
+  return out;
+}
+
+/** Antal rekorder i en træning (hver type tæller én gang pr. øvelse) */
+export function recordCount(records: Record<string, RecordKind[]>): number {
+  return Object.values(records).reduce((n, k) => n + k.length, 0);
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;

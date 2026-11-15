@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
-import { bestSet, formatDuration, formatKg, formatSet, workoutVolume } from '../lib/logic';
+import { bestSet, formatDuration, formatKg, formatSet, recordCount, workoutRecords, workoutVolume } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
 
@@ -10,19 +10,30 @@ export function HistoryView() {
   const { state, exerciseById } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = state.history.find((w) => w.id === openId);
+  // Rekorder kræver et kig på hele historikken, så de beregnes kun når historikken ændres
+  const recordsById = useMemo(
+    () => new Map(state.history.map((w) => [w.id, workoutRecords(state, w.id)])),
+    [state.history],
+  );
 
   return (
     <div className="page">
       <h1>Historik</h1>
       {!state.history.length && <Empty>Ingen træninger endnu. Afslut en træning, så dukker den op her.</Empty>}
       <div className="cards">
-        {state.history.map((w) => (
+        {state.history.map((w) => {
+          const records = recordsById.get(w.id) ?? {};
+          const count = recordCount(records);
+          return (
           <button key={w.id} className="card as-button" onClick={() => setOpenId(w.id)} aria-label={`Træning ${w.name}`}>
             <h3>{w.name}</h3>
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
               <span>⏱ {formatDuration((w.finishedAt ?? w.startedAt) - w.startedAt)}</span>
               <span>🏋️ {formatKg(workoutVolume(w))}</span>
+              {count > 0 && (
+                <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>
+              )}
             </p>
             <table className="mini">
               <tbody>
@@ -32,6 +43,12 @@ export function HistoryView() {
                     <tr key={e.id}>
                       <td>
                         {e.sets.length} × {exerciseById(e.exerciseId)?.name}
+                        {records[e.exerciseId] && (
+                          <span role="img" aria-label="Ny rekord">
+                            {' '}
+                            🏆
+                          </span>
+                        )}
                       </td>
                       <td className="muted">{b ? formatSet(b) : ''}</td>
                     </tr>
@@ -40,7 +57,8 @@ export function HistoryView() {
               </tbody>
             </table>
           </button>
-        ))}
+          );
+        })}
       </div>
       {open && <WorkoutDetail w={open} onClose={() => setOpenId(null)} />}
     </div>
