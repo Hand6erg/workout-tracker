@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Chips, Empty, Modal } from '../components/ui';
-import { exerciseHistory, formatKg, formatSet, uid } from '../lib/logic';
+import { exerciseHistory, formatKg, formatSet, personalRecords, uid, type PersonalRecords } from '../lib/logic';
 import { useStore } from '../lib/store';
 import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type Muscle } from '../lib/types';
 
@@ -112,7 +112,10 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
         {ex.muscle} · {ex.equipment}
       </p>
       {!hist.length ? (
-        <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
+        <>
+          <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
+          <Records records={personalRecords(state, ex.id)} />
+        </>
       ) : (
         <>
           <div className="kpis">
@@ -126,6 +129,8 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
             </div>
           </div>
           <Sparkline values={[...hist].reverse().map((h) => h.best1RM)} />
+          <Records records={personalRecords(state, ex.id)} />
+          <h3 className="section">Historik</h3>
           <ul className="list">
             {hist.map((h) => (
               <li key={h.workoutId} className="list-row static">
@@ -140,6 +145,56 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
         </>
       )}
     </Modal>
+  );
+}
+
+function Records({ records }: { records: PersonalRecords }) {
+  const reps = Object.entries(records.repsAtWeight)
+    .map(([w, r]) => ({ weight: Number(w), ...r }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 5);
+  const kg = (n: number) => (n > 0 ? formatKg(n) : 'Kropsvægt');
+  return (
+    <section aria-label="Rekorder">
+      <h3 className="section">🏆 Rekorder</h3>
+      {!records.heaviest && !records.best1RM && !reps.length ? (
+        <Empty>Ingen rekorder endnu</Empty>
+      ) : (
+        <ul className="list">
+          {records.heaviest && (
+            <li className="list-row static">
+              <span>
+                <strong>Tungeste vægt</strong>
+                <small>{shortDate.format(records.heaviest.date)}</small>
+              </span>
+              <span>
+                {formatKg(records.heaviest.weight)} × {records.heaviest.reps}
+              </span>
+            </li>
+          )}
+          {records.best1RM && (
+            <li className="list-row static">
+              <span>
+                <strong>Bedste est. 1RM</strong>
+                <small>
+                  {formatKg(records.best1RM.weight)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
+                </small>
+              </span>
+              <span>{formatKg(records.best1RM.value)}</span>
+            </li>
+          )}
+          {reps.map((r) => (
+            <li key={r.weight} className="list-row static">
+              <span>
+                <strong>Flest reps på {kg(r.weight)}</strong>
+                <small>{shortDate.format(r.date)}</small>
+              </span>
+              <span>{r.reps} reps</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

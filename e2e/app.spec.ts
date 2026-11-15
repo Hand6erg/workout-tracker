@@ -129,3 +129,27 @@ test('viser 🏆 når et sæt slår en rekord (#16)', async ({ page }) => {
   await second.bench.getByRole('button', { name: 'Udført sæt 1' }).click();
   await expect(second.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0);
 });
+
+test('viser rekorder på øvelsens side (#22)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const detail = page.getByRole('dialog', { name: 'Bænkpres' });
+  await expect(detail.getByRole('region', { name: 'Rekorder' })).toContainText('Ingen rekorder endnu');
+  await detail.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByLabel('Reps sæt 1').fill('3');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const records = page.getByRole('dialog', { name: 'Bænkpres' }).getByRole('region', { name: 'Rekorder' });
+  await expect(records).toContainText('Tungeste vægt');
+  await expect(records).toContainText('100 kg × 3');
+  await expect(records).toContainText('Flest reps på 100 kg');
+});
