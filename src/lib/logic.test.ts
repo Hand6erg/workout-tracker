@@ -3,11 +3,13 @@ import {
   estimate1RM,
   exerciseHistory,
   formatDuration,
+  hasOwnData,
   initialState,
   isoWeek,
   muscleDistribution,
   IS_STAGING,
   loadState,
+  mergeStates,
   personalRecords,
   platesPerSide,
   previousSets,
@@ -420,5 +422,44 @@ describe('stang og skiver (#30)', () => {
     s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
     s = reducer(s, { type: 'ADD_WARMUP_SETS', weId: we.id });
     expect(s.active!.exercises[0].sets[0].weight).toBe('15');
+  });
+});
+
+describe('kropsmål (#14)', () => {
+  const add = (s: AppState, id: string, date: number, f: { weight?: number; bodyFat?: number; waist?: number }) =>
+    reducer(s, { type: 'ADD_MEASUREMENT', id, date, ...f });
+
+  it('gamle data får en tom liste', () => {
+    const old = { ...initialState() } as Partial<AppState>;
+    delete old.bodyLog;
+    expect(loadState(JSON.stringify(old)).bodyLog).toEqual([]);
+  });
+
+  it('tilføjer og sorterer nyeste først', () => {
+    let s = add(initialState(), 'a', T0, { weight: 82.5 });
+    s = add(s, 'b', T0 + 2 * 86_400_000, { waist: 88 });
+    s = add(s, 'c', T0 + 86_400_000, { weight: 82, bodyFat: 18 });
+    expect(s.bodyLog.map((m) => m.id)).toEqual(['b', 'c', 'a']);
+    expect(s.bodyLog[1]).toEqual({ id: 'c', date: T0 + 86_400_000, weight: 82, bodyFat: 18 });
+  });
+
+  it('ignorerer tomme eller ugyldige målinger', () => {
+    const s = initialState();
+    expect(add(s, 'x', T0, {})).toBe(s);
+    expect(add(s, 'x', T0, { weight: 0, waist: NaN })).toBe(s);
+    expect(add(s, 'x', T0, { bodyFat: 120 })).toBe(s);
+  });
+
+  it('fletter målinger fra to enheder uden at miste nogen', () => {
+    const local = add(initialState(), 'a', T0, { weight: 80 });
+    const remote = add(initialState(), 'b', T0 + 1, { weight: 79 });
+    expect(mergeStates(local, remote).bodyLog.map((m) => m.id)).toEqual(['b', 'a']);
+    expect(hasOwnData(local)).toBe(true);
+  });
+
+  it('sletter en måling', () => {
+    let s = add(initialState(), 'a', T0, { weight: 80 });
+    s = add(s, 'b', T0 + 1, { weight: 81 });
+    expect(reducer(s, { type: 'DELETE_MEASUREMENT', id: 'a' }).bodyLog.map((m) => m.id)).toEqual(['b']);
   });
 });
