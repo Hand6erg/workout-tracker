@@ -435,6 +435,35 @@ export function roundComplete(w: Workout, we: WorkoutExercise, k: number): boole
     });
 }
 
+/* ---------- Forslag til progression ---------- */
+
+export interface ProgressionHint {
+  /** Sidste gang: antal arbejdssæt, reps i første sæt og tungeste vægt */
+  last: { sets: number; reps: number; weight: number };
+  /** Forslag til i dag */
+  next: { weight: number; reps: number };
+  /** true hvis forslaget er et skridt op */
+  increase: boolean;
+}
+
+/**
+ * Enkel progression: nåede alle sæt sidst mindst samme reps som første sæt, foreslås et skridt op
+ * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt, +1 rep for kropsvægt). Ellers samme igen.
+ */
+export function progressionHint(state: AppState, exerciseId: string): ProgressionHint | null {
+  const sets = previousSets(state.history, exerciseId).filter((s) => num(s.reps) > 0);
+  if (!sets.length) return null;
+  const reps = num(sets[0].reps);
+  const weight = Math.max(...sets.map((s) => num(s.weight)));
+  const last = { sets: sets.length, reps, weight };
+  const allHit = sets.every((s) => num(s.reps) >= reps);
+  if (!allHit) return { last, next: { weight, reps }, increase: false };
+  const equipment = state.exercises.find((e) => e.id === exerciseId)?.equipment;
+  if (equipment === 'Kropsvægt' || weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
+  const step = equipment === 'Håndvægt' ? 1 : 2.5;
+  return { last, next: { weight: weight + step, reps }, increase: true };
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;

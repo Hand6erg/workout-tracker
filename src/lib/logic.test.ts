@@ -13,6 +13,7 @@ import {
   personalRecords,
   platesPerSide,
   previousSets,
+  progressionHint,
   recordCount,
   recordsBrokenBy,
   supersetGroups,
@@ -669,5 +670,39 @@ describe('kalender og stime (#68)', () => {
     expect(loadState(JSON.stringify(old)).weeklyGoal).toBe(2);
     expect(reducer(initialState(), { type: 'SET_WEEKLY_GOAL', goal: 9 }).weeklyGoal).toBe(7);
     expect(reducer(initialState(), { type: 'SET_WEEKLY_GOAL', goal: 0 }).weeklyGoal).toBe(1);
+  });
+});
+
+describe('forslag til næste vægt (#71)', () => {
+  function logged(exerciseId: string, sets: [string, string][]): AppState {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T0 });
+    });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+  }
+
+  it('foreslår +2,5 kg på stang, når alle sæt blev klaret', () => {
+    const h = progressionHint(logged('bench', [['60', '8'], ['60', '8'], ['60', '8']]), 'bench');
+    expect(h).toEqual({ last: { sets: 3, reps: 8, weight: 60 }, next: { weight: 62.5, reps: 8 }, increase: true });
+  });
+
+  it('foreslår samme vægt, hvis et sæt ikke nåede målet', () => {
+    const h = progressionHint(logged('bench', [['60', '8'], ['60', '6']]), 'bench');
+    expect(h).toMatchObject({ next: { weight: 60, reps: 8 }, increase: false });
+  });
+
+  it('+1 kg på håndvægt og +1 rep på kropsvægt', () => {
+    expect(progressionHint(logged('curl', [['12', '10']]), 'curl')!.next).toEqual({ weight: 13, reps: 10 });
+    expect(progressionHint(logged('pullup', [['', '8'], ['', '8']]), 'pullup')!.next).toEqual({ weight: 0, reps: 9 });
+  });
+
+  it('intet forslag uden historik', () => {
+    expect(progressionHint(initialState(), 'bench')).toBeNull();
   });
 });
