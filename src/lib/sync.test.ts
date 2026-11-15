@@ -192,6 +192,41 @@ describe('online-gemning', () => {
     expect((server.state as AppState).history).toHaveLength(1);
   });
 
+  it('henter nyere data fra en anden enhed, når appen åbnes (#37)', async () => {
+    const server: FakeServer = { state: withHistory(w('x', 5), w('a', 1)), version: 4, online: true, puts: 0 };
+    const local = { ...withHistory(w('a', 1)), rest: { endsAt: 9, total: 9 } };
+    const { app, engine } = setup(local, server, { version: 2, dirty: false, savedAt: 500 });
+    await engine.start();
+    expect(app.state.history.map((x) => x.id)).toEqual(['x', 'a']);
+    expect(app.state.rest).toEqual({ endsAt: 9, total: 9 });
+    expect(app.meta).toEqual({ version: 4, dirty: false, savedAt: 1000 });
+    expect(server.puts).toBe(0);
+    expect(last(app.statuses)).toEqual({ kind: 'saved', at: 1000 });
+  });
+
+  it('overskriver aldrig ventende lokale ændringer – fletter og sender dem (#37)', async () => {
+    const server: FakeServer = { state: withHistory(w('x', 5)), version: 4, online: true, puts: 0 };
+    const { app, engine } = setup(withHistory(w('mine', 1)), server, { version: 2, dirty: true, savedAt: null });
+    await engine.start();
+    expect(app.state.history.map((x) => x.id)).toEqual(['x', 'mine']);
+    expect((server.state as AppState).history.map((x) => x.id)).toEqual(['x', 'mine']);
+    expect(server.puts).toBe(1);
+    expect(app.meta).toMatchObject({ version: 5, dirty: false });
+  });
+
+  it('gør intet ved åbning, når serveren ikke har noget nyt eller ikke kan nås (#37)', async () => {
+    const server: FakeServer = { state: withHistory(w('a', 1)), version: 2, online: true, puts: 0 };
+    const local = withHistory(w('a', 1));
+    const { app, engine } = setup(local, server, { version: 2, dirty: false, savedAt: 500 });
+    await engine.start();
+    expect(app.state).toBe(local);
+    expect(server.puts).toBe(0);
+    server.online = false;
+    await engine.pull();
+    expect(app.state).toBe(local);
+    expect(last(app.statuses)).toEqual({ kind: 'saved', at: 500 });
+  });
+
   it('fletter og prøver igen ved konflikt (409)', async () => {
     // En anden enhed har gemt version 2 med træning "x"
     const server: FakeServer = { state: withHistory(w('x', 5)), version: 2, online: true, puts: 0 };

@@ -157,10 +157,7 @@ export class SyncEngine {
   /** Kaldes når appen åbner, eller når man lige er logget ind. */
   async start(): Promise<void> {
     if (this.meta.savedAt) this.status({ kind: 'saved', at: this.meta.savedAt });
-    if (this.meta.version !== null) {
-      if (this.meta.dirty) await this.flush();
-      return;
-    }
+    if (this.meta.version !== null) return this.pull();
     // Første gang med denne konto: er der allerede data online?
     this.status({ kind: 'saving' });
     const r = await getRemote(this.d.apiUrl, this.d.token, this.d.fetchFn);
@@ -178,6 +175,41 @@ export class SyncEngine {
       default:
         this.status({ kind: r.kind });
         this.retryLater(() => this.start());
+    }
+  }
+
+  /**
+   * Henter nyere data fra serveren (fx gemt på en anden enhed) og sender derefter ventende ændringer.
+   * Ventende lokale ændringer overskrives aldrig: så flettes der i stedet for at erstatte.
+   */
+  async pull(): Promise<void> {
+    if (this.stopped || this.choosing || this.inflight || this.meta.version === null) return;
+    this.inflight = true;
+    const r = await getRemote(this.d.apiUrl, this.d.token, this.d.fetchFn);
+    this.inflight = false;
+    if (this.stopped) return;
+    if (r.kind === 'unauthorized') return this.d.onUnauthorized();
+    if (r.kind === 'found' && r.remote.version !== this.meta.version) {
+      if (this.meta.dirty) {
+        this.d.mergeRemote(r.remote.state);
+        this.setMeta({ version: r.remote.version });
+      } else {
+        // Ingen ventende ændringer her: serverens udgave er den nyeste
+        const local = this.d.getState();
+        this.d.replaceState({ ...r.remote.state, rest: local.rest });
+        this.skipNextChange = true;
+        this.setMeta({ version: r.remote.version, savedAt: this.now() });
+        this.status({ kind: 'saved', at: this.meta.savedAt! });
+      }
+    } else if (r.kind === 'empty') {
+      // Intet online (fx nulstillet konto): send telefonens data igen
+      this.setMeta({ dirty: true });
+    } else if (r.kind === 'found' && !this.meta.dirty) {
+      this.status(this.meta.savedAt ? { kind: 'saved', at: this.meta.savedAt } : { kind: 'idle' });
+    }
+    if (this.meta.dirty) {
+      this.again = false;
+      return this.flush();
     }
   }
 
