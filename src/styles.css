@@ -170,3 +170,12 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .detail-ex { margin: 14px 0; }
 .detail-ex ol { margin: 6px 0; padding-left: 22px; color: var(--text); }
 .list-row.static { cursor: default; }
+
+/* Grafer */
+.chart-card { padding: 12px 12px 10px; }
+.bar-chart { width: 100%; height: auto; display: block; }
+.bar-chart .axis { stroke: var(--line); }
+.bar-chart rect { fill: var(--accent-soft); }
+.bar-chart .hl rect { fill: var(--accent); }
+.bar-chart text { fill: var(--muted); font-size: 10px; text-anchor: middle; }
+.bar-chart .hl text { fill: var(--text); font-weight: 600; }

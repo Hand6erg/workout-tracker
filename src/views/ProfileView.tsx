@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
-import { ConfirmButton } from '../components/ui';
-import { formatKg, initialState, loadState, toCsv, workoutVolume } from '../lib/logic';
+import { BarChart } from '../components/BarChart';
+import { ConfirmButton, Empty } from '../components/ui';
+import { formatKg, initialState, loadState, toCsv, weeklyVolume, workoutVolume } from '../lib/logic';
 import { useStore } from '../lib/store';
 
 function download(name: string, content: string, type: string) {
@@ -33,6 +34,8 @@ export function ProfileView() {
           <strong>{formatKg(total)}</strong>
         </div>
       </div>
+
+      <WeeklyVolume />
 
       <h2 className="section">Indstillinger</h2>
       <label className="field">
@@ -92,5 +95,29 @@ export function ProfileView() {
       </div>
       {msg && <p role="status">{msg}</p>}
     </div>
+  );
+}
+
+function WeeklyVolume() {
+  const { state } = useStore();
+  const weeks = weeklyVolume(state, 8, Date.now());
+  const current = weeks[weeks.length - 1];
+  return (
+    <section aria-label="Volumen pr. uge">
+      <h2 className="section">Volumen pr. uge</h2>
+      {!state.history.length ? (
+        <Empty>Afslut en træning, så kan du følge din ugentlige volumen her.</Empty>
+      ) : (
+        <div className="card chart-card">
+          <BarChart
+            label={`Volumen pr. uge, de seneste ${weeks.length} uger. Denne uge: ${formatKg(current.volume)}`}
+            bars={weeks.map((w, i) => ({ label: `u${w.week}`, value: w.volume, highlight: i === weeks.length - 1 }))}
+          />
+          <p className="muted">
+            Denne uge: <strong>{formatKg(current.volume)}</strong>
+          </p>
+        </div>
+      )}
+    </section>
   );
 }
