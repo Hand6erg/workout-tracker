@@ -27,6 +27,8 @@ export interface WorkoutExercise {
   id: string;
   exerciseId: string;
   sets: SetEntry[];
+  /** Øvelser med samme id i træk udgør et supersæt */
+  supersetId?: string;
 }
 
 export interface Workout {
@@ -40,6 +42,7 @@ export interface Workout {
 export interface TemplateExercise {
   exerciseId: string;
   sets: number;
+  supersetId?: string;
 }
 
 export interface Template {

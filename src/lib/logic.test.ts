@@ -15,6 +15,7 @@ import {
   previousSets,
   recordCount,
   recordsBrokenBy,
+  supersetGroups,
   workoutRecords,
   reducer,
   STORAGE_KEY,
@@ -478,5 +479,58 @@ describe('kropsmål i eksport (#31)', () => {
     const old = JSON.parse(JSON.stringify(initialState()));
     delete old.bodyLog;
     expect(loadState(JSON.stringify(old)).bodyLog).toEqual([]);
+  });
+});
+
+describe('supersæt (#12)', () => {
+  function withExercises(ids: string[]) {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ids });
+    return s;
+  }
+  const groups = (s: AppState) => supersetGroups(s.active!.exercises).map((g) => g.map((e) => e.exerciseId));
+  const weId = (s: AppState, exId: string) => s.active!.exercises.find((e) => e.exerciseId === exId)!.id;
+
+  it('kobler en øvelse med den næste', () => {
+    let s = withExercises(['bench', 'row', 'squat']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') });
+    expect(groups(s)).toEqual([['bench', 'row'], ['squat']]);
+  });
+
+  it('kan lave supersæt med 3 øvelser', () => {
+    let s = withExercises(['bench', 'row', 'squat']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'row') });
+    expect(groups(s)).toEqual([['bench', 'row', 'squat']]);
+  });
+
+  it('frakobling af en øvelse i et par opløser supersættet', () => {
+    let s = withExercises(['bench', 'row']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') });
+    s = reducer(s, { type: 'UNLINK_SUPERSET', weId: weId(s, 'row') });
+    expect(groups(s)).toEqual([['bench'], ['row']]);
+    expect(s.active!.exercises.every((e) => e.supersetId === undefined)).toBe(true);
+  });
+
+  it('frakobling af den midterste i 3 efterlader ingen grupper med én øvelse', () => {
+    let s = withExercises(['bench', 'row', 'squat', 'curl']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'row') });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'squat') });
+    s = reducer(s, { type: 'UNLINK_SUPERSET', weId: weId(s, 'row') });
+    expect(groups(s)).toEqual([['bench'], ['row'], ['squat', 'curl']]);
+  });
+
+  it('sletning af en øvelse i et par opløser supersættet', () => {
+    let s = withExercises(['bench', 'row', 'squat']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') });
+    s = reducer(s, { type: 'REMOVE_EXERCISE', weId: weId(s, 'row') });
+    expect(s.active!.exercises.every((e) => e.supersetId === undefined)).toBe(true);
+  });
+
+  it('sidste øvelse kan ikke kobles, og gamle data indlæses uændret', () => {
+    const s = withExercises(['bench']);
+    expect(reducer(s, { type: 'LINK_SUPERSET', weId: weId(s, 'bench') })).toEqual(s);
+    expect(loadState(JSON.stringify(s)).active!.exercises[0].supersetId).toBeUndefined();
   });
 });

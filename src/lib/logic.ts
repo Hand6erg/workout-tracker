@@ -331,6 +331,44 @@ export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR): Warm
   return out;
 }
 
+/* ---------- Supersæt ---------- */
+
+/**
+ * Rydder op i supersæt: en gruppe er øvelser i træk med samme supersetId.
+ * Grupper der er blevet delt får nyt id, og grupper med kun én øvelse opløses.
+ */
+export function normalizeSupersets<T extends { supersetId?: string }>(list: T[]): T[] {
+  const out = list.map((e) => ({ ...e }));
+  const seen = new Set<string>();
+  let i = 0;
+  while (i < out.length) {
+    const id = out[i].supersetId;
+    let j = i + 1;
+    while (id && j < out.length && out[j].supersetId === id) j++;
+    if (id) {
+      const runId = seen.has(id) ? uid() : id;
+      seen.add(runId);
+      for (let k = i; k < j; k++) {
+        if (j - i < 2) delete out[k].supersetId;
+        else out[k].supersetId = runId;
+      }
+    }
+    i = j;
+  }
+  return out;
+}
+
+/** Øvelserne grupperet i rækkefølge: hvert supersæt er én gruppe, andre øvelser står alene */
+export function supersetGroups<T extends { supersetId?: string }>(list: T[]): T[][] {
+  const groups: T[][] = [];
+  for (const e of list) {
+    const last = groups[groups.length - 1];
+    if (last && e.supersetId && last[0].supersetId === e.supersetId) last.push(e);
+    else groups.push([e]);
+  }
+  return groups;
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;
@@ -367,6 +405,8 @@ export type Action =
   | { type: 'RENAME_WORKOUT'; name: string }
   | { type: 'ADD_EXERCISES'; exerciseIds: string[] }
   | { type: 'REMOVE_EXERCISE'; weId: string }
+  | { type: 'LINK_SUPERSET'; weId: string }
+  | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
@@ -447,7 +487,31 @@ export function reducer(state: AppState, action: Action): AppState {
         exercises: [...w.exercises, ...action.exerciseIds.map((id) => newWorkoutExercise(id))],
       }));
     case 'REMOVE_EXERCISE':
-      return mapActive(state, (w) => ({ ...w, exercises: w.exercises.filter((e) => e.id !== action.weId) }));
+      return mapActive(state, (w) => ({
+        ...w,
+        exercises: normalizeSupersets(w.exercises.filter((e) => e.id !== action.weId)),
+      }));
+    case 'LINK_SUPERSET':
+      return mapActive(state, (w) => {
+        const i = w.exercises.findIndex((e) => e.id === action.weId);
+        const cur = w.exercises[i];
+        const next = w.exercises[i + 1];
+        if (!cur || !next) return w;
+        if (cur.supersetId && cur.supersetId === next.supersetId) return w;
+        const id = cur.supersetId ?? next.supersetId ?? uid();
+        const oldNext = next.supersetId;
+        const exercises = w.exercises.map((e, k) =>
+          k === i || k === i + 1 || (oldNext && e.supersetId === oldNext) ? { ...e, supersetId: id } : e,
+        );
+        return { ...w, exercises: normalizeSupersets(exercises) };
+      });
+    case 'UNLINK_SUPERSET':
+      return mapActive(state, (w) => ({
+        ...w,
+        exercises: normalizeSupersets(
+          w.exercises.map((e) => (e.id === action.weId ? { ...e, supersetId: undefined } : e)),
+        ),
+      }));
     case 'ADD_SET':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => {
