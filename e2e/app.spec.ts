@@ -153,3 +153,20 @@ test('viser rekorder på øvelsens side (#22)', async ({ page }) => {
   await expect(records).toContainText('100 kg × 3');
   await expect(records).toContainText('Flest reps på 100 kg');
 });
+test('viser 🏆 på træningskortet i historikken (#28)', async ({ page }) => {
+  for (const weight of ['80', '90']) {
+    await page.getByRole('button', { name: 'Start Push' }).click();
+    const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+    await bench.getByLabel('Vægt sæt 1').fill(weight);
+    await bench.getByLabel('Reps sæt 1').fill('5');
+    await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+    await page.getByRole('button', { name: 'Afslut' }).click();
+    await page.getByRole('button', { name: 'Bekræft' }).click();
+  }
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const cards = page.getByRole('button', { name: 'Træning Push' });
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText('🏆 2 rekorder');
+  await expect(cards.nth(0).getByRole('img', { name: 'Ny rekord' })).toBeVisible();
+  await expect(cards.nth(1)).not.toContainText('🏆');
+});

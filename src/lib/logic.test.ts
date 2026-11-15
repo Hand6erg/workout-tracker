@@ -8,7 +8,9 @@ import {
   loadState,
   personalRecords,
   previousSets,
+  recordCount,
   recordsBrokenBy,
+  workoutRecords,
   reducer,
   STORAGE_KEY,
   toCsv,
@@ -208,6 +210,17 @@ describe('rekorder', () => {
     const sets = s.active!.exercises[0].sets;
     expect(recordsBrokenBy(s, 'bench', sets[0])).toContain('heaviest');
     expect(recordsBrokenBy(s, 'bench', sets[1])).toEqual([]);
+  });
+
+  it('finder rekorder pr. afsluttet træning ift. træningerne før (#28)', () => {
+    let s = logWorkout(initialState(), 'bench', [['80', '5']], T0);
+    s = logWorkout(s, 'bench', [['85', '5'], ['80', '6']], T0 + 86_400_000);
+    s = logWorkout(s, 'bench', [['70', '5']], T0 + 2 * 86_400_000);
+    const [newest, middle, oldest] = s.history;
+    expect(workoutRecords(s, oldest.id)).toEqual({});
+    expect(workoutRecords(s, middle.id)).toEqual({ bench: ['heaviest', '1rm', 'reps'] });
+    expect(recordCount(workoutRecords(s, middle.id))).toBe(3);
+    expect(workoutRecords(s, newest.id)).toEqual({});
   });
 
   it('kropsvægtsøvelser kan slå reps-rekord ved 0 kg', () => {
