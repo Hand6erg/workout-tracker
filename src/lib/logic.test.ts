@@ -577,3 +577,42 @@ describe('pausetimer i supersæt (#24)', () => {
     expect(s.rest).not.toBeNull();
   });
 });
+
+describe('supersæt i skabeloner og historik (#29)', () => {
+  function supersetDone() {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench', 'row', 'squat'] });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: s.active!.exercises[0].id });
+    for (const we of s.active!.exercises) {
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '8' } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 });
+    }
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+  }
+
+  it('gemmer supersæt i skabelonen og giver nye id ved start', () => {
+    let s = supersetDone();
+    const oldId = s.history[0].exercises[0].supersetId;
+    s = reducer(s, { type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: s.history[0].id, name: 'SS' });
+    const tpl = s.templates.at(-1)!;
+    expect(supersetGroups(tpl.exercises).map((g) => g.map((e) => e.exerciseId))).toEqual([['bench', 'row'], ['squat']]);
+    s = reducer(s, { type: 'START_WORKOUT', templateId: tpl.id, now: T0 + 1 });
+    const ex = s.active!.exercises;
+    expect(ex[0].supersetId).toBeTruthy();
+    expect(ex[0].supersetId).toBe(ex[1].supersetId);
+    expect(ex[0].supersetId).not.toBe(oldId);
+    expect(ex[2].supersetId).toBeUndefined();
+  });
+
+  it('opløser et supersæt i historikken, hvis den ene øvelse ikke blev lavet', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench', 'row'] });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: s.active!.exercises[0].id });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '8' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+    expect(s.history[0].exercises).toHaveLength(1);
+    expect(s.history[0].exercises[0].supersetId).toBeUndefined();
+  });
+});

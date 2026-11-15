@@ -1,6 +1,15 @@
 import { useMemo, useState } from 'react';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
-import { bestSet, formatDuration, formatKg, formatSet, recordCount, workoutRecords, workoutVolume } from '../lib/logic';
+import {
+  bestSet,
+  formatDuration,
+  formatKg,
+  formatSet,
+  recordCount,
+  supersetGroups,
+  workoutRecords,
+  workoutVolume,
+} from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
 
@@ -56,6 +65,13 @@ export function HistoryView() {
                 })}
               </tbody>
             </table>
+            {supersetGroups(w.exercises)
+              .filter((g) => g.length > 1)
+              .map((g) => (
+                <p key={g[0].supersetId} className="superset-note">
+                  Supersæt: {g.map((e) => exerciseById(e.exerciseId)?.name ?? '?').join(' + ')}
+                </p>
+              ))}
           </button>
           );
         })}

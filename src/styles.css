@@ -216,3 +216,4 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .superset { position: relative; border-left: 3px solid #8b5cf6; padding-left: 8px; margin: 18px 0 12px; }
 .superset .ex-block { margin: 8px 0; }
 .superset-tag { position: absolute; top: -10px; left: 8px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #a78bfa; }
+.superset-note { color: #a78bfa; font-size: 0.8rem; margin: 6px 0 0; }

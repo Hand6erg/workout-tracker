@@ -350,3 +350,35 @@ test('pausetimeren starter først når supersæt-runden er færdig (#24)', async
   await ohp.getByRole('button', { name: 'Udført sæt 1' }).click();
   await expect(page.getByRole('status', { name: 'Pausetimer' })).toBeVisible();
 });
+
+test('supersæt bevares i skabelon og vises i historikken (#29)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+  await picker.getByRole('button', { name: /^Roning/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (2)' }).click();
+  await workout.getByRole('article', { name: 'Bænkpres', exact: true }).getByRole('button', { name: 'Supersæt med næste' }).click();
+  for (const name of ['Bænkpres', 'Roning']) {
+    const ex = workout.getByRole('article', { name, exact: true });
+    await ex.getByLabel('Vægt sæt 1').fill('50');
+    await ex.getByLabel('Reps sæt 1').fill('8');
+    await ex.getByRole('button', { name: 'Udført sæt 1' }).click();
+  }
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: /^Træning / }).first();
+  await expect(card).toContainText('Supersæt: Bænkpres + Roning');
+  await card.click();
+  await page.getByRole('button', { name: 'Gem som skabelon' }).click();
+  await page.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  const tpl = page.getByRole('article', { name: /^Skabelon / }).last();
+  await expect(tpl).toContainText('Supersæt: 1× Bænkpres + 1× Roning');
+  await tpl.getByRole('button', { name: /^Start/ }).click();
+  await expect(page.getByRole('group', { name: 'Supersæt: Bænkpres + Roning' })).toBeVisible();
+});

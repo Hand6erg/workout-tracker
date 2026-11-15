@@ -358,6 +358,17 @@ export function normalizeSupersets<T extends { supersetId?: string }>(list: T[])
   return out;
 }
 
+/** Bygger nye øvelser og giver hvert supersæt et nyt id (så to træninger fra samme skabelon ikke deler id) */
+function withFreshSupersetIds<T extends { supersetId?: string }, R extends object>(list: T[], make: (e: T) => R): R[] {
+  const ids = new Map<string, string>();
+  return list.map((e) => {
+    const r = make(e);
+    if (!e.supersetId) return r;
+    if (!ids.has(e.supersetId)) ids.set(e.supersetId, uid());
+    return { ...r, supersetId: ids.get(e.supersetId) };
+  });
+}
+
 /** Øvelserne grupperet i rækkefølge: hvert supersæt er én gruppe, andre øvelser står alene */
 export function supersetGroups<T extends { supersetId?: string }>(list: T[]): T[][] {
   const groups: T[][] = [];
@@ -478,7 +489,7 @@ export function reducer(state: AppState, action: Action): AppState {
         id: uid(),
         name: tpl?.name ?? defaultWorkoutName(action.now),
         startedAt: action.now,
-        exercises: tpl ? tpl.exercises.map((e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
+        exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
       };
       return { ...state, active, rest: null };
     }
@@ -495,7 +506,8 @@ export function reducer(state: AppState, action: Action): AppState {
         }))
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return { ...state, active: null, rest: null };
-      const done: Workout = { ...state.active, exercises, finishedAt: action.now };
+      // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
+      const done: Workout = { ...state.active, exercises: normalizeSupersets(exercises), finishedAt: action.now };
       return { ...state, active: null, rest: null, history: [done, ...state.history] };
     }
     case 'RENAME_WORKOUT':
@@ -635,7 +647,13 @@ export function reducer(state: AppState, action: Action): AppState {
       const tpl: Template = {
         id: uid(),
         name: action.name.trim() || w.name,
-        exercises: w.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((x) => !x.warmup).length })),
+        exercises: normalizeSupersets(
+          w.exercises.map((e) => ({
+            exerciseId: e.exerciseId,
+            sets: e.sets.filter((x) => !x.warmup).length,
+            ...(e.supersetId ? { supersetId: e.supersetId } : {}),
+          })),
+        ),
       };
       return { ...state, templates: [...state.templates, tpl] };
     }
