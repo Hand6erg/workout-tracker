@@ -28,6 +28,10 @@ The owner only describes what to build. Claude builds, tests and pushes on its o
 2. New user-facing features get (or extend) a Playwright test in `e2e/`.
 3. Run `npm run check` (typecheck + unit + build + e2e). Everything must be green before pushing.
    - If Playwright can't download Chromium: `PW_CHROMIUM_PATH=/opt/pw-browsers/chromium npm run check`.
+   - Backend changes (`server/`): also run `cd server && npm run typecheck && npm test` with a test Postgres
+     (`docker run -d --name loeft-testdb -e POSTGRES_USER=loeft -e POSTGRES_PASSWORD=loeft -e POSTGRES_DB=loeft_test -p 5433:5432 postgres:17-alpine`; start `dockerd` first if needed),
+     and check `docker compose up` + `curl localhost:8787/health`. In Claude's cloud sandbox, Docker builds need the proxy + CA
+     (see `/root/.ccr/README.md`) – use a local copy of the Dockerfile for that, never commit proxy settings.
 4. Take a phone-width screenshot of what changed and look at it before saying you're done.
 5. Small commits with English messages, e.g. `Add rest timer setting`. Push to `staging` – never directly to `main`.
    `main` only changes through a PR `staging` → `main`, which the owner merges (or asks Claude to merge) after trying it on the staging site.
