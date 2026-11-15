@@ -1,4 +1,5 @@
 import { ConfirmButton, Empty } from '../components/ui';
+import { supersetGroups } from '../lib/logic';
 import { useStore } from '../lib/store';
 
 export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
@@ -35,8 +36,11 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
               </ConfirmButton>
             </header>
             <p className="muted">
-              {t.exercises
-                .map((e) => `${e.sets}× ${exerciseById(e.exerciseId)?.name ?? '?'}`)
+              {supersetGroups(t.exercises)
+                .map((g) => {
+                  const names = g.map((e) => `${e.sets}× ${exerciseById(e.exerciseId)?.name ?? '?'}`);
+                  return g.length > 1 ? `Supersæt: ${names.join(' + ')}` : names[0];
+                })
                 .join(', ')}
             </p>
             <button className="btn-secondary wide small" disabled={!!state.active} onClick={() => start(t.id)}>
