@@ -444,3 +444,19 @@ test('viser forslag til næste vægt og udfylder med ét tryk (#72)', async ({ p
   await bench.getByLabel('Vægt sæt 1').fill('65');
   await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('65');
 });
+
+test('forslag til næste vægt kan slås fra (#73)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await page.getByLabel('Vis forslag til næste vægt').uncheck();
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  await expect(page.getByRole('article', { name: 'Bænkpres', exact: true }).getByRole('button', { name: /^Sidst/ })).toHaveCount(0);
+});

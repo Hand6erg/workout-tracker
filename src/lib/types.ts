@@ -84,4 +84,6 @@ export interface AppState {
   bodyLog: BodyMeasurement[];
   /** Mål for antal træninger pr. uge (til stime) */
   weeklyGoal: number;
+  /** Vis forslag til næste vægt under træningen */
+  showHints: boolean;
 }

@@ -729,3 +729,12 @@ describe('udfyld forslag (#72)', () => {
     ]);
   });
 });
+
+describe('slå forslag fra (#73)', () => {
+  it('er slået til som standard, også for gamle data, og kan slås fra', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.showHints;
+    expect(loadState(JSON.stringify(old)).showHints).toBe(true);
+    expect(reducer(initialState(), { type: 'SET_SHOW_HINTS', on: false }).showHints).toBe(false);
+  });
+});

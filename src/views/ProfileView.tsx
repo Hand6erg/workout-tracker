@@ -77,6 +77,15 @@ export function ProfileView() {
         />
       </label>
 
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.showHints}
+          onChange={(e) => dispatch({ type: 'SET_SHOW_HINTS', on: e.target.checked })}
+        />
+        Vis forslag til næste vægt
+      </label>
+
       <BarAndPlates />
 
       <AccountSection />

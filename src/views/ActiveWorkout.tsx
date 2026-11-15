@@ -156,7 +156,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { state, dispatch, exerciseById } = useStore();
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
-  const hint = progressionHint(state, we.exerciseId);
+  const hint = state.showHints ? progressionHint(state, we.exerciseId) : null;
   const [plates, setPlates] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
   const all = state.active?.exercises ?? [];

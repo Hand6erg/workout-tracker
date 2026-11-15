@@ -236,3 +236,5 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .streak-dots span.on { background: var(--accent); }
 .hint { display: block; width: 100%; text-align: left; font-size: 0.8rem; color: var(--muted); padding: 2px 0 8px; }
 .hint strong { color: var(--ok); }
+.toggle { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--text); font-size: 0.95rem; }
+.toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
