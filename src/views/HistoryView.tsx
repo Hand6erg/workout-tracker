@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { MonthCalendar } from '../components/MonthCalendar';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   bestSet,
@@ -28,6 +29,7 @@ export function HistoryView() {
   return (
     <div className="page">
       <h1>Historik</h1>
+      {state.history.length > 0 && <MonthCalendar onOpen={setOpenId} />}
       {!state.history.length && <Empty>Ingen træninger endnu. Afslut en træning, så dukker den op her.</Empty>}
       <div className="cards">
         {state.history.map((w) => {
