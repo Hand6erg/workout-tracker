@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
 import type pg from 'pg';
 import { hashPassword, RateLimiter, requireAuth, signToken, verifyPassword, type AuthEnv } from './auth.js';
@@ -70,6 +71,47 @@ export function createApp(pool: pg.Pool, config: Config) {
     if (!rows[0]) return c.json({ error: 'unauthorized' }, 401);
     return c.json({ user: rows[0] });
   });
+
+  type StateRow = { state: unknown; version: number; updated_at: Date };
+  const stateJson = (r: StateRow) => ({ state: r.state, version: r.version, updatedAt: r.updated_at.toISOString() });
+
+  app.get('/state', auth, async (c) => {
+    const { rows } = await pool.query<StateRow>('SELECT state, version, updated_at FROM user_state WHERE user_id = $1', [
+      c.get('userId'),
+    ]);
+    if (!rows[0]) return c.json({ error: 'not_found' }, 404);
+    return c.json(stateJson(rows[0]));
+  });
+
+  app.put(
+    '/state',
+    auth,
+    bodyLimit({ maxSize: 5 * 1024 * 1024, onError: (c) => c.json({ error: 'too_large' }, 413) }),
+    async (c) => {
+      const body = (await c.req.json().catch(() => null)) as { state?: unknown; baseVersion?: unknown } | null;
+      const state = body?.state;
+      if (!state || typeof state !== 'object' || Array.isArray(state)) return c.json({ error: 'invalid_input' }, 400);
+      const base = body?.baseVersion;
+      if (base !== undefined && base !== null && !Number.isInteger(base)) return c.json({ error: 'invalid_input' }, 400);
+      const userId = c.get('userId');
+
+      // Insert if nothing is stored yet; otherwise update only if the client saw the latest version.
+      const { rows } = await pool.query<StateRow>(
+        `INSERT INTO user_state (user_id, state) VALUES ($1, $2)
+         ON CONFLICT (user_id) DO UPDATE
+           SET state = EXCLUDED.state, version = user_state.version + 1, updated_at = now()
+           WHERE user_state.version = $3
+         RETURNING state, version, updated_at`,
+        [userId, JSON.stringify(state), base ?? -1],
+      );
+      if (rows[0]) return c.json(stateJson(rows[0]));
+
+      const current = await pool.query<StateRow>('SELECT state, version, updated_at FROM user_state WHERE user_id = $1', [
+        userId,
+      ]);
+      return c.json({ error: 'conflict', current: stateJson(current.rows[0]) }, 409);
+    },
+  );
 
   app.onError((err, c) => {
     console.error(err);
