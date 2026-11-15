@@ -247,3 +247,18 @@ test('tilføjer opvarmningssæt ud fra første arbejdssæt (#25)', async ({ page
   await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('100');
   await expect(bench.getByRole('button', { name: 'Beregn opvarmning igen' })).toBeVisible();
 });
+
+test('indstilling for stang og skiver bruges af pladeberegneren (#30)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const settings = page.getByRole('region', { name: 'Stang og skiver' });
+  const p25 = settings.getByRole('button', { name: '25 kg', exact: true });
+  await p25.click();
+  await expect(p25).toHaveAttribute('aria-pressed', 'false');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByRole('button', { name: 'Skiver' }).click();
+  await expect(page.getByRole('status', { name: 'Skiver på hver side' })).toHaveText('Hver side: 20 + 20 kg');
+});

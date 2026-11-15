@@ -2,7 +2,16 @@ import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
 import { BarChart } from '../components/BarChart';
 import { ConfirmButton, Empty } from '../components/ui';
-import { formatKg, initialState, loadState, muscleDistribution, toCsv, weeklyVolume, workoutVolume } from '../lib/logic';
+import {
+  DEFAULT_PLATES,
+  formatKg,
+  initialState,
+  loadState,
+  muscleDistribution,
+  toCsv,
+  weeklyVolume,
+  workoutVolume,
+} from '../lib/logic';
 import { useStore } from '../lib/store';
 
 function download(name: string, content: string, type: string) {
@@ -50,6 +59,8 @@ export function ProfileView() {
           onChange={(e) => dispatch({ type: 'SET_REST_SECONDS', seconds: Number(e.target.value) })}
         />
       </label>
+
+      <BarAndPlates />
 
       <AccountSection />
 
@@ -164,6 +175,40 @@ function MuscleSplit() {
         </ul>
       )}
       {total > 0 && <p className="muted small-print">"Lidt" = under halvdelen af gennemsnittet for dine muskelgrupper.</p>}
+    </section>
+  );
+}
+
+function BarAndPlates() {
+  const { state, dispatch } = useStore();
+  return (
+    <section aria-label="Stang og skiver">
+      <label className="field">
+        Stangvægt
+        <select value={state.barWeight} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
+          {[20, 15, 10, 7, 5].map((w) => (
+            <option key={w} value={w}>
+              {w} kg
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="field-label">Skiver du har adgang til</p>
+      <div className="chips wrap" role="group" aria-label="Skiver">
+        {DEFAULT_PLATES.map((p) => {
+          const on = state.plates.includes(p);
+          return (
+            <button
+              key={p}
+              className={`chip ${on ? 'on' : ''}`}
+              aria-pressed={on}
+              onClick={() => dispatch({ type: 'TOGGLE_PLATE', plate: p })}
+            >
+              {String(p).replace('.', ',')} kg
+            </button>
+          );
+        })}
+      </div>
     </section>
   );
 }

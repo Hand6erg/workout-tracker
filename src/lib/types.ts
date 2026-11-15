@@ -61,4 +61,8 @@ export interface AppState {
   active: Workout | null;
   rest: RestTimer | null;
   restSeconds: number;
+  /** Stangvægt i kg til pladeberegner og opvarmning */
+  barWeight: number;
+  /** Skivestørrelser man har adgang til (kg) */
+  plates: number[];
 }
