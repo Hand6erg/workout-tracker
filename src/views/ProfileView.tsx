@@ -11,6 +11,7 @@ import {
   loadState,
   muscleDistribution,
   toCsv,
+  weekStreak,
   weeklyVolume,
   workoutVolume,
 } from '../lib/logic';
@@ -46,6 +47,7 @@ export function ProfileView() {
         </div>
       </div>
 
+      <StreakCard />
       <WeeklyVolume />
       <MuscleSplit />
       <BodySection />
@@ -60,6 +62,18 @@ export function ProfileView() {
           step={15}
           value={state.restSeconds}
           onChange={(e) => dispatch({ type: 'SET_REST_SECONDS', seconds: Number(e.target.value) })}
+        />
+      </label>
+
+      <label className="field">
+        Mål: træninger pr. uge
+        <input
+          type="number"
+          inputMode="numeric"
+          min={1}
+          max={7}
+          value={state.weeklyGoal}
+          onChange={(e) => dispatch({ type: 'SET_WEEKLY_GOAL', goal: Number(e.target.value) })}
         />
       </label>
 
@@ -220,6 +234,28 @@ function BarAndPlates() {
           );
         })}
       </div>
+    </section>
+  );
+}
+
+function StreakCard() {
+  const { state } = useStore();
+  const { weeks, thisWeek } = weekStreak(state, state.weeklyGoal, Date.now());
+  const goal = state.weeklyGoal;
+  return (
+    <section className="card streak" aria-label="Stime">
+      <strong className="streak-weeks">
+        🔥 {weeks === 1 ? '1 uge' : `${weeks} uger`} i træk
+      </strong>
+      <span className="muted">
+        {Math.min(thisWeek, goal)} af {goal} {goal === 1 ? 'træning' : 'træninger'} denne uge
+        {thisWeek >= goal ? ' ✓' : ''}
+      </span>
+      <span className="streak-dots" aria-hidden>
+        {Array.from({ length: goal }, (_, i) => (
+          <span key={i} className={i < thisWeek ? 'on' : ''} />
+        ))}
+      </span>
     </section>
   );
 }

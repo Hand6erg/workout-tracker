@@ -402,3 +402,24 @@ test('kalender i Historik markerer træningsdage og åbner træningen (#69)', as
   await cal.getByRole('button', { name: 'Forrige måned' }).click();
   await expect(cal.getByRole('button', { name: /: Push$/ })).toHaveCount(0);
 });
+
+test('viser stime og ugemål under Profil (#70)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const streak = page.getByRole('region', { name: 'Stime' });
+  await expect(streak).toContainText('0 af 2 træninger denne uge');
+  await page.getByLabel('Mål: træninger pr. uge').fill('1');
+  await expect(streak).toContainText('0 af 1 træning denne uge');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(streak).toContainText('1 af 1 træning denne uge ✓');
+  await expect(streak).toContainText('🔥 1 uge i træk');
+});
