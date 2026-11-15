@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
-import { doneSetCount, formatDuration, previousSets, uncheckedFilledCount } from '../lib/logic';
+import { doneSetCount, formatDuration, num, previousSets, recordsBrokenBy, uncheckedFilledCount, type RecordKind } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
 import type { WorkoutExercise } from '../lib/types';
 
@@ -99,6 +99,13 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   );
 }
 
+function recordText(kinds: RecordKind[], weight: string): string {
+  const names = kinds.map((k) =>
+    k === 'heaviest' ? 'tungeste vægt' : k === '1rm' ? 'estimeret 1RM' : `flest reps på ${num(weight) || 0} kg`,
+  );
+  return `Ny rekord: ${names.join(', ')}`;
+}
+
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { state, dispatch, exerciseById } = useStore();
   const ex = exerciseById(we.exerciseId);
@@ -126,8 +133,10 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         <tbody>
           {we.sets.map((s, i) => {
             const p = prev[i];
+            const records = s.done ? recordsBrokenBy(state, we.exerciseId, s) : [];
             return (
-              <tr key={s.id} className={s.done ? 'done' : ''}>
+              <Fragment key={s.id}>
+              <tr className={s.done ? 'done' : ''}>
                 <td>
                   <button
                     className="set-no"
@@ -176,6 +185,17 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                   </button>
                 </td>
               </tr>
+              {records.length > 0 && (
+                <tr className="pr-row">
+                  <td colSpan={6}>
+                    <span role="img" aria-label={recordText(records, s.weight)}>
+                      🏆
+                    </span>{' '}
+                    {recordText(records, s.weight)}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>
