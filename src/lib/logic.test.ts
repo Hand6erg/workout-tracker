@@ -6,7 +6,9 @@ import {
   initialState,
   IS_STAGING,
   loadState,
+  personalRecords,
   previousSets,
+  recordsBrokenBy,
   reducer,
   STORAGE_KEY,
   toCsv,
@@ -151,5 +153,65 @@ describe('gemmenøgle', () => {
   it('bruger den rigtige nøgle, når det ikke er staging', () => {
     expect(IS_STAGING).toBe(false);
     expect(STORAGE_KEY).toBe('loeft-state-v1');
+  });
+});
+
+describe('rekorder', () => {
+  function logWorkout(state: AppState, exerciseId: string, sets: [string, string][], now: number): AppState {
+    let s = reducer(state, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now });
+    });
+    return reducer(s, { type: 'FINISH_WORKOUT', now });
+  }
+  const done = (weight: string, reps: string) => ({ id: 'x', weight, reps, rpe: '', done: true });
+
+  it('finder ingen rekorder uden historik', () => {
+    const s = initialState();
+    expect(personalRecords(s, 'bench')).toEqual({ repsAtWeight: {} });
+    expect(recordsBrokenBy(s, 'bench', done('100', '5'))).toEqual([]);
+  });
+
+  it('finder tungeste vægt, bedste 1RM og flest reps pr. vægt', () => {
+    let s = logWorkout(initialState(), 'bench', [['80', '5'], ['90', '1']], T0);
+    s = logWorkout(s, 'bench', [['80', '8'], ['62,5', '10']], T0 + 86_400_000);
+    const r = personalRecords(s, 'bench');
+    expect(r.heaviest).toMatchObject({ weight: 90, reps: 1, date: T0 });
+    expect(r.best1RM).toMatchObject({ value: estimate1RM(80, 8), weight: 80, reps: 8 });
+    expect(r.repsAtWeight['80']).toMatchObject({ reps: 8, date: T0 + 86_400_000 });
+    expect(r.repsAtWeight['62.5'].reps).toBe(10);
+  });
+
+  it('afgør hvilke rekorder et nyt sæt slår', () => {
+    const s = logWorkout(initialState(), 'bench', [['80', '5']], T0);
+    expect(recordsBrokenBy(s, 'bench', done('85', '5'))).toEqual(['heaviest', '1rm']);
+    expect(recordsBrokenBy(s, 'bench', done('80', '6'))).toEqual(['1rm', 'reps']);
+    expect(recordsBrokenBy(s, 'bench', done('80', '5'))).toEqual([]);
+    expect(recordsBrokenBy(s, 'bench', { ...done('100', '5'), done: false })).toEqual([]);
+    expect(recordsBrokenBy(s, 'squat', done('100', '5'))).toEqual([]);
+  });
+
+  it('tæller tidligere sæt i den aktive træning med, men ikke senere', () => {
+    let s = logWorkout(initialState(), 'bench', [['80', '5']], T0);
+    s = reducer(s, { type: 'START_WORKOUT', now: T0 + 1 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const weId = s.active!.exercises[0].id;
+    s = reducer(s, { type: 'ADD_SET', weId });
+    const [first, second] = s.active!.exercises[0].sets;
+    s = reducer(s, { type: 'UPDATE_SET', weId, setId: first.id, patch: { weight: '90', reps: '5', done: true } });
+    s = reducer(s, { type: 'UPDATE_SET', weId, setId: second.id, patch: { weight: '85', reps: '5', done: true } });
+    const sets = s.active!.exercises[0].sets;
+    expect(recordsBrokenBy(s, 'bench', sets[0])).toContain('heaviest');
+    expect(recordsBrokenBy(s, 'bench', sets[1])).toEqual([]);
+  });
+
+  it('kropsvægtsøvelser kan slå reps-rekord ved 0 kg', () => {
+    const s = logWorkout(initialState(), 'pullup', [['', '8']], T0);
+    expect(recordsBrokenBy(s, 'pullup', done('', '10'))).toEqual(['reps']);
   });
 });
