@@ -297,3 +297,26 @@ test('viser graf over kropsmål (#26)', async ({ page }) => {
   await body.getByRole('button', { name: 'Talje' }).click();
   await expect(body).toContainText('Tilføj flere målinger for at se en graf.');
 });
+
+test('kropsmål kommer med i backup og gendannelse (#31)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  await body.getByLabel('Vægt (kg)').fill('81');
+  await body.getByRole('button', { name: 'Gem måling' }).click();
+
+  const csv = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Eksportér kropsmål (CSV)' }).click();
+  expect((await csv).suggestedFilename()).toMatch(/^kropsmaal-.*\.csv$/);
+
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Tag backup (JSON)' }).click();
+  const backup = await (await dl).path();
+
+  await page.getByRole('button', { name: 'Slet alle data' }).click();
+  await page.getByRole('button', { name: 'Tryk igen for at bekræfte' }).click();
+  await expect(body).toContainText('Ingen målinger endnu.');
+
+  await page.locator('input[type="file"]').setInputFiles(backup!);
+  await expect(page.getByRole('status').filter({ hasText: 'Gendannet' })).toHaveText('Gendannet 0 træninger og 1 kropsmål.');
+  await expect(body.getByRole('list', { name: 'Målinger' })).toContainText('81 kg');
+});

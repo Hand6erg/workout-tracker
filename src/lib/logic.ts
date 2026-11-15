@@ -630,6 +630,18 @@ export function loadState(raw: string | null): AppState {
 
 /* ---------- Eksport ---------- */
 
+/** Kropsmål som CSV (ældste først). Tal skrives med punktum, så regneark kan læse dem. */
+export function bodyToCsv(state: AppState): string {
+  const day = (t: number) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  const v = (n?: number) => (n === undefined ? '' : String(n));
+  const rows = [['Dato', 'Vægt (kg)', 'Fedt (%)', 'Talje (cm)']];
+  for (const m of [...state.bodyLog].sort((a, b) => a.date - b.date)) rows.push([day(m.date), v(m.weight), v(m.bodyFat), v(m.waist)]);
+  return rows.map((r) => r.join(',')).join('\n');
+}
+
 export function toCsv(state: AppState): string {
   const name = new Map(state.exercises.map((e) => [e.id, e.name]));
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
