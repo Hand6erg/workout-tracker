@@ -82,4 +82,6 @@ export interface AppState {
   plates: number[];
   /** Kropsmål, nyeste først */
   bodyLog: BodyMeasurement[];
+  /** Mål for antal træninger pr. uge (til stime) */
+  weeklyGoal: number;
 }

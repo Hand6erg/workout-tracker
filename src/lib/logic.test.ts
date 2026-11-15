@@ -21,8 +21,10 @@ import {
   STORAGE_KEY,
   bodyToCsv,
   toCsv,
+  trainingDays,
   uncheckedFilledCount,
   warmupSets,
+  weekStreak,
   weeklyVolume,
   workoutVolume,
 } from './logic';
@@ -614,5 +616,58 @@ describe('supersæt i skabeloner og historik (#29)', () => {
     s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
     expect(s.history[0].exercises).toHaveLength(1);
     expect(s.history[0].exercises[0].supersetId).toBeUndefined();
+  });
+});
+
+describe('kalender og stime (#68)', () => {
+  const at = (iso: string) => new Date(iso).getTime();
+  function withWorkouts(dates: string[]): AppState {
+    let s = initialState();
+    for (const d of dates) {
+      s = reducer(s, { type: 'START_WORKOUT', now: at(d) });
+      s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+      const we = s.active!.exercises[0];
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: at(d) });
+      s = reducer(s, { type: 'FINISH_WORKOUT', now: at(d) });
+    }
+    return s;
+  }
+
+  it('finder træningsdage i en måned', () => {
+    const s = withWorkouts(['2026-10-31T18:00', '2026-11-02T08:00', '2026-11-02T18:00', '2026-11-15T10:00']);
+    const days = trainingDays(s, 2026, 10);
+    expect(Object.keys(days).map(Number)).toEqual([2, 15]);
+    expect(days[2]).toHaveLength(2);
+    expect(trainingDays(s, 2026, 11)).toEqual({});
+  });
+
+  it('tæller uger i træk, og denne uge tæller først når målet er nået', () => {
+    // Uger: 26/10 og 2/11 med to træninger, ugen fra 9/11 med tre (10., 12. og søndag 15.)
+    const s = withWorkouts([
+      '2026-10-27T10:00', '2026-10-29T10:00',
+      '2026-11-03T10:00', '2026-11-05T10:00',
+      '2026-11-10T10:00', '2026-11-12T10:00',
+      '2026-11-15T10:00',
+    ]);
+    // Mandag 16. nov. starter en ny uge
+    expect(weekStreak(s, 2, at('2026-11-15T12:00'))).toEqual({ weeks: 3, thisWeek: 3 });
+    expect(weekStreak(s, 4, at('2026-11-15T12:00'))).toEqual({ weeks: 0, thisWeek: 3 });
+    expect(weekStreak(s, 2, at('2026-11-16T12:00'))).toEqual({ weeks: 3, thisWeek: 0 });
+    expect(weekStreak(s, 3, at('2026-11-16T12:00'))).toEqual({ weeks: 1, thisWeek: 0 });
+  });
+
+  it('en uge uden træning bryder stimen, også hen over årsskifte', () => {
+    const s = withWorkouts(['2026-12-15T10:00', '2026-12-29T10:00', '2027-01-05T10:00']);
+    expect(weekStreak(s, 1, at('2027-01-06T12:00'))).toEqual({ weeks: 2, thisWeek: 1 });
+    expect(weekStreak(initialState(), 2, at('2027-01-06T12:00'))).toEqual({ weeks: 0, thisWeek: 0 });
+  });
+
+  it('ugemål har standard 2 og grænser 1–7', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.weeklyGoal;
+    expect(loadState(JSON.stringify(old)).weeklyGoal).toBe(2);
+    expect(reducer(initialState(), { type: 'SET_WEEKLY_GOAL', goal: 9 }).weeklyGoal).toBe(7);
+    expect(reducer(initialState(), { type: 'SET_WEEKLY_GOAL', goal: 0 }).weeklyGoal).toBe(1);
   });
 });

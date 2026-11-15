@@ -32,6 +32,7 @@ export function initialState(): AppState {
     barWeight: DEFAULT_BAR,
     plates: [...DEFAULT_PLATES],
     bodyLog: [],
+    weeklyGoal: 2,
   };
 }
 
@@ -255,6 +256,41 @@ export function weeklyVolume(state: AppState, weeks: number, now: number): WeekV
   return out;
 }
 
+/** Dage i en måned (0 = januar) med afsluttede træninger: dag → træningernes id (ældste først) */
+export function trainingDays(state: AppState, year: number, month: number): Record<number, string[]> {
+  const out: Record<number, string[]> = {};
+  for (const w of [...state.history].sort((a, b) => a.startedAt - b.startedAt)) {
+    const d = new Date(w.startedAt);
+    if (d.getFullYear() !== year || d.getMonth() !== month) continue;
+    (out[d.getDate()] ??= []).push(w.id);
+  }
+  return out;
+}
+
+export interface Streak {
+  /** Uger i træk med mindst `perWeek` træninger (denne uge tæller først, når målet er nået) */
+  weeks: number;
+  /** Antal træninger i denne uge */
+  thisWeek: number;
+}
+
+export function weekStreak(state: AppState, perWeek: number, now: number): Streak {
+  const counts = new Map<number, number>();
+  for (const w of state.history) {
+    const k = startOfWeek(w.startedAt);
+    counts.set(k, (counts.get(k) ?? 0) + 1);
+  }
+  const current = startOfWeek(now);
+  const thisWeek = counts.get(current) ?? 0;
+  let weeks = thisWeek >= perWeek ? 1 : 0;
+  let ws = startOfWeek(current - DAY_MS);
+  while ((counts.get(ws) ?? 0) >= perWeek) {
+    weeks++;
+    ws = startOfWeek(ws - DAY_MS);
+  }
+  return { weeks, thisWeek };
+}
+
 export interface MuscleShare {
   muscle: Muscle;
   sets: number;
@@ -446,6 +482,7 @@ export type Action =
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
+  | { type: 'SET_WEEKLY_GOAL'; goal: number }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
@@ -621,6 +658,8 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'DELETE_MEASUREMENT':
       return { ...state, bodyLog: state.bodyLog.filter((m) => m.id !== action.id) };
+    case 'SET_WEEKLY_GOAL':
+      return { ...state, weeklyGoal: Math.max(1, Math.min(7, Math.round(action.goal) || 1)) };
     case 'SET_BAR_WEIGHT':
       return action.weight > 0 && action.weight <= 50 ? { ...state, barWeight: action.weight } : state;
     case 'TOGGLE_PLATE': {
