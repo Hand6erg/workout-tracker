@@ -1,0 +1,24 @@
+name: 💡 Ny funktion / idé
+description: Noget appen skal kunne
+labels: ["idé"]
+body:
+  - type: textarea
+    id: hvad
+    attributes:
+      label: Hvad skal appen kunne?
+      description: Beskriv det med dine egne ord. Det er fint at være kort.
+      placeholder: Fx "Når jeg slår en rekord, skal der komme en lille fejring."
+    validations:
+      required: true
+  - type: textarea
+    id: hvorfor
+    attributes:
+      label: Hvorfor / hvornår bruger du det? (valgfrit)
+  - type: textarea
+    id: billeder
+    attributes:
+      label: Billeder eller eksempler (valgfrit)
+      description: Træk screenshots ind her, fx fra en anden app du kan lide.
+  - type: markdown
+    attributes:
+      value: "Sæt label **klar**, når Claude må gå i gang."

@@ -30,9 +30,12 @@ Ejeren beskriver kun hvad der skal laves. Claude bygger, tester og pusher selv. 
 - Brug `ConfirmButton` i stedet for `window.confirm`.
 - Tilgængelighed: knapper og felter skal have tydelige labels (testene finder elementer via roller/labels).
 
-## Idéer til senere (backlog)
-- Grafer over volumen pr. uge og pr. muskelgruppe
-- Supersæt, opvarmningsberegner, pladeberegner
-- Kropsmål (vægt, fedtprocent) med graf
-- Rekorder (PR) med markering når en ny slås
-- Synkronisering mellem enheder (kræver backend/login)
+## Tickets (GitHub Issues)
+Idéer og fejl ligger som issues i `Hand6erg/workout-tracker`. Brug REST (`gh api repos/Hand6erg/workout-tracker/issues...`) – GraphQL og `gh issue` virker ikke i Claude-sessioner.
+- Labels: `idé` = kun en tanke, rør den ikke. `klar` = byg den. `i gang` = du arbejder på den. `spørgsmål` = venter på svar fra ejeren. `bug` = fejl.
+- Når du tager et issue: fjern `klar`, sæt `i gang`.
+- Tag issues med `klar` i rækkefølge: `bug` først, derefter laveste nummer.
+- Er beskrivelsen for uklar til at bygge: skriv et kort spørgsmål på dansk som kommentar, sæt `spørgsmål` (fjern `i gang`), og gå videre til næste.
+- Commit-besked slutter med `Lukker #<nr>`, så issuet lukkes automatisk ved push til `main`.
+- Efter push: kommentér på issuet på dansk – hvad er lavet, og hvordan det prøves på https://hand6erg.github.io/workout-tracker/ (CI deployer et par minutter efter push).
+- Opret selv nye issues med label `idé`, hvis du opdager fejl eller oplagte forbedringer undervejs – men byg dem ikke uden `klar`.

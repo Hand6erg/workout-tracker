@@ -1,0 +1,24 @@
+name: 🐞 Fejl
+description: Noget virker ikke som det skal
+labels: ["bug", "klar"]
+body:
+  - type: textarea
+    id: hvad
+    attributes:
+      label: Hvad skete der?
+      placeholder: Fx "Pausetimeren startede ikke efter andet sæt."
+    validations:
+      required: true
+  - type: textarea
+    id: forventet
+    attributes:
+      label: Hvad havde du forventet?
+  - type: input
+    id: enhed
+    attributes:
+      label: Telefon / browser
+      placeholder: Fx iPhone 15, Safari
+  - type: textarea
+    id: billeder
+    attributes:
+      label: Screenshot (valgfrit)
