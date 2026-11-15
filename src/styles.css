@@ -201,3 +201,6 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .plate-list { font-size: 1.1rem; font-weight: 600; }
 .chips.wrap { flex-wrap: wrap; overflow: visible; }
 .field-label { color: var(--muted); font-size: 0.9rem; margin: 0 0 6px; }
+.body-form { padding: 12px 14px; margin-bottom: 10px; }
+.body-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.body-grid .field { margin-bottom: 6px; font-size: 0.8rem; }

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
 import { BarChart } from '../components/BarChart';
+import { BodySection } from '../components/BodySection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   DEFAULT_PLATES,
@@ -46,6 +47,7 @@ export function ProfileView() {
 
       <WeeklyVolume />
       <MuscleSplit />
+      <BodySection />
 
       <h2 className="section">Indstillinger</h2>
       <label className="field">
