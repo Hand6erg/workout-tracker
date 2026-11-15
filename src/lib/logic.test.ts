@@ -328,3 +328,60 @@ describe('plader og opvarmning', () => {
     expect(warmupSets(20)).toEqual([]);
   });
 });
+
+describe('opvarmningssæt (#25)', () => {
+  function withBench(weight: string) {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps: '5' } });
+    return { s, weId: we.id };
+  }
+
+  it('indsætter opvarmning øverst ud fra første arbejdssæt', () => {
+    const { s: s0, weId } = withBench('100');
+    const s = reducer(s0, { type: 'ADD_WARMUP_SETS', weId });
+    const sets = s.active!.exercises[0].sets;
+    expect(sets.map((x) => [x.weight, x.reps, !!x.warmup])).toEqual([
+      ['20', '10', true],
+      ['40', '5', true],
+      ['60', '3', true],
+      ['80', '2', true],
+      ['100', '5', false],
+    ]);
+    // Igen: erstatter i stedet for at tilføje flere
+    expect(reducer(s, { type: 'ADD_WARMUP_SETS', weId }).active!.exercises[0].sets).toHaveLength(5);
+  });
+
+  it('skriver halve kilo med komma', () => {
+    const { s, weId } = withBench('120');
+    const sets = reducer(s, { type: 'ADD_WARMUP_SETS', weId }).active!.exercises[0].sets;
+    expect(sets[1].weight).toBe('47,5');
+  });
+
+  it('gør intet uden vægt i arbejdssættet', () => {
+    const { s, weId } = withBench('');
+    expect(reducer(s, { type: 'ADD_WARMUP_SETS', weId })).toEqual(s);
+  });
+
+  it('opvarmning tæller ikke i volumen, rekorder, statistik eller skabeloner', () => {
+    let { s, weId } = withBench('100');
+    s = reducer(s, { type: 'ADD_WARMUP_SETS', weId });
+    for (const set of s.active!.exercises[0].sets) s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+    const w = s.history[0];
+    expect(w.exercises[0].sets).toHaveLength(5);
+    expect(workoutVolume(w)).toBe(500);
+    expect(previousSets(s.history, 'bench').map((x) => x.weight)).toEqual(['100']);
+    expect(personalRecords(s, 'bench').repsAtWeight).toEqual({ '100': { reps: 5, date: T0 } });
+    expect(muscleDistribution(s, 0).find((m) => m.muscle === 'Bryst')!.sets).toBe(1);
+    s = reducer(s, { type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: w.id, name: 'B' });
+    expect(s.templates.at(-1)!.exercises[0].sets).toBe(1);
+  });
+
+  it('gamle data uden warmup-felt indlæses uændret', () => {
+    const { s } = withBench('80');
+    const loaded = loadState(JSON.stringify(s));
+    expect(loaded.active!.exercises[0].sets[0].warmup).toBeUndefined();
+  });
+});
