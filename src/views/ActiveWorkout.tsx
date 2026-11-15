@@ -2,12 +2,21 @@ import { Fragment, useState } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { PlateDialog } from '../components/PlateDialog';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
-import { doneSetCount, formatDuration, num, previousSets, recordsBrokenBy, uncheckedFilledCount, type RecordKind } from '../lib/logic';
+import {
+  doneSetCount,
+  formatDuration,
+  num,
+  previousSets,
+  recordsBrokenBy,
+  supersetGroups,
+  uncheckedFilledCount,
+  type RecordKind,
+} from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
 import type { WorkoutExercise } from '../lib/types';
 
 export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, exerciseById } = useStore();
   const now = useNow();
   const [picking, setPicking] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -52,9 +61,23 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
 
         {!w.exercises.length && <Empty>Tilføj din første øvelse for at komme i gang.</Empty>}
 
-        {w.exercises.map((we) => (
-          <ExerciseBlock key={we.id} we={we} />
-        ))}
+        {supersetGroups(w.exercises).map((g) =>
+          g.length > 1 ? (
+            <div
+              key={g[0].supersetId}
+              className="superset"
+              role="group"
+              aria-label={`Supersæt: ${g.map((e) => exerciseById(e.exerciseId)?.name ?? '').join(' + ')}`}
+            >
+              <span className="superset-tag">Supersæt</span>
+              {g.map((we) => (
+                <ExerciseBlock key={we.id} we={we} />
+              ))}
+            </div>
+          ) : (
+            <ExerciseBlock key={g[0].id} we={g[0]} />
+          ),
+        )}
 
         <button className="btn-secondary wide" onClick={() => setPicking(true)}>
           + Tilføj øvelser
@@ -113,6 +136,10 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const prev = previousSets(state.history, we.exerciseId);
   const [plates, setPlates] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
+  const all = state.active?.exercises ?? [];
+  const pos = all.findIndex((e) => e.id === we.id);
+  const next = all[pos + 1];
+  const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
   const lastWeight = [...we.sets].reverse().find((s) => s.weight)?.weight ?? '';
 
   return (
@@ -217,15 +244,27 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
       <button className="btn-secondary wide small" onClick={() => dispatch({ type: 'ADD_SET', weId: we.id })}>
         + Tilføj sæt
       </button>
+      <div className="ex-actions">
+        {canLink && (
+          <button className="btn-ghost small" onClick={() => dispatch({ type: 'LINK_SUPERSET', weId: we.id })}>
+            Supersæt med næste
+          </button>
+        )}
+        {we.supersetId && (
+          <button className="btn-ghost small" onClick={() => dispatch({ type: 'UNLINK_SUPERSET', weId: we.id })}>
+            Fjern fra supersæt
+          </button>
+        )}
       {isBarbell && (
         <button
-          className="btn-ghost wide small"
+          className="btn-ghost small"
           disabled={!we.sets.some((x) => !x.warmup && num(x.weight) > 0)}
           onClick={() => dispatch({ type: 'ADD_WARMUP_SETS', weId: we.id })}
         >
           {we.sets.some((x) => x.warmup) ? 'Beregn opvarmning igen' : 'Tilføj opvarmning'}
         </button>
       )}
+      </div>
       {plates && (
         <PlateDialog
           initialWeight={lastWeight}

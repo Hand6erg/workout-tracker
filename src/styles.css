@@ -212,3 +212,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .line-chart .ylbl { text-anchor: end; }
 .line-chart .xlbl.end { text-anchor: end; }
 .body-chart { margin-bottom: 10px; }
+.ex-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; margin-top: 6px; }
+.superset { position: relative; border-left: 3px solid #8b5cf6; padding-left: 8px; margin: 18px 0 12px; }
+.superset .ex-block { margin: 8px 0; }
+.superset-tag { position: absolute; top: -10px; left: 8px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #a78bfa; }
