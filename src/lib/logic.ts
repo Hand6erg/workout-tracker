@@ -31,6 +31,7 @@ export function initialState(): AppState {
     restSeconds: 90,
     barWeight: DEFAULT_BAR,
     plates: [...DEFAULT_PLATES],
+    bodyLog: [],
   };
 }
 
@@ -375,6 +376,8 @@ export type Action =
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
+  | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
+  | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
   | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
@@ -514,6 +517,16 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, rest: null };
     case 'SET_REST_SECONDS':
       return { ...state, restSeconds: Math.max(0, Math.min(600, Math.round(action.seconds))) };
+    case 'ADD_MEASUREMENT': {
+      const pos = (n?: number) => (n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined);
+      const m = { id: action.id, date: action.date, weight: pos(action.weight), bodyFat: pos(action.bodyFat), waist: pos(action.waist) };
+      if (m.weight === undefined && m.bodyFat === undefined && m.waist === undefined) return state;
+      if (m.bodyFat !== undefined && m.bodyFat >= 100) return state;
+      const clean = Object.fromEntries(Object.entries(m).filter(([, v]) => v !== undefined)) as typeof m;
+      return { ...state, bodyLog: [clean, ...state.bodyLog].sort((a, b) => b.date - a.date) };
+    }
+    case 'DELETE_MEASUREMENT':
+      return { ...state, bodyLog: state.bodyLog.filter((m) => m.id !== action.id) };
     case 'SET_BAR_WEIGHT':
       return action.weight > 0 && action.weight <= 50 ? { ...state, barWeight: action.weight } : state;
     case 'TOGGLE_PLATE': {
@@ -573,6 +586,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     templates: unionById(local.templates, remote.templates ?? []),
     history: unionById(local.history, remote.history ?? []).sort((a, b) => b.startedAt - a.startedAt),
     active: local.active ?? remote.active ?? null,
+    bodyLog: unionById(local.bodyLog ?? [], remote.bodyLog ?? []).sort((a, b) => b.date - a.date),
   };
 }
 
@@ -584,7 +598,9 @@ export function syncPayload(state: AppState): Omit<AppState, 'rest'> {
 
 /** Har enheden data, der er værd at beholde? (træninger, egne øvelser eller en igangværende træning) */
 export function hasOwnData(state: AppState): boolean {
-  return state.history.length > 0 || !!state.active || state.exercises.some((e) => e.custom);
+  return (
+    state.history.length > 0 || !!state.active || state.exercises.some((e) => e.custom) || state.bodyLog.length > 0
+  );
 }
 
 /* ---------- Gem/indlæs ---------- */

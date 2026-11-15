@@ -53,6 +53,18 @@ export interface RestTimer {
   total: number;
 }
 
+export interface BodyMeasurement {
+  id: string;
+  /** Tidspunkt i ms */
+  date: number;
+  /** Kropsvægt i kg */
+  weight?: number;
+  /** Fedtprocent */
+  bodyFat?: number;
+  /** Taljemål i cm */
+  waist?: number;
+}
+
 export interface AppState {
   version: 1;
   exercises: Exercise[];
@@ -65,4 +77,6 @@ export interface AppState {
   barWeight: number;
   /** Skivestørrelser man har adgang til (kg) */
   plates: number[];
+  /** Kropsmål, nyeste først */
+  bodyLog: BodyMeasurement[];
 }
