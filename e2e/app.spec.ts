@@ -320,3 +320,17 @@ test('kropsmål kommer med i backup og gendannelse (#31)', async ({ page }) => {
   await expect(page.getByRole('status').filter({ hasText: 'Gendannet' })).toHaveText('Gendannet 0 træninger og 1 kropsmål.');
   await expect(body.getByRole('list', { name: 'Målinger' })).toContainText('81 kg');
 });
+
+test('kobler øvelser sammen i et supersæt (#18)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByRole('button', { name: 'Supersæt med næste' }).click();
+  const group = workout.getByRole('group', { name: 'Supersæt: Bænkpres + Militærpres' });
+  await expect(group).toBeVisible();
+  await expect(group.getByRole('article')).toHaveCount(2);
+  await expect(bench.getByRole('button', { name: 'Supersæt med næste' })).toHaveCount(0);
+
+  await group.getByRole('article', { name: 'Militærpres' }).getByRole('button', { name: 'Fjern fra supersæt' }).click();
+  await expect(workout.getByRole('group', { name: /^Supersæt/ })).toHaveCount(0);
+});
