@@ -806,7 +806,7 @@ function mergeById<T extends Stamped>(mine: T[], theirs: T[], deleted: Record<st
     const m = byId.get(t.id);
     if (!m || (t.updatedAt ?? 0) > (m.updatedAt ?? 0)) byId.set(t.id, t);
   }
-  const order = [...mine.map((x) => x.id), ...theirs.map((x) => x.id).filter((id) => !mine.some((x) => x.id === id))];
+  const order = [...new Set([...mine.map((x) => x.id), ...theirs.map((x) => x.id)])];
   return order.filter((id) => !(id in deleted)).map((id) => byId.get(id)!);
 }
 
