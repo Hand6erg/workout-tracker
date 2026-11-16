@@ -86,6 +86,8 @@ export interface AppState {
   templates: Template[];
   history: Workout[];
   active: Workout | null;
+  /** Kladde af en afsluttet træning, der rettes i (#87). Kun på denne enhed – rører aldrig `active`. */
+  editing: Workout | null;
   rest: RestTimer | null;
   restSeconds: number;
   /** Stangvægt i kg til pladeberegner og opvarmning */

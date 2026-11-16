@@ -27,6 +27,7 @@ export function initialState(): AppState {
     templates: SEED_TEMPLATES,
     history: [],
     active: null,
+    editing: null,
     rest: null,
     restSeconds: 90,
     barWeight: DEFAULT_BAR,
@@ -540,10 +541,8 @@ export function lastExerciseNote(history: Workout[], exerciseId: string): { note
 
 /* ---------- Reducer ---------- */
 
-export type Action =
-  | { type: 'START_WORKOUT'; templateId?: string; now: number }
-  | { type: 'CANCEL_WORKOUT' }
-  | { type: 'FINISH_WORKOUT'; now: number; includeUnchecked?: boolean }
+/** Handlinger på en træning, der også virker på kladden (`edit: true`) i stedet for den aktive træning */
+export type WorkoutChange =
   | { type: 'RENAME_WORKOUT'; name: string }
   | { type: 'SET_EXERCISE_NOTE'; weId: string; note: string }
   | { type: 'SET_WORKOUT_NOTE'; note: string }
@@ -552,13 +551,38 @@ export type Action =
   | { type: 'LINK_SUPERSET'; weId: string }
   | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
-  | { type: 'PAUSE_WORKOUT'; now: number }
-  | { type: 'RESUME_WORKOUT'; now: number }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
-  | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
+  | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number };
+
+const WORKOUT_CHANGES = new Set<string>([
+  'RENAME_WORKOUT',
+  'SET_EXERCISE_NOTE',
+  'SET_WORKOUT_NOTE',
+  'ADD_EXERCISES',
+  'REMOVE_EXERCISE',
+  'LINK_SUPERSET',
+  'UNLINK_SUPERSET',
+  'ADD_SET',
+  'ADD_WARMUP_SETS',
+  'APPLY_HINT',
+  'REMOVE_SET',
+  'UPDATE_SET',
+  'TOGGLE_SET',
+] satisfies WorkoutChange['type'][]);
+
+export type Action =
+  | (WorkoutChange & { edit?: boolean })
+  | { type: 'START_WORKOUT'; templateId?: string; now: number }
+  | { type: 'CANCEL_WORKOUT' }
+  | { type: 'FINISH_WORKOUT'; now: number; includeUnchecked?: boolean }
+  | { type: 'PAUSE_WORKOUT'; now: number }
+  | { type: 'RESUME_WORKOUT'; now: number }
+  | { type: 'EDIT_WORKOUT'; workoutId: string }
+  | { type: 'SAVE_EDIT' }
+  | { type: 'CANCEL_EDIT' }
   | { type: 'ADJUST_REST'; delta: number }
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
@@ -612,12 +636,57 @@ export function workoutDuration(w: Workout, now: number): number {
   return Math.max(0, end - w.startedAt - (w.pausedMs ?? 0));
 }
 
+/** Dyb kopi af en træning, så kladden aldrig deler objekter med historikken */
+function structuredCloneWorkout(w: Workout): Workout {
+  return { ...w, exercises: w.exercises.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x })) })) };
+}
+
 function mapExercise(w: Workout, weId: string, fn: (e: WorkoutExercise) => WorkoutExercise): Workout {
   return { ...w, exercises: w.exercises.map((e) => (e.id === weId ? fn(e) : e)) };
 }
 
+/**
+ * Udfører en træningshandling på kladden (#90): kladden lægges midlertidigt ind som "aktiv" træning,
+ * så alle sæt-/øvelseshandlinger kan genbruges. Kun kladden tages med tilbage – den aktive træning,
+ * pausetimeren og resten af tilstanden røres aldrig. Historikken før kladden bruges til "forrige".
+ */
+function reduceDraft(state: AppState, action: WorkoutChange): AppState {
+  const draft = state.editing;
+  if (!draft) return state;
+  const scratch: AppState = {
+    ...state,
+    history: state.history.filter((w) => w.id !== draft.id && w.startedAt < draft.startedAt),
+    active: draft,
+    rest: null,
+  };
+  const editing = reducer(scratch, action).active;
+  return !editing || editing === draft ? state : { ...state, editing };
+}
+
 export function reducer(state: AppState, action: Action): AppState {
+  if ('edit' in action && action.edit && WORKOUT_CHANGES.has(action.type)) {
+    const { edit: _edit, ...change } = action;
+    return reduceDraft(state, change as WorkoutChange);
+  }
   switch (action.type) {
+    case 'EDIT_WORKOUT': {
+      const w = state.history.find((x) => x.id === action.workoutId);
+      return w ? { ...state, editing: structuredCloneWorkout(w) } : state;
+    }
+    case 'CANCEL_EDIT':
+      return state.editing ? { ...state, editing: null } : state;
+    case 'SAVE_EDIT': {
+      const draft = state.editing;
+      if (!draft) return state;
+      if (!state.history.some((w) => w.id === draft.id)) return { ...state, editing: null }; // slettet imens
+      const exercises = draft.exercises
+        .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done || s.reps.trim() !== '').map((s) => ({ ...s, done: true })) }))
+        .filter((e) => e.sets.length > 0);
+      if (!exercises.length) return state; // en tom træning gemmes ikke – brug "Slet" i stedet
+      const saved: Workout = { ...draft, exercises: normalizeSupersets(exercises) };
+      const history = state.history.map((w) => (w.id === saved.id ? saved : w)).sort((a, b) => b.startedAt - a.startedAt);
+      return { ...state, history, editing: null };
+    }
     case 'START_WORKOUT': {
       if (state.active) return state;
       const tpl = state.templates.find((t) => t.id === action.templateId);
@@ -956,6 +1025,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
       .map(({ updatedAt: _u, ...w }) => w)
       .sort((a, b) => b.startedAt - a.startedAt),
     active: active && active.id in deleted ? null : active,
+    editing: local.editing && local.editing.id in deleted ? null : (local.editing ?? null),
     bodyLog: mergeById(
       (local.bodyLog ?? []).map((m) => ({ ...m, updatedAt: 1 })),
       (remote.bodyLog ?? []).map((m) => ({ ...m, updatedAt: 0 })),
@@ -973,9 +1043,9 @@ export function trackedReducer(state: AppState, action: Action & { at?: number }
   return stampChanges(state, next, action.at ?? Date.now());
 }
 
-/** Det, der sendes til serveren (pausetimeren hører kun til denne enhed). */
-export function syncPayload(state: AppState): Omit<AppState, 'rest'> {
-  const { rest: _rest, ...rest } = state;
+/** Det, der sendes til serveren (pausetimeren og en kladde under redigering hører kun til denne enhed). */
+export function syncPayload(state: AppState): Omit<AppState, 'rest' | 'editing'> {
+  const { rest: _rest, editing: _editing, ...rest } = state;
   return rest;
 }
 
