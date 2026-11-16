@@ -31,6 +31,8 @@ export interface WorkoutExercise {
   sets: SetEntry[];
   /** Øvelser med samme id i træk udgør et supersæt */
   supersetId?: string;
+  /** Note til øvelsen i denne træning (fx "sædehøjde 4") */
+  note?: string;
 }
 
 export interface Workout {
@@ -39,6 +41,8 @@ export interface Workout {
   startedAt: number;
   finishedAt?: number;
   exercises: WorkoutExercise[];
+  /** Note til hele træningen (fx "sov dårligt") */
+  note?: string;
 }
 
 export interface TemplateExercise {

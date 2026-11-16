@@ -6,6 +6,8 @@ import {
   hasOwnData,
   initialState,
   isoWeek,
+  lastExerciseNote,
+  NOTE_MAX,
   muscleDistribution,
   IS_STAGING,
   loadState,
@@ -808,5 +810,78 @@ describe('pausealarm (#84)', () => {
     expect(mergeStates(pc, phone).restSound).toBe(false);
     expect(mergeStates(phone, pc).restSound).toBe(false);
     expect(mergeStates({ ...initialState(), restVibrate: false, settingsAt: 300 }, phone).restVibrate).toBe(false);
+  });
+});
+
+describe('noter (#99)', () => {
+  function withBench() {
+    const s = reducer(startWith(initialState()), { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    return { s, weId: s.active!.exercises[0].id };
+  }
+
+  it('sætter, renser og fjerner en note på en øvelse', () => {
+    const { s, weId } = withBench();
+    const a = reducer(s, { type: 'SET_EXERCISE_NOTE', weId, note: '  sædehøjde 4  ' });
+    expect(a.active!.exercises[0].note).toBe('sædehøjde 4');
+    const b = reducer(a, { type: 'SET_EXERCISE_NOTE', weId, note: '   ' });
+    expect('note' in b.active!.exercises[0]).toBe(false);
+  });
+
+  it('afkorter lange noter', () => {
+    const { s, weId } = withBench();
+    const a = reducer(s, { type: 'SET_EXERCISE_NOTE', weId, note: 'x'.repeat(NOTE_MAX + 50) });
+    expect(a.active!.exercises[0].note).toHaveLength(NOTE_MAX);
+    const b = reducer(a, { type: 'SET_WORKOUT_NOTE', note: 'y'.repeat(NOTE_MAX + 1) });
+    expect(b.active!.note).toHaveLength(NOTE_MAX);
+  });
+
+  it('sætter, renser og fjerner en note på hele træningen', () => {
+    const s = startWith(initialState());
+    const a = reducer(s, { type: 'SET_WORKOUT_NOTE', note: ' sov dårligt ' });
+    expect(a.active!.note).toBe('sov dårligt');
+    expect(reducer(a, { type: 'SET_WORKOUT_NOTE', note: 'sov dårligt' })).toBe(a);
+    expect('note' in reducer(a, { type: 'SET_WORKOUT_NOTE', note: '' }).active!).toBe(false);
+  });
+
+  it('gør intet uden en igangværende træning', () => {
+    const s = initialState();
+    expect(reducer(s, { type: 'SET_WORKOUT_NOTE', note: 'hej' })).toBe(s);
+  });
+
+  it('noterne gemmes med træningen, når den afsluttes', () => {
+    let { s, weId } = withBench();
+    s = reducer(s, { type: 'SET_EXERCISE_NOTE', weId, note: 'smal greb' });
+    s = reducer(s, { type: 'SET_WORKOUT_NOTE', note: 'god dag' });
+    const setId = s.active!.exercises[0].sets[0].id;
+    s = reducer(s, { type: 'UPDATE_SET', weId, setId, patch: { weight: '60', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId, setId, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    expect(s.history[0].note).toBe('god dag');
+    expect(s.history[0].exercises[0].note).toBe('smal greb');
+    expect(loadState(JSON.stringify(s)).history[0].exercises[0].note).toBe('smal greb');
+  });
+
+  it('lastExerciseNote finder den nyeste note og springer træninger uden note over', () => {
+    const w = (id: string, at: number, note?: string) => ({
+      id,
+      name: id,
+      startedAt: at,
+      finishedAt: at + 1,
+      exercises: [{ id: id + 'e', exerciseId: 'bench', sets: [], ...(note ? { note } : {}) }],
+    });
+    const history = [w('c', 300), w('b', 200, 'sædehøjde 4'), w('a', 100, 'gammel')];
+    expect(lastExerciseNote(history, 'bench')).toEqual({ note: 'sædehøjde 4', date: 200 });
+    expect(lastExerciseNote(history, 'squat')).toBeNull();
+    expect(lastExerciseNote([w('x', 1, '  ')], 'bench')).toBeNull();
+  });
+
+  it('gamle data uden noter indlæses uændret', () => {
+    const old = {
+      ...initialState(),
+      history: [{ id: 'w', name: 'Gammel', startedAt: 1, finishedAt: 2, exercises: [{ id: 'e', exerciseId: 'bench', sets: [] }] }],
+    };
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.history).toEqual(old.history);
+    expect(lastExerciseNote(loaded.history, 'bench')).toBeNull();
   });
 });
