@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatDuration, IS_STAGING } from './lib/logic';
+import { useRestAlerts } from './lib/alerts';
 import { useNow, useStore } from './lib/store';
 import { ActiveWorkout } from './views/ActiveWorkout';
 import { ExercisesView } from './views/ExercisesView';
@@ -21,6 +22,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('start');
   const [workoutOpen, setWorkoutOpen] = useState(true);
   const showWorkout = !!state.active && workoutOpen;
+  useRestAlerts();
 
   return (
     <div className="app">
