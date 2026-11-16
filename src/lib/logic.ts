@@ -980,6 +980,12 @@ export function stampChanges(prev: AppState, next: AppState, now: number): AppSt
     return changed ? res : after;
   };
   if (prev.templates !== next.templates) out = { ...out, templates: touch(prev.templates, out.templates) };
+  // En rettet træning (#91) får et tidsstempel, så rettelsen vinder på de andre enheder. Nye træninger stemples ikke.
+  if (prev.history !== next.history) {
+    const old = new Map(prev.history.map((w) => [w.id, w]));
+    const edited = (w: Workout) => old.has(w.id) && old.get(w.id) !== w;
+    if (out.history.some(edited)) out = { ...out, history: out.history.map((w) => (edited(w) ? { ...w, updatedAt: now } : w)) };
+  }
   if (prev.exercises !== next.exercises) out = { ...out, exercises: touch(prev.exercises, out.exercises) };
   if (SETTINGS.some((k) => prev[k] !== next[k])) out = { ...out, settingsAt: now };
   return out;
@@ -998,7 +1004,8 @@ function mergeById<T extends Stamped>(mine: T[], theirs: T[], deleted: Record<st
 
 /**
  * Fletter data fra serveren ind i de lokale data (#38):
- * - træninger og kropsmål samles efter id (lokal udgave vinder ved samme id) – intet tabes eller dubleres
+ * - træninger og kropsmål samles efter id – intet tabes eller dubleres. En rettet træning (med `updatedAt`)
+ *   vinder over en ældre udgave; ellers vinder den lokale udgave (#91)
  * - skabeloner og egne øvelser: den nyeste ændring vinder
  * - indstillinger: den enhed, der ændrede dem senest, vinder
  * - slettede ting forbliver slettede på begge enheder
@@ -1017,13 +1024,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     deleted,
     exercises: mergeById(local.exercises, remote.exercises ?? [], deleted),
     templates: mergeById(local.templates, remote.templates ?? [], deleted),
-    history: mergeById(
-      local.history.map((w) => ({ ...w, updatedAt: 1 })),
-      (remote.history ?? []).map((w) => ({ ...w, updatedAt: 0 })),
-      deleted,
-    )
-      .map(({ updatedAt: _u, ...w }) => w)
-      .sort((a, b) => b.startedAt - a.startedAt),
+    history: mergeById(local.history, remote.history ?? [], deleted).sort((a, b) => b.startedAt - a.startedAt),
     active: active && active.id in deleted ? null : active,
     editing: local.editing && local.editing.id in deleted ? null : (local.editing ?? null),
     bodyLog: mergeById(
