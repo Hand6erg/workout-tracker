@@ -33,6 +33,7 @@ import {
   weeklyVolume,
   workoutVolume,
   workoutDuration,
+  syncPayload,
 } from './logic';
 import type { AppState } from './types';
 
@@ -926,5 +927,110 @@ describe('pause i træningen (#115)', () => {
     const w = { id: 'x', name: 'A', startedAt: T0, finishedAt: T0 + 3_600_000, exercises: [] };
     expect(workoutDuration(w, 0)).toBe(3_600_000);
     expect(workoutDuration({ ...w, finishedAt: undefined }, T0)).toBe(0);
+  });
+});
+
+describe('ret en afsluttet træning (#90)', () => {
+  /** Logger en træning med ét sæt bænkpres (80 × 5) og et pausetimer-forløb */
+  function logged(at = T0): AppState {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: at });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '80', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: at });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: at + 3_600_000 });
+  }
+
+  it('retter sæt, tilføjer sæt og øvelser og gemmer på samme plads med samme id', () => {
+    let s = logged(T0 - 86_400_000);
+    s = { ...logged(T0), history: [...logged(T0).history, ...s.history] };
+    const target = s.history[1];
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: target.id });
+    expect(s.editing!.id).toBe(target.id);
+    const we = s.editing!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '85' }, edit: true });
+    s = reducer(s, { type: 'ADD_SET', weId: we.id, edit: true });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['squat', 'row'], edit: true });
+    const squat = s.editing!.exercises[1];
+    s = reducer(s, { type: 'UPDATE_SET', weId: squat.id, setId: squat.sets[0].id, patch: { weight: '100', reps: '3' }, edit: true });
+    s = reducer(s, { type: 'REMOVE_EXERCISE', weId: s.editing!.exercises[2].id, edit: true });
+    expect(s.history[1]).toBe(target); // historikken er urørt indtil der gemmes
+
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.editing).toBeNull();
+    expect(s.history).toHaveLength(2);
+    const saved = s.history[1];
+    expect(saved.id).toBe(target.id);
+    expect(saved.startedAt).toBe(target.startedAt);
+    expect(saved.exercises.map((e) => e.exerciseId)).toEqual(['bench', 'squat']);
+    expect(saved.exercises[0].sets.map((x) => [x.weight, x.reps, x.done])).toEqual([
+      ['85', '5', true],
+      ['85', '5', true],
+    ]);
+    expect(saved.exercises[1].sets[0]).toMatchObject({ weight: '100', reps: '3', done: true });
+  });
+
+  it('annullér lader historikken være urørt', () => {
+    let s = logged();
+    const before = s.history;
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: before[0].id });
+    const we = s.editing!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '8' }, edit: true });
+    s = reducer(s, { type: 'CANCEL_EDIT' });
+    expect(s.editing).toBeNull();
+    expect(s.history).toBe(before);
+    expect(s.history[0].exercises[0].sets[0].weight).toBe('80');
+  });
+
+  it('rører aldrig den aktive træning eller pausetimeren', () => {
+    let s = logged();
+    s = reducer(s, { type: 'START_WORKOUT', now: T0 + 7_200_000 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const active = s.active;
+    const rest = s.rest;
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    const we = s.editing!.exercises[0];
+    s = reducer(s, { type: 'ADD_SET', weId: we.id, edit: true });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: s.editing!.exercises[0].sets[1].id, now: T0 + 7_300_000, edit: true });
+    s = reducer(s, { type: 'RENAME_WORKOUT', name: 'Rettet', edit: true });
+    expect(s.active).toBe(active);
+    expect(s.rest).toBe(rest);
+    expect(s.rest).toBeNull();
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.active).toBe(active);
+    expect(s.history[0].name).toBe('Rettet');
+    // Og omvendt: almindelige handlinger rammer stadig den aktive træning, ikke kladden
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    const draft = s.editing;
+    s = reducer(s, { type: 'RENAME_WORKOUT', name: 'Aktiv' });
+    expect(s.active!.name).toBe('Aktiv');
+    expect(s.editing).toBe(draft);
+  });
+
+  it('en kladde uden øvelser kan ikke gemmes', () => {
+    let s = logged();
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    s = reducer(s, { type: 'REMOVE_EXERCISE', weId: s.editing!.exercises[0].id, edit: true });
+    expect(reducer(s, { type: 'SAVE_EDIT' })).toBe(s);
+    expect(s.history[0].exercises).toHaveLength(1);
+  });
+
+  it('dropper kladden, hvis træningen er slettet imens', () => {
+    let s = logged();
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    s = reducer(s, { type: 'DELETE_WORKOUT', workoutId: s.history[0].id });
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.history).toHaveLength(0);
+    expect(s.editing).toBeNull();
+    expect(reducer(s, { type: 'EDIT_WORKOUT', workoutId: 'findes-ikke' })).toBe(s);
+  });
+
+  it('gamle gemte data uden kladde indlæses, og kladden sendes ikke til serveren', () => {
+    const old = JSON.stringify({ ...logged(), editing: undefined });
+    const s = loadState(old);
+    expect(s.editing).toBeNull();
+    expect(s.history).toHaveLength(1);
+    const withDraft = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    expect('editing' in syncPayload(withDraft)).toBe(false);
   });
 });
