@@ -552,6 +552,8 @@ export type Action =
   | { type: 'LINK_SUPERSET'; weId: string }
   | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
+  | { type: 'PAUSE_WORKOUT'; now: number }
+  | { type: 'RESUME_WORKOUT'; now: number }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
@@ -597,6 +599,19 @@ function mapActive(state: AppState, fn: (w: Workout) => Workout): AppState {
   return active === state.active ? state : { ...state, active };
 }
 
+/** Afslutter en igangværende pause og lægger den til den samlede pausetid */
+function endPause(w: Workout, now: number): Workout {
+  if (!w.pausedAt) return w;
+  const { pausedAt, ...rest } = w;
+  return { ...rest, pausedMs: (w.pausedMs ?? 0) + Math.max(0, now - pausedAt) };
+}
+
+/** Træningens varighed i ms – tid sat på pause tæller ikke med */
+export function workoutDuration(w: Workout, now: number): number {
+  const end = w.finishedAt ?? w.pausedAt ?? now;
+  return Math.max(0, end - w.startedAt - (w.pausedMs ?? 0));
+}
+
 function mapExercise(w: Workout, weId: string, fn: (e: WorkoutExercise) => WorkoutExercise): Workout {
   return { ...w, exercises: w.exercises.map((e) => (e.id === weId ? fn(e) : e)) };
 }
@@ -628,9 +643,13 @@ export function reducer(state: AppState, action: Action): AppState {
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return { ...state, active: null, rest: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
-      const done: Workout = { ...state.active, exercises: normalizeSupersets(exercises), finishedAt: action.now };
+      const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
       return { ...state, active: null, rest: null, history: [done, ...state.history] };
     }
+    case 'PAUSE_WORKOUT':
+      return mapActive(state, (w) => (w.pausedAt ? w : { ...w, pausedAt: action.now }));
+    case 'RESUME_WORKOUT':
+      return mapActive(state, (w) => endPause(w, action.now));
     case 'RENAME_WORKOUT':
       return mapActive(state, (w) => ({ ...w, name: action.name }));
     case 'SET_EXERCISE_NOTE':
