@@ -90,6 +90,10 @@ export interface AppState {
   weeklyGoal: number;
   /** Vis forslag til næste vægt under træningen */
   showHints: boolean;
+  /** Bip, når pausen er slut */
+  restSound: boolean;
+  /** Vibration, når pausen er ved at være / er slut */
+  restVibrate: boolean;
   /** Hvornår indstillingerne sidst blev ændret (0 = aldrig). Den nyeste ændring vinder ved fletning. */
   settingsAt: number;
   /** Slettede træninger, skabeloner, øvelser og kropsmål: id → tidspunkt. Så de forbliver slettede på alle enheder. */
