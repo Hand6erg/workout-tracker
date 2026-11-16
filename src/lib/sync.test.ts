@@ -353,3 +353,65 @@ describe('online-gemning', () => {
     expect(app.loggedOut).toBe(true);
   });
 });
+
+describe('rettede træninger synkroniseres (#91)', () => {
+  const T = 1_700_000_000_000;
+  const logged = (): AppState => {
+    let s = trackedReducer(initialState(), { type: 'START_WORKOUT', now: T, at: T });
+    s = trackedReducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'], at: T });
+    const we = s.active!.exercises[0];
+    s = trackedReducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '80', reps: '5' }, at: T });
+    s = trackedReducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T, at: T });
+    return trackedReducer(s, { type: 'FINISH_WORKOUT', now: T + 3_600_000, at: T + 3_600_000 });
+  };
+  const editWeight = (s: AppState, weight: string, at: number): AppState => {
+    s = trackedReducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id, at });
+    const we = s.editing!.exercises[0];
+    s = trackedReducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight }, edit: true, at });
+    return trackedReducer(s, { type: 'SAVE_EDIT', at });
+  };
+  const weightOf = (s: AppState) => s.history[0].exercises[0].sets[0].weight;
+
+  it('en ny træning stemples ikke, men en gemt rettelse gør', () => {
+    const a = logged();
+    expect(a.history[0].updatedAt).toBeUndefined();
+    const edited = editWeight(a, '85', T + 9_000);
+    expect(edited.history[0].updatedAt).toBe(T + 9_000);
+  });
+
+  it('en rettelse på enhed A når frem til enhed B, der har den gamle udgave', () => {
+    const b = logged();
+    const a = editWeight(b, '85', T + 9_000);
+    const onB = mergeStates(b, syncPayload(a) as AppState);
+    expect(onB.history).toHaveLength(1);
+    expect(weightOf(onB)).toBe('85');
+    // og A beholder sin rettelse, når B's gamle udgave flettes ind
+    expect(weightOf(mergeStates(a, syncPayload(b) as AppState))).toBe('85');
+  });
+
+  it('to rettelser: den nyeste vinder på begge enheder, uden tab eller dubletter', () => {
+    const base = logged();
+    const extra = w('x', T - 86_400_000);
+    const a = editWeight({ ...base, history: [...base.history, extra] }, '85', T + 9_000);
+    const b = editWeight({ ...base, history: [...base.history, extra] }, '90', T + 20_000);
+    for (const m of [mergeStates(a, b), mergeStates(b, a)]) {
+      expect(m.history.map((x) => x.id)).toEqual([base.history[0].id, 'x']);
+      expect(weightOf(m)).toBe('90');
+    }
+  });
+
+  it('gamle træninger uden tidsstempel opfører sig som før (lokal vinder)', () => {
+    const m = mergeStates(withHistory(w('a', 1, 'lokal')), withHistory(w('a', 1, 'online')));
+    expect(m.history[0].name).toBe('lokal');
+  });
+
+  it('en kladde, der ikke er gemt, sendes aldrig til serveren', () => {
+    let s = logged();
+    s = trackedReducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id, at: T + 5 });
+    expect(s.editing).not.toBeNull();
+    const payload = syncPayload(s);
+    expect('editing' in payload).toBe(false);
+    expect(JSON.stringify(payload)).not.toContain('"editing"');
+    expect(s.history[0].updatedAt).toBeUndefined();
+  });
+});

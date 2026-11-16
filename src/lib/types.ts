@@ -47,6 +47,8 @@ export interface Workout {
   exercises: WorkoutExercise[];
   /** Note til hele træningen (fx "sov dårligt") */
   note?: string;
+  /** Hvornår træningen sidst blev rettet efter den var afsluttet (til fletning mellem enheder, #91) */
+  updatedAt?: number;
 }
 
 export interface TemplateExercise {
