@@ -75,6 +75,7 @@ export function HistoryView() {
                   Supersæt: {g.map((e) => exerciseById(e.exerciseId)?.name ?? '?').join(' + ')}
                 </p>
               ))}
+            {w.note && <p className="workout-note-line">📝 {w.note}</p>}
           </button>
           );
         })}
@@ -116,6 +117,7 @@ function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
       }
     >
       <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
+      {w.note && <p className="workout-note-full">📝 {w.note}</p>}
       {w.exercises.map((e) => (
         <section key={e.id} className="detail-ex">
           <h3>{exerciseById(e.exerciseId)?.name}</h3>

@@ -465,6 +465,41 @@ test('note på en øvelse vises næste gang og i historikken (#100)', async ({ p
   await expect(bench.getByLabel('Skriv note til Bænkpres')).toHaveCount(0);
 });
 
+test('note til hele træningen vises på kortet og i detaljen (#101)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await page.getByLabel('Note til træningen').fill('sov dårligt');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card.getByText('📝 sov dårligt')).toBeVisible();
+  await card.click();
+  await expect(page.getByRole('dialog').getByText('📝 sov dårligt')).toBeVisible();
+});
+
+test('træning uden note viser ingen tom notelinje (#101)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await page.getByLabel('Note til træningen').fill('   ');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('📝')).toHaveCount(0);
+  await card.click();
+  await expect(page.getByRole('dialog').getByText('📝')).toHaveCount(0);
+});
+
 test('sætter træningen på pause og fortsætter (#115)', async ({ page }) => {
   await page.clock.install();
   await page.goto('/');

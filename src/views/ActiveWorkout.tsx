@@ -99,6 +99,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         <button className="btn-secondary wide" onClick={() => setPicking(true)}>
           + Tilføj øvelser
         </button>
+        <WorkoutNote />
         <ConfirmButton className="btn-danger wide" onConfirm={() => dispatch({ type: 'CANCEL_WORKOUT' })}>
           Annullér træning
         </ConfirmButton>
@@ -367,5 +368,28 @@ function RestBar() {
         Spring over
       </button>
     </div>
+  );
+}
+
+/** Note til hele træningen (fx "sov dårligt") – vises på kortet i Historik */
+function WorkoutNote() {
+  const { state, dispatch } = useStore();
+  // Lokal kladde, så mellemrum mens man skriver ikke forsvinder (noten renses i reduceren)
+  const [draft, setDraft] = useState(state.active?.note ?? '');
+  return (
+    <label className="workout-note">
+      <span>Note til træningen</span>
+      <textarea
+        className="note-input"
+        placeholder="Fx sov dårligt, ny PR-dag …"
+        maxLength={NOTE_MAX}
+        rows={2}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          dispatch({ type: 'SET_WORKOUT_NOTE', note: e.target.value });
+        }}
+      />
+    </label>
   );
 }
