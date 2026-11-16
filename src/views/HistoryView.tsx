@@ -97,6 +97,15 @@ function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
         <>
           <button
             className="btn-secondary"
+            onClick={() => {
+              dispatch({ type: 'EDIT_WORKOUT', workoutId: w.id });
+              onClose();
+            }}
+          >
+            Redigér
+          </button>
+          <button
+            className="btn-secondary"
             disabled={saved}
             onClick={() => {
               dispatch({ type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: w.id, name: w.name });

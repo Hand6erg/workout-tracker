@@ -516,3 +516,57 @@ test('sætter træningen på pause og fortsætter (#115)', async ({ page }) => {
   await page.clock.runFor(10_000);
   await expect(workout.getByTestId('elapsed')).toHaveText('1:15');
 });
+
+async function logBench(page: import('@playwright/test').Page, weight: string) {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill(weight);
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+}
+
+test('retter en afsluttet træning fra Historik (#92)', async ({ page }) => {
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  await expect(editor.getByRole('button', { name: 'Afslut' })).toHaveCount(0);
+  const bench = editor.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('80');
+  await bench.getByLabel('Vægt sæt 1').fill('85');
+  await bench.getByRole('button', { name: '+ Tilføj sæt' }).click();
+  await bench.getByLabel('Vægt sæt 2').fill('80');
+  await bench.getByLabel('Reps sæt 2').fill('6');
+  await bench.getByRole('button', { name: 'Udført sæt 2' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toHaveCount(0); // ingen pausetimer under redigering
+  await page.screenshot({ path: 'test-results/edit-workout.png' });
+  await editor.getByRole('button', { name: 'Gem' }).click();
+  await expect(editor).toHaveCount(0);
+
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toContainText('2 × Bænkpres');
+  await expect(card).toContainText('85 kg × 5');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const records = page.getByRole('dialog', { name: 'Bænkpres' }).getByRole('region', { name: 'Rekorder' });
+  await expect(records).toContainText('85 kg × 5');
+});
+
+test('"Annullér" i editoren lader træningen være uændret (#92)', async ({ page }) => {
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  await editor.getByRole('article', { name: 'Bænkpres', exact: true }).getByLabel('Vægt sæt 1').fill('120');
+  await editor.getByRole('button', { name: 'Annullér' }).click();
+  await expect(editor).toHaveCount(0);
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toContainText('80 kg × 5');
+  await expect(card).not.toContainText('120');
+});
