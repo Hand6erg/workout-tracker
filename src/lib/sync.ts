@@ -105,6 +105,14 @@ export type SyncStatus =
   /** Der findes allerede data online, og telefonen har også data: brugeren skal vælge. */
   | { kind: 'choose'; remote: Remote };
 
+/**
+ * Må appen selv hente nyt fra serveren nu (når den åbnes/kommer frem igen)?
+ * Ikke midt i en træning – så kan det, man er ved at skrive, ikke blive skiftet ud.
+ */
+export function shouldAutoSync(state: Pick<AppState, 'active'>, visible: boolean): boolean {
+  return visible && !state.active;
+}
+
 export type Choice = 'phone' | 'online' | 'merge';
 
 export interface SyncDeps {
@@ -182,13 +190,16 @@ export class SyncEngine {
    * Henter nyere data fra serveren (fx gemt på en anden enhed) og sender derefter ventende ændringer.
    * Ventende lokale ændringer overskrives aldrig: så flettes der i stedet for at erstatte.
    */
-  async pull(): Promise<void> {
+  async pull(manual = false): Promise<void> {
     if (this.stopped || this.choosing || this.inflight || this.meta.version === null) return;
     this.inflight = true;
+    if (manual) this.status({ kind: 'saving' });
     const r = await getRemote(this.d.apiUrl, this.d.token, this.d.fetchFn);
     this.inflight = false;
     if (this.stopped) return;
     if (r.kind === 'unauthorized') return this.d.onUnauthorized();
+    // Brugeren bad selv om det: fortæl, hvis serveren ikke kunne nås
+    if (manual && (r.kind === 'offline' || r.kind === 'error')) this.status({ kind: r.kind });
     if (r.kind === 'found' && r.remote.version !== this.meta.version) {
       if (this.meta.dirty) {
         this.d.mergeRemote(r.remote.state);
@@ -205,12 +216,20 @@ export class SyncEngine {
       // Intet online (fx nulstillet konto): send telefonens data igen
       this.setMeta({ dirty: true });
     } else if (r.kind === 'found' && !this.meta.dirty) {
-      this.status(this.meta.savedAt ? { kind: 'saved', at: this.meta.savedAt } : { kind: 'idle' });
+      // Serveren har intet nyt: telefonen er synkroniseret lige nu
+      this.setMeta({ savedAt: this.now() });
+      this.status({ kind: 'saved', at: this.meta.savedAt! });
     }
     if (this.meta.dirty) {
       this.again = false;
       return this.flush();
     }
+  }
+
+  /** "Synkronisér nu" i Profil, og når appen kommer frem igen. */
+  syncNow(manual = true): Promise<void> {
+    if (this.meta.version === null) return this.choosing ? Promise.resolve() : this.start();
+    return this.pull(manual);
   }
 
   /** Brugerens valg, når der både er data på telefonen og online. */

@@ -71,7 +71,7 @@ test('første login uploader telefonens data, og ændringer gemmes online – og
 
   const konto = await login(page);
   const status = konto.getByRole('status', { name: 'Online-status' });
-  await expect(status).toHaveText(/^Gemt online kl\. \d\d:\d\d$/);
+  await expect(status).toHaveText(/^Sidst synkroniseret kl\. \d\d:\d\d$/);
   expect(srv.state?.history.map((w) => w.id)).toEqual(['w1']);
 
   // En ændring sendes automatisk
@@ -96,7 +96,7 @@ test('første login uploader telefonens data, og ændringer gemmes online – og
   srv.offline = false;
   await context.setOffline(false);
   await expect.poll(() => JSON.stringify(srv.state)).toContain('Nordic curl');
-  await expect(status).toHaveText(/Gemt online/);
+  await expect(status).toHaveText(/Sidst synkroniseret/);
 });
 
 test('findes der allerede data online, kan man flette – intet forsvinder', async ({ page }) => {
@@ -160,6 +160,81 @@ test('når appen åbnes, hentes træninger gemt på en anden enhed (#37)', async
   await page.reload();
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
   await expect(page.getByTestId('total-workouts')).toHaveText('2');
-  await expect(page.getByRole('status', { name: 'Online-status' })).toHaveText(/^Gemt online kl\. \d\d:\d\d$/);
+  await expect(page.getByRole('status', { name: 'Online-status' })).toHaveText(/^Sidst synkroniseret kl\. \d\d:\d\d$/);
   expect(srv.puts).toBe(0);
 });
+
+test('to enheder: en træning logget på telefonen dukker op på computeren (#39)', async ({ browser }) => {
+  const srv: Srv = { state: null, version: null, offline: false, puts: 0 };
+  const phoneCtx = await browser.newContext();
+  const pcCtx = await browser.newContext();
+  const phone = await phoneCtx.newPage();
+  const pc = await pcCtx.newPage();
+  await mockApi(phone, srv);
+  await mockApi(pc, srv);
+
+  // Computeren logger ind først (tom konto → uploader tom app)
+  await start(pc);
+  const pcKonto = await login(pc);
+  await expect(pcKonto.getByRole('status', { name: 'Online-status' })).toHaveText(/Sidst synkroniseret/);
+  await expect(pc.getByTestId('total-workouts')).toHaveText('0');
+
+  // Telefonen logger ind (tom → henter kontoen) og logger en træning
+  await start(phone);
+  await login(phone);
+  await expect(phone.getByRole('region', { name: 'Konto' }).getByRole('status', { name: 'Online-status' })).toHaveText(/Sidst synkroniseret/);
+  await phone.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await phone.getByRole('button', { name: 'Start tom træning' }).click();
+  const active = phone.getByRole('region', { name: 'Aktiv træning' });
+  await active.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = phone.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByPlaceholder('Søg efter øvelse').fill('bænk');
+  await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+  const bench = active.getByRole('article', { name: 'Bænkpres' });
+  await bench.getByLabel('Vægt sæt 1').fill('80');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await active.getByRole('button', { name: 'Afslut' }).click();
+  await active.getByRole('button', { name: 'Bekræft' }).click();
+  await expect.poll(() => srv.state?.history.length).toBe(1);
+
+  // Computeren kommer frem igen → henter automatisk
+  await pc.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await expect(pc.getByTestId('total-workouts')).toHaveText('1');
+
+  // Og en ny træning kan hentes med "Synkronisér nu"
+  srv.state = { ...srv.state!, history: [workout('pc2', Date.now()), ...srv.state!.history] };
+  srv.version = srv.version! + 1;
+  await pcKonto.getByRole('button', { name: 'Synkronisér nu' }).click();
+  await expect(pc.getByTestId('total-workouts')).toHaveText('2');
+  await expect(pcKonto.getByRole('status', { name: 'Online-status' })).toHaveText(/^Sidst synkroniseret kl\. \d\d:\d\d$/);
+
+  await phoneCtx.close();
+  await pcCtx.close();
+});
+
+test('henter ikke automatisk midt i en træning (#39)', async ({ page }) => {
+  const srv: Srv = { state: null, version: null, offline: false, puts: 0 };
+  await mockApi(page, srv);
+  await start(page);
+  await login(page);
+  await expect(page.getByRole('status', { name: 'Online-status' })).toHaveText(/Sidst synkroniseret/);
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  await expect(page.getByRole('region', { name: 'Aktiv træning' })).toBeVisible();
+  await expect.poll(() => srv.state && 'active' in srv.state && (srv.state as { active: unknown }).active !== null).toBe(true);
+
+  // En anden enhed gemmer noget nyt
+  const gets = { n: 0 };
+  page.on('request', (r) => {
+    if (r.url().endsWith('/state') && r.method() === 'GET') gets.n++;
+  });
+  srv.state = { ...srv.state!, history: [workout('other', Date.now())] };
+  srv.version = srv.version! + 1;
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForTimeout(500);
+  expect(gets.n).toBe(0);
+  await expect(page.getByRole('region', { name: 'Aktiv træning' })).toBeVisible();
+});
+
