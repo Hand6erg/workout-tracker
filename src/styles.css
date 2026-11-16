@@ -239,3 +239,6 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .hint strong { color: var(--ok); }
 .toggle { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--text); font-size: 0.95rem; }
 .toggle input { width: 22px; height: 22px; accent-color: var(--accent); }
+.rest-alert-settings { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; align-items: center; margin-bottom: 14px; }
+.rest-alert-settings .toggle { grid-column: 1; margin-bottom: 8px; }
+.rest-alert-settings button { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
