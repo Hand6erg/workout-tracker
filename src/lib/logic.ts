@@ -496,6 +496,36 @@ export function exerciseHistory(history: Workout[], exerciseId: string): Exercis
   return out;
 }
 
+/* ---------- Noter (#81) ---------- */
+
+/** Højeste antal tegn i en note */
+export const NOTE_MAX = 300;
+
+/** Renser en note: fjerner mellemrum i enderne og afkorter. Tom streng = ingen note. */
+export function cleanNote(note: string): string {
+  return note.trim().slice(0, NOTE_MAX).trim();
+}
+
+/** Sætter eller fjerner (tom) noten på en træning eller øvelse */
+function withNote<T extends { note?: string }>(item: T, note: string): T {
+  const clean = cleanNote(note);
+  if (clean === (item.note ?? '')) return item;
+  const { note: _old, ...rest } = item;
+  return (clean ? { ...rest, note: clean } : rest) as T;
+}
+
+/** Den seneste note til en øvelse fra afsluttede træninger (historikken er nyeste først) */
+export function lastExerciseNote(history: Workout[], exerciseId: string): { note: string; date: number } | null {
+  let best: { note: string; date: number } | null = null;
+  for (const w of history) {
+    for (const ex of w.exercises) {
+      const note = ex.exerciseId === exerciseId ? ex.note?.trim() : '';
+      if (note && (!best || w.startedAt > best.date)) best = { note, date: w.startedAt };
+    }
+  }
+  return best;
+}
+
 /* ---------- Reducer ---------- */
 
 export type Action =
@@ -503,6 +533,8 @@ export type Action =
   | { type: 'CANCEL_WORKOUT' }
   | { type: 'FINISH_WORKOUT'; now: number; includeUnchecked?: boolean }
   | { type: 'RENAME_WORKOUT'; name: string }
+  | { type: 'SET_EXERCISE_NOTE'; weId: string; note: string }
+  | { type: 'SET_WORKOUT_NOTE'; note: string }
   | { type: 'ADD_EXERCISES'; exerciseIds: string[] }
   | { type: 'REMOVE_EXERCISE'; weId: string }
   | { type: 'LINK_SUPERSET'; weId: string }
@@ -548,7 +580,9 @@ function defaultWorkoutName(now: number): string {
 }
 
 function mapActive(state: AppState, fn: (w: Workout) => Workout): AppState {
-  return state.active ? { ...state, active: fn(state.active) } : state;
+  if (!state.active) return state;
+  const active = fn(state.active);
+  return active === state.active ? state : { ...state, active };
 }
 
 function mapExercise(w: Workout, weId: string, fn: (e: WorkoutExercise) => WorkoutExercise): Workout {
@@ -587,6 +621,10 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'RENAME_WORKOUT':
       return mapActive(state, (w) => ({ ...w, name: action.name }));
+    case 'SET_EXERCISE_NOTE':
+      return mapActive(state, (w) => mapExercise(w, action.weId, (e) => withNote(e, action.note)));
+    case 'SET_WORKOUT_NOTE':
+      return mapActive(state, (w) => withNote(w, action.note));
     case 'ADD_EXERCISES':
       return mapActive(state, (w) => ({
         ...w,
