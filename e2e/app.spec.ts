@@ -464,3 +464,20 @@ test('note på en øvelse vises næste gang og i historikken (#100)', async ({ p
   await expect(bench.getByText('📝 Sidst: sædehøjde 4')).toBeVisible();
   await expect(bench.getByLabel('Skriv note til Bænkpres')).toHaveCount(0);
 });
+
+test('sætter træningen på pause og fortsætter (#115)', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await page.clock.runFor(65_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:05');
+  await workout.getByRole('button', { name: '⏸ Pause' }).click();
+  await expect(workout.getByRole('status')).toContainText('sat på pause');
+  await page.clock.runFor(120_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:05');
+  await workout.getByRole('button', { name: '▶ Fortsæt' }).click();
+  await expect(workout.getByRole('status')).toHaveCount(0);
+  await page.clock.runFor(10_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:15');
+});

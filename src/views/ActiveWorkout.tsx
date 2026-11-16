@@ -13,6 +13,7 @@ import {
   supersetGroups,
   uncheckedFilledCount,
   warmupBaseWeight,
+  workoutDuration,
   type ProgressionHint,
   type RecordKind,
 } from '../lib/logic';
@@ -37,9 +38,16 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         <button className="btn-ghost" onClick={onMinimize} aria-label="Minimér">
           ⌄
         </button>
-        <span className="timer" data-testid="elapsed">
-          {formatDuration(now - w.startedAt)}
+        <span className={`timer ${w.pausedAt ? 'paused' : ''}`} data-testid="elapsed">
+          {formatDuration(workoutDuration(w, now))}
         </span>
+        <button
+          className="btn-ghost small"
+          aria-pressed={!!w.pausedAt}
+          onClick={() => dispatch({ type: w.pausedAt ? 'RESUME_WORKOUT' : 'PAUSE_WORKOUT', now: Date.now() })}
+        >
+          {w.pausedAt ? '▶ Fortsæt' : '⏸ Pause'}
+        </button>
         {unchecked > 0 ? (
           <button className="btn-primary" onClick={() => setFinishing(true)}>
             Afslut
@@ -55,6 +63,11 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         )}
       </header>
 
+      {w.pausedAt && (
+        <p className="paused-banner" role="status">
+          Træningen er sat på pause – uret står stille.
+        </p>
+      )}
       <div className="workout-body">
         <input
           className="title-input"

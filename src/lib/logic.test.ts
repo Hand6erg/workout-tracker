@@ -32,6 +32,7 @@ import {
   weekStreak,
   weeklyVolume,
   workoutVolume,
+  workoutDuration,
 } from './logic';
 import type { AppState } from './types';
 
@@ -897,5 +898,33 @@ describe('noter (#99)', () => {
     const loaded = loadState(JSON.stringify(old));
     expect(loaded.history).toEqual(old.history);
     expect(lastExerciseNote(loaded.history, 'bench')).toBeNull();
+  });
+});
+
+describe('pause i træningen (#115)', () => {
+  it('pausetid tæller ikke med i varigheden, heller ikke efter afslutning', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    s = reducer(s, { type: 'PAUSE_WORKOUT', now: T0 + 60_000 });
+    expect(workoutDuration(s.active!, T0 + 600_000)).toBe(60_000);
+    // Ekstra tryk på pause ændrer ikke starttidspunktet for pausen
+    expect(reducer(s, { type: 'PAUSE_WORKOUT', now: T0 + 120_000 })).toEqual(s);
+    s = reducer(s, { type: 'RESUME_WORKOUT', now: T0 + 600_000 });
+    expect(s.active!.pausedAt).toBeUndefined();
+    expect(workoutDuration(s.active!, T0 + 660_000)).toBe(120_000);
+    s = reducer(s, { type: 'PAUSE_WORKOUT', now: T0 + 660_000 });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 + 660_000 });
+    // Afslut mens den står på pause
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 900_000 });
+    expect(s.history[0].pausedAt).toBeUndefined();
+    expect(workoutDuration(s.history[0], 0)).toBe(120_000);
+  });
+
+  it('gamle træninger uden pausefelter har uændret varighed', () => {
+    const w = { id: 'x', name: 'A', startedAt: T0, finishedAt: T0 + 3_600_000, exercises: [] };
+    expect(workoutDuration(w, 0)).toBe(3_600_000);
+    expect(workoutDuration({ ...w, finishedAt: undefined }, T0)).toBe(0);
   });
 });

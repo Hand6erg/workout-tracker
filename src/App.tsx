@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatDuration, IS_STAGING } from './lib/logic';
+import { formatDuration, IS_STAGING, workoutDuration } from './lib/logic';
 import { useRestAlerts } from './lib/alerts';
 import { useNow, useStore } from './lib/store';
 import { ActiveWorkout } from './views/ActiveWorkout';
@@ -64,7 +64,7 @@ function MiniBar({ onOpen }: { onOpen: () => void }) {
   return (
     <button className="minibar" onClick={onOpen}>
       <strong>{state.active.name}</strong>
-      <span>{formatDuration(now - state.active.startedAt)}</span>
+      <span>{formatDuration(workoutDuration(state.active, now))}</span>
     </button>
   );
 }

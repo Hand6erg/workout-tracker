@@ -10,6 +10,7 @@ import {
   supersetGroups,
   workoutRecords,
   workoutVolume,
+  workoutDuration,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
@@ -40,7 +41,7 @@ export function HistoryView() {
             <h3>{w.name}</h3>
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
-              <span>⏱ {formatDuration((w.finishedAt ?? w.startedAt) - w.startedAt)}</span>
+              <span>⏱ {formatDuration(workoutDuration(w, w.startedAt))}</span>
               <span>🏋️ {formatKg(workoutVolume(w))}</span>
               {count > 0 && (
                 <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>

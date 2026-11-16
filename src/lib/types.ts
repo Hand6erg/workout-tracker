@@ -40,6 +40,10 @@ export interface Workout {
   name: string;
   startedAt: number;
   finishedAt?: number;
+  /** Sat mens træningen er sat på pause (tidspunkt for pausens start) */
+  pausedAt?: number;
+  /** Samlet tid træningen har været sat på pause (ms) */
+  pausedMs?: number;
   exercises: WorkoutExercise[];
   /** Note til hele træningen (fx "sov dårligt") */
   note?: string;
