@@ -19,6 +19,7 @@ import {
   supersetGroups,
   workoutRecords,
   reducer,
+  restAlertDue,
   STORAGE_KEY,
   bodyToCsv,
   toCsv,
@@ -736,5 +737,76 @@ describe('slå forslag fra (#73)', () => {
     delete old.showHints;
     expect(loadState(JSON.stringify(old)).showHints).toBe(true);
     expect(reducer(initialState(), { type: 'SET_SHOW_HINTS', on: false }).showHints).toBe(false);
+  });
+});
+
+describe('pausealarm (#84)', () => {
+  const rest = (startS: number, total: number) => ({ endsAt: (startS + total) * 1000, total });
+  /** Kører alarmen hvert halve sekund fra..til og samler de alarmer, der gives */
+  const run = (r: ReturnType<typeof rest> | null, fromS: number, toS: number) => {
+    let fired = null as Parameters<typeof restAlertDue>[2];
+    const alerts: string[] = [];
+    for (let t = fromS * 1000; t <= toS * 1000; t += 500) {
+      const res = restAlertDue(r, t, fired);
+      fired = res.fired;
+      if (res.alert) alerts.push(`${res.alert}@${t / 1000}`);
+    }
+    return alerts;
+  };
+
+  it('advarer én gang 10 s før og giver besked én gang ved 0', () => {
+    expect(run(rest(0, 90), 0, 200)).toEqual(['warning@80', 'done@90']);
+  });
+
+  it('ingen advarsel ved meget korte pauser', () => {
+    expect(run(rest(0, 11), 0, 30)).toEqual(['done@11']);
+    expect(run(rest(0, 12), 0, 30)).toEqual(['warning@2', 'done@12']);
+  });
+
+  it('intet efter at pausen er sprunget over', () => {
+    const r = rest(0, 90);
+    const a = restAlertDue(r, 85_000, null);
+    expect(a.alert).toBe('warning');
+    expect(restAlertDue(null, 95_000, a.fired)).toEqual({ alert: null, fired: null });
+  });
+
+  it('justering af pausen er samme pause: advarsel gives ikke igen, slut kommer på det nye tidspunkt', () => {
+    let s: AppState = { ...initialState(), rest: rest(0, 90) };
+    const first = restAlertDue(s.rest, 81_000, null);
+    expect(first.alert).toBe('warning');
+    s = reducer(s, { type: 'ADJUST_REST', delta: 15 });
+    expect(restAlertDue(s.rest, 95_000, first.fired).alert).toBeNull();
+    expect(restAlertDue(s.rest, 105_000, first.fired).alert).toBe('done');
+  });
+
+  it('en ny pause får nye alarmer', () => {
+    const first = restAlertDue(rest(0, 30), 30_000, null);
+    expect(first.alert).toBe('done');
+    expect(restAlertDue(rest(40, 30), 61_000, first.fired).alert).toBe('warning');
+  });
+
+  it('har ingen alarm, når man åbner appen længe efter pausen var slut – kun én "slut"', () => {
+    const a = restAlertDue(rest(0, 60), 600_000, null);
+    expect(a.alert).toBe('done');
+    expect(restAlertDue(rest(0, 60), 601_000, a.fired).alert).toBeNull();
+  });
+
+  it('lyd og vibration er slået til som standard, også for gamle data, og kan slås fra', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.restSound;
+    delete old.restVibrate;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.restSound).toBe(true);
+    expect(loaded.restVibrate).toBe(true);
+    expect(reducer(loaded, { type: 'SET_REST_SOUND', on: false }).restSound).toBe(false);
+    expect(reducer(loaded, { type: 'SET_REST_VIBRATE', on: false }).restVibrate).toBe(false);
+  });
+
+  it('tæller som indstillinger ved synk – nyeste ændring vinder', () => {
+    const phone = { ...initialState(), restSound: false, settingsAt: 200 };
+    const pc = { ...initialState(), settingsAt: 100 };
+    expect(mergeStates(pc, phone).restSound).toBe(false);
+    expect(mergeStates(phone, pc).restSound).toBe(false);
+    expect(mergeStates({ ...initialState(), restVibrate: false, settingsAt: 300 }, phone).restVibrate).toBe(false);
   });
 });

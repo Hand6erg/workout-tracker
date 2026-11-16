@@ -34,6 +34,8 @@ export function initialState(): AppState {
     bodyLog: [],
     weeklyGoal: 2,
     showHints: true,
+    restSound: true,
+    restVibrate: true,
     settingsAt: 0,
     deleted: {},
   };
@@ -517,6 +519,8 @@ export type Action =
   | { type: 'SET_BAR_WEIGHT'; weight: number }
   | { type: 'SET_WEEKLY_GOAL'; goal: number }
   | { type: 'SET_SHOW_HINTS'; on: boolean }
+  | { type: 'SET_REST_SOUND'; on: boolean }
+  | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
@@ -710,6 +714,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, bodyLog: state.bodyLog.filter((m) => m.id !== action.id) };
     case 'SET_SHOW_HINTS':
       return { ...state, showHints: action.on };
+    case 'SET_REST_SOUND':
+      return { ...state, restSound: action.on };
+    case 'SET_REST_VIBRATE':
+      return { ...state, restVibrate: action.on };
     case 'SET_WEEKLY_GOAL':
       return { ...state, weeklyGoal: Math.max(1, Math.min(7, Math.round(action.goal) || 1)) };
     case 'SET_BAR_WEIGHT':
@@ -759,9 +767,49 @@ export function reducer(state: AppState, action: Action): AppState {
   }
 }
 
+/* ---------- Pausealarm (#80) ---------- */
+
+/** Sekunder før pausen slutter, hvor der kommer en kort advarsel */
+export const REST_WARNING_S = 10;
+/** Kortere pauser end dette får ingen advarsel (den ville komme næsten med det samme) */
+export const REST_WARNING_MIN_TOTAL_S = 12;
+
+export type RestAlert = 'warning' | 'done';
+
+/** Hvilke alarmer der allerede er givet for den aktuelle pause. `start` identificerer pausen. */
+export interface RestAlertsFired {
+  start: number;
+  warning: boolean;
+  done: boolean;
+}
+
+/**
+ * Hvilken alarm skal gives nu? Hver alarm gives højst én gang pr. pause.
+ * Pausen kendes på sit starttidspunkt (endsAt − total), som ikke ændres, når man lægger tid til/trækker fra.
+ * Ingen pause (sprunget over / slut) → ingen alarm.
+ */
+export function restAlertDue(
+  rest: AppState['rest'],
+  now: number,
+  fired: RestAlertsFired | null,
+): { alert: RestAlert | null; fired: RestAlertsFired | null } {
+  if (!rest) return { alert: null, fired: null };
+  const start = rest.endsAt - rest.total * 1000;
+  const f = fired && fired.start === start ? fired : { start, warning: false, done: false };
+  const left = rest.endsAt - now;
+  if (left <= 0) {
+    if (f.done) return { alert: null, fired: f };
+    return { alert: 'done', fired: { ...f, warning: true, done: true } };
+  }
+  if (!f.warning && left <= REST_WARNING_S * 1000 && rest.total >= REST_WARNING_MIN_TOTAL_S) {
+    return { alert: 'warning', fired: { ...f, warning: true } };
+  }
+  return { alert: null, fired: f };
+}
+
 /* ---------- Online-gemning: flet to versioner ---------- */
 
-const SETTINGS = ['restSeconds', 'barWeight', 'plates', 'weeklyGoal', 'showHints'] as const;
+const SETTINGS = ['restSeconds', 'barWeight', 'plates', 'weeklyGoal', 'showHints', 'restSound', 'restVibrate'] as const;
 
 type Stamped = { id: string; updatedAt?: number };
 
