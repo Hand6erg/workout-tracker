@@ -216,51 +216,17 @@ test('viser fordeling på muskelgrupper under Profil (#23)', async ({ page }) =>
   await expect(section.getByRole('button', { name: 'Sidste 4 uger' })).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('viser skiver pr. side for et stangsæt (#19)', async ({ page }) => {
-  await page.getByRole('button', { name: 'Start Push' }).click();
-  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
-  await bench.getByLabel('Vægt sæt 1').fill('100');
-  await bench.getByRole('button', { name: 'Skiver' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Skiver pr. side' });
-  await expect(dialog.getByRole('status', { name: 'Skiver på hver side' })).toHaveText('Hver side: 25 + 15 kg');
-  await dialog.getByLabel('Vægt i alt (kg)').fill('102,5');
-  await expect(dialog.getByRole('status', { name: 'Skiver på hver side' })).toHaveText('Hver side: 25 + 15 + 1,25 kg');
-  await dialog.getByLabel('Vægt i alt (kg)').fill('21');
-  await expect(dialog).toContainText('Kan ikke ramme præcist');
-  await dialog.getByLabel('Vægt i alt (kg)').fill('10');
-  await expect(dialog).toContainText('under stangens 20 kg');
-  await dialog.getByRole('button', { name: 'Luk' }).click();
-  await expect(dialog).toHaveCount(0);
-  // Håndvægtsøvelser har ingen skiveknap
-  await expect(page.getByRole('article', { name: 'Sidehævninger' }).getByRole('button', { name: 'Skiver' })).toHaveCount(0);
-});
-
-test('tilføjer opvarmningssæt ud fra første arbejdssæt (#25)', async ({ page }) => {
-  await page.getByRole('button', { name: 'Start Push' }).click();
-  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
-  const add = bench.getByRole('button', { name: 'Tilføj opvarmning' });
-  await expect(add).toBeDisabled();
-  await bench.getByLabel('Vægt sæt 1').fill('100');
-  await add.click();
-  await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('20');
-  await expect(bench.getByLabel('Vægt opvarmning 4')).toHaveValue('80');
-  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('100');
-  await expect(bench.getByRole('button', { name: 'Beregn opvarmning igen' })).toBeVisible();
-});
-
-test('indstilling for stang og skiver bruges af pladeberegneren (#30)', async ({ page }) => {
+test('ingen skiveknap i træningen, og stangvægten bruges til opvarmning (#113)', async ({ page }) => {
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
-  const settings = page.getByRole('region', { name: 'Stang og skiver' });
-  const p25 = settings.getByRole('button', { name: '25 kg', exact: true });
-  await p25.click();
-  await expect(p25).toHaveAttribute('aria-pressed', 'false');
+  await page.getByRole('region', { name: 'Stang' }).getByLabel('Stangvægt').selectOption('15');
 
   await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
   await page.getByRole('button', { name: 'Start Push' }).click();
   const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByRole('button', { name: 'Skiver' })).toHaveCount(0);
   await bench.getByLabel('Vægt sæt 1').fill('100');
-  await bench.getByRole('button', { name: 'Skiver' }).click();
-  await expect(page.getByRole('status', { name: 'Skiver på hver side' })).toHaveText('Hver side: 20 + 20 kg');
+  await bench.getByRole('button', { name: 'Tilføj opvarmning' }).click();
+  await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('15');
 });
 
 test('registrerer, viser og sletter kropsmål (#20)', async ({ page }) => {

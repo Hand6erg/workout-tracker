@@ -1,6 +1,5 @@
 import { Fragment, useState } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
-import { PlateDialog } from '../components/PlateDialog';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   doneSetCount,
@@ -159,13 +158,11 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
   const hint = state.showHints ? progressionHint(state, we.exerciseId) : null;
-  const [plates, setPlates] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
   const all = state.active?.exercises ?? [];
   const pos = all.findIndex((e) => e.id === we.id);
   const next = all[pos + 1];
   const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
-  const lastWeight = [...we.sets].reverse().find((s) => s.weight)?.weight ?? '';
   const lastNote = lastExerciseNote(state.history, we.exerciseId);
   const [noteOpen, setNoteOpen] = useState(!!we.note);
   const [noteDraft, setNoteDraft] = useState(we.note ?? '');
@@ -183,11 +180,6 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         >
           Note
         </button>
-        {isBarbell && (
-          <button className="btn-ghost small" onClick={() => setPlates(true)}>
-            Skiver
-          </button>
-        )}
         <ConfirmButton className="btn-ghost small" confirmText="Fjern?" onConfirm={() => dispatch({ type: 'REMOVE_EXERCISE', weId: we.id })}>
           Fjern
         </ConfirmButton>
@@ -318,14 +310,6 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </button>
       )}
       </div>
-      {plates && (
-        <PlateDialog
-          initialWeight={lastWeight}
-          barWeight={state.barWeight}
-          plates={state.plates}
-          onClose={() => setPlates(false)}
-        />
-      )}
     </article>
   );
 }

@@ -6,7 +6,6 @@ import { BodySection } from '../components/BodySection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
-  DEFAULT_PLATES,
   formatKg,
   initialState,
   loadState,
@@ -115,7 +114,7 @@ export function ProfileView() {
         Vis forslag til næste vægt
       </label>
 
-      <BarAndPlates />
+      <BarSetting />
 
       <AccountSection />
 
@@ -242,10 +241,10 @@ function MuscleSplit() {
   );
 }
 
-function BarAndPlates() {
+function BarSetting() {
   const { state, dispatch } = useStore();
   return (
-    <section aria-label="Stang og skiver">
+    <section aria-label="Stang">
       <label className="field">
         Stangvægt
         <select value={state.barWeight} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
@@ -256,22 +255,6 @@ function BarAndPlates() {
           ))}
         </select>
       </label>
-      <p className="field-label">Skiver du har adgang til</p>
-      <div className="chips wrap" role="group" aria-label="Skiver">
-        {DEFAULT_PLATES.map((p) => {
-          const on = state.plates.includes(p);
-          return (
-            <button
-              key={p}
-              className={`chip ${on ? 'on' : ''}`}
-              aria-pressed={on}
-              onClick={() => dispatch({ type: 'TOGGLE_PLATE', plate: p })}
-            >
-              {String(p).replace('.', ',')} kg
-            </button>
-          );
-        })}
-      </div>
     </section>
   );
 }
