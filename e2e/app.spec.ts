@@ -216,6 +216,21 @@ test('viser fordeling på muskelgrupper under Profil (#23)', async ({ page }) =>
   await expect(section.getByRole('button', { name: 'Sidste 4 uger' })).toHaveAttribute('aria-pressed', 'false');
 });
 
+test('tilføjer opvarmningssæt ud fra første arbejdssæt (#25)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  const add = bench.getByRole('button', { name: 'Tilføj opvarmning' });
+  await add.click();
+  await expect(bench.getByRole('status')).toContainText('Skriv vægten i sæt 1 først');
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await expect(bench.getByRole('status')).toHaveCount(0);
+  await add.click();
+  await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('20');
+  await expect(bench.getByLabel('Vægt opvarmning 4')).toHaveValue('80');
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('100');
+  await expect(bench.getByRole('button', { name: 'Beregn opvarmning igen' })).toBeVisible();
+});
+
 test('ingen skiveknap i træningen, og stangvægten bruges til opvarmning (#113)', async ({ page }) => {
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
   await page.getByRole('region', { name: 'Stang' }).getByLabel('Stangvægt').selectOption('15');

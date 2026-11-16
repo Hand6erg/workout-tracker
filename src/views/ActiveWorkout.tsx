@@ -12,6 +12,7 @@ import {
   recordsBrokenBy,
   supersetGroups,
   uncheckedFilledCount,
+  warmupBaseWeight,
   type ProgressionHint,
   type RecordKind,
 } from '../lib/logic';
@@ -158,6 +159,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
   const hint = state.showHints ? progressionHint(state, we.exerciseId) : null;
+  const [warmupMsg, setWarmupMsg] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
   const all = state.active?.exercises ?? [];
   const pos = all.findIndex((e) => e.id === we.id);
@@ -303,13 +305,21 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
       {isBarbell && (
         <button
           className="btn-ghost small"
-          disabled={!we.sets.some((x) => !x.warmup && num(x.weight) > 0)}
-          onClick={() => dispatch({ type: 'ADD_WARMUP_SETS', weId: we.id })}
+          onClick={() => {
+            const base = warmupBaseWeight(state.history, we);
+            setWarmupMsg(!base);
+            if (base) dispatch({ type: 'ADD_WARMUP_SETS', weId: we.id });
+          }}
         >
           {we.sets.some((x) => x.warmup) ? 'Beregn opvarmning igen' : 'Tilføj opvarmning'}
         </button>
       )}
       </div>
+      {warmupMsg && !warmupBaseWeight(state.history, we) && (
+        <p className="warmup-msg" role="status">
+          Skriv vægten i sæt 1 først – så beregnes opvarmningen ud fra den.
+        </p>
+      )}
     </article>
   );
 }
