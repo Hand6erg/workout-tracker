@@ -76,3 +76,42 @@ test('intet signal efter "Spring over" (#85)', async ({ page }) => {
   await page.clock.runFor(40_000);
   expect(await alerts(page)).toEqual([]);
 });
+
+async function openProfile(page: Page) {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+}
+
+test('Test-knappen og lyd fra i Profil: kun vibration, og valget huskes (#86)', async ({ page }) => {
+  await openProfile(page);
+  const sound = page.getByLabel('Lyd når pausen er slut');
+  await expect(sound).toBeChecked();
+  await expect(page.getByLabel('Vibration når pausen er slut')).toBeChecked();
+
+  await page.getByRole('button', { name: 'Test pausesignal' }).click();
+  expect(await alerts(page)).toEqual(['vibrate:done', 'beep']);
+
+  await sound.uncheck();
+  await startRest(page, 15);
+  await page.clock.runFor(16_000);
+  await expect(page.getByText('Pausen er slut 💪')).toBeVisible();
+  expect(await alerts(page)).toEqual(['vibrate:done', 'beep', 'vibrate:warning', 'vibrate:done']);
+
+  await page.reload();
+  await page.getByRole('button', { name: 'Minimér' }).click();
+  await openProfile(page);
+  await expect(page.getByLabel('Lyd når pausen er slut')).not.toBeChecked();
+});
+
+test('vibration fra i Profil: kun bip, og valget huskes (#86)', async ({ page }) => {
+  await openProfile(page);
+  await page.getByLabel('Vibration når pausen er slut').uncheck();
+  await page.reload();
+  await openProfile(page);
+  await expect(page.getByLabel('Vibration når pausen er slut')).not.toBeChecked();
+  await expect(page.getByLabel('Lyd når pausen er slut')).toBeChecked();
+
+  await startRest(page, 15);
+  await page.clock.runFor(16_000);
+  await expect(page.getByText('Pausen er slut 💪')).toBeVisible();
+  expect(await alerts(page)).toEqual(['beep']);
+});

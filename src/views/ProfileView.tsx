@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
+import { playRestAlert } from '../lib/alerts';
 import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ConfirmButton, Empty } from '../components/ui';
@@ -64,6 +65,34 @@ export function ProfileView() {
           onChange={(e) => dispatch({ type: 'SET_REST_SECONDS', seconds: Number(e.target.value) })}
         />
       </label>
+
+      <div className="rest-alert-settings" role="group" aria-label="Signal når pausen er slut">
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={state.restSound}
+            onChange={(e) => dispatch({ type: 'SET_REST_SOUND', on: e.target.checked })}
+          />
+          Lyd når pausen er slut
+        </label>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={state.restVibrate}
+            onChange={(e) => dispatch({ type: 'SET_REST_VIBRATE', on: e.target.checked })}
+          />
+          Vibration når pausen er slut
+        </label>
+        <button
+          type="button"
+          className="btn-ghost small"
+          aria-label="Test pausesignal"
+          disabled={!state.restSound && !state.restVibrate}
+          onClick={() => playRestAlert('done', { sound: state.restSound, vibrate: state.restVibrate })}
+        >
+          🔔 Test
+        </button>
+      </div>
 
       <label className="field">
         Mål: træninger pr. uge
