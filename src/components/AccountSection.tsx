@@ -6,7 +6,7 @@ import { ConfirmButton } from './ui';
 
 /** "Konto" i Profil: opret konto / log ind / log ud. Lokale data røres aldrig. */
 export function AccountSection() {
-  const { state, apiUrl, account, setAccount, sync, resolveSync } = useStore();
+  const { state, apiUrl, account, setAccount, sync, resolveSync, syncNow } = useStore();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -30,6 +30,11 @@ export function AccountSection() {
           <small className="muted">Logget ind som</small>
           <strong data-testid="account-email">{account.email}</strong>
           <SyncLine sync={sync} />
+          {sync.kind !== 'choose' && (
+            <button type="button" className="btn-secondary sync-now" disabled={sync.kind === 'saving'} onClick={syncNow}>
+              {sync.kind === 'saving' ? 'Synkroniserer…' : 'Synkronisér nu'}
+            </button>
+          )}
         </div>
         {sync.kind === 'choose' && (
           <div className="card choose" role="group" aria-label="Vælg hvilke data du vil beholde">
@@ -120,15 +125,17 @@ export function AccountSection() {
 
 const clock = (t: number) => {
   const d = new Date(t);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const time = `kl. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (d.toDateString() === new Date().toDateString()) return time;
+  return `${d.toLocaleDateString('da-DK', { day: 'numeric', month: 'short' })} ${time}`;
 };
 
 function SyncLine({ sync }: { sync: SyncStatus }) {
   const text = {
     idle: '',
     choose: '',
-    saving: 'Gemmer online…',
-    saved: sync.kind === 'saved' ? `Gemt online kl. ${clock(sync.at)}` : '',
+    saving: 'Synkroniserer…',
+    saved: sync.kind === 'saved' ? `Sidst synkroniseret ${clock(sync.at)}` : '',
     offline: 'Venter på net – ændringer er gemt på telefonen og sendes, når du er online igen.',
     error: 'Kunne ikke gemme online lige nu. Prøver igen om lidt.',
   }[sync.kind];

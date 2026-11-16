@@ -93,6 +93,7 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 .sync-line:empty { display: none; }
 .sync-line.saved { color: var(--ok); }
 .sync-line.offline, .sync-line.error { color: #f5c400; }
+.account-card .sync-now { justify-self: start; margin-top: 6px; }
 .choose { display: grid; gap: 10px; margin-top: 12px; }
 .choose p { margin: 0; }
 .kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px; }

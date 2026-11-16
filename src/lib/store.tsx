@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { ACCOUNT_KEY, API_URL_OVERRIDE_KEY, parseAccount, resolveApiUrl, type Account } from './account';
 import { hasOwnData, loadState, STORAGE_KEY, trackedReducer, type Action } from './logic';
-import { parseMeta, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
+import { parseMeta, shouldAutoSync, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
 import type { AppState, Exercise } from './types';
 
 interface Store {
@@ -14,6 +14,8 @@ interface Store {
   setAccount: (a: Account | null) => void;
   sync: SyncStatus;
   resolveSync: (choice: Choice) => void;
+  /** "Synkronisér nu" */
+  syncNow: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -89,11 +91,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     engineRef.current = engine;
     void engine.start();
     const onOnline = () => void engine.flush();
+    // Appen kommer frem igen (fx skiftet tilbage fra en anden app): hent det nyeste – men ikke midt i en træning
+    const onVisible = () => {
+      if (shouldAutoSync(stateRef.current, document.visibilityState === 'visible')) void engine.syncNow(false);
+    };
     window.addEventListener('online', onOnline);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
     return () => {
       engine.stop();
       engineRef.current = null;
       window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
     };
   }, [apiUrl, account]);
 
@@ -101,8 +111,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (sync.kind === 'choose') void engineRef.current?.resolve(choice, sync.remote);
   };
 
+  const syncNow = () => void engineRef.current?.syncNow();
+
   const map = new Map(state.exercises.map((e) => [e.id, e]));
-  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount, sync, resolveSync }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount, sync, resolveSync, syncNow }}>{children}</Ctx.Provider>;
 }
 
 export function useStore(): Store {

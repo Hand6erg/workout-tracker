@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasOwnData, initialState, loadState, mergeStates, reducer, syncPayload, trackedReducer } from './logic';
-import { emptyMeta, parseMeta, readRemote, SYNC_DEBOUNCE_MS, SYNC_KEY, SYNC_RETRY_MS, SyncEngine, type SyncMeta, type SyncStatus } from './sync';
+import { emptyMeta, parseMeta, readRemote, SYNC_DEBOUNCE_MS, SYNC_KEY, SYNC_RETRY_MS, shouldAutoSync, SyncEngine, type SyncMeta, type SyncStatus } from './sync';
 import type { AppState, Workout } from './types';
 
 const w = (id: string, startedAt: number, name = id): Workout => ({ id, name, startedAt, finishedAt: startedAt + 1, exercises: [] });
@@ -291,10 +291,45 @@ describe('online-gemning', () => {
     await engine.start();
     expect(app.state).toBe(local);
     expect(server.puts).toBe(0);
+    expect(last(app.statuses)).toEqual({ kind: 'saved', at: 1000 });
     server.online = false;
     await engine.pull();
     expect(app.state).toBe(local);
-    expect(last(app.statuses)).toEqual({ kind: 'saved', at: 500 });
+    expect(last(app.statuses)).toEqual({ kind: 'saved', at: 1000 });
+  });
+
+  it('"Synkronisér nu" henter nyt fra en anden enhed og siger til uden net (#39)', async () => {
+    const server: FakeServer = { state: withHistory(w('a', 1)), version: 2, online: true, puts: 0 };
+    const { app, engine } = setup(withHistory(w('a', 1)), server, { version: 2, dirty: false, savedAt: 500 });
+    // Den anden enhed gemmer en ny træning
+    server.state = withHistory(w('pc', 9), w('a', 1));
+    server.version = 3;
+    await engine.syncNow();
+    expect(app.state.history.map((x) => x.id)).toEqual(['pc', 'a']);
+    expect(app.meta).toEqual({ version: 3, dirty: false, savedAt: 1000 });
+    expect(server.puts).toBe(0);
+
+    server.online = false;
+    await engine.syncNow();
+    expect(last(app.statuses)).toEqual({ kind: 'offline' });
+    // Automatisk (ikke bedt om): ingen fejlbesked
+    const before = app.statuses.length;
+    await engine.syncNow(false);
+    expect(app.statuses.length).toBe(before);
+  });
+
+  it('"Synkronisér nu" før kontoen er koblet starter første upload (#39)', async () => {
+    const server: FakeServer = { state: null, version: null, online: true, puts: 0 };
+    const { app, engine } = setup(withHistory(w('a', 1)), server);
+    await engine.syncNow();
+    expect(server.version).toBe(1);
+    expect(app.meta.dirty).toBe(false);
+  });
+
+  it('henter kun automatisk, når appen er synlig og ingen træning er i gang (#39)', () => {
+    expect(shouldAutoSync({ active: null }, true)).toBe(true);
+    expect(shouldAutoSync({ active: null }, false)).toBe(false);
+    expect(shouldAutoSync({ active: { id: 'x', name: 'x', startedAt: 1, exercises: [] } }, true)).toBe(false);
   });
 
   it('fletter og prøver igen ved konflikt (409)', async () => {
