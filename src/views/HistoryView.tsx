@@ -118,6 +118,7 @@ function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
       {w.exercises.map((e) => (
         <section key={e.id} className="detail-ex">
           <h3>{exerciseById(e.exerciseId)?.name}</h3>
+          {e.note && <p className="ex-note">📝 {e.note}</p>}
           <ol>
             {e.sets.map((s) => (
               <li key={s.id}>

@@ -460,3 +460,26 @@ test('forslag til næste vægt kan slås fra (#73)', async ({ page }) => {
   await page.getByRole('button', { name: 'Start Push' }).click();
   await expect(page.getByRole('article', { name: 'Bænkpres', exact: true }).getByRole('button', { name: /^Sidst/ })).toHaveCount(0);
 });
+
+test('note på en øvelse vises næste gang og i historikken (#100)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  let bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByRole('button', { name: 'Note til Bænkpres' }).click();
+  await bench.getByLabel('Skriv note til Bænkpres').fill('sædehøjde 4');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await expect(page.getByRole('dialog').getByText('📝 sædehøjde 4')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByText('📝 Sidst: sædehøjde 4')).toBeVisible();
+  await expect(bench.getByLabel('Skriv note til Bænkpres')).toHaveCount(0);
+});

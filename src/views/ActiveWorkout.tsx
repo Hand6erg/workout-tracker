@@ -5,6 +5,8 @@ import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   doneSetCount,
   formatDuration,
+  lastExerciseNote,
+  NOTE_MAX,
   num,
   previousSets,
   progressionHint,
@@ -164,11 +166,23 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const next = all[pos + 1];
   const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
   const lastWeight = [...we.sets].reverse().find((s) => s.weight)?.weight ?? '';
+  const lastNote = lastExerciseNote(state.history, we.exerciseId);
+  const [noteOpen, setNoteOpen] = useState(!!we.note);
+  const [noteDraft, setNoteDraft] = useState(we.note ?? '');
+  const name = ex?.name ?? 'Ukendt øvelse';
 
   return (
     <article className="ex-block" aria-label={ex?.name}>
       <header>
-        <h3>{ex?.name ?? 'Ukendt øvelse'}</h3>
+        <h3>{name}</h3>
+        <button
+          className="btn-ghost small"
+          aria-expanded={noteOpen}
+          aria-label={`Note til ${name}`}
+          onClick={() => setNoteOpen((o) => !o)}
+        >
+          Note
+        </button>
         {isBarbell && (
           <button className="btn-ghost small" onClick={() => setPlates(true)}>
             Skiver
@@ -179,6 +193,21 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </ConfirmButton>
       </header>
       {hint && <HintButton weId={we.id} hint={hint} />}
+      {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}
+      {noteOpen && (
+        <textarea
+          className="note-input"
+          aria-label={`Skriv note til ${name}`}
+          placeholder="Fx sædehøjde 4"
+          maxLength={NOTE_MAX}
+          rows={2}
+          value={noteDraft}
+          onChange={(e) => {
+            setNoteDraft(e.target.value);
+            dispatch({ type: 'SET_EXERCISE_NOTE', weId: we.id, note: e.target.value });
+          }}
+        />
+      )}
       <table className="sets">
         <thead>
           <tr>
