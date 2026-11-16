@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
@@ -14,16 +14,30 @@ import {
   uncheckedFilledCount,
   warmupBaseWeight,
   workoutDuration,
+  type Action,
   type ProgressionHint,
   type RecordKind,
+  type WorkoutChange,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
-import type { WorkoutExercise } from '../lib/types';
+import type { AppState, Workout, WorkoutExercise } from '../lib/types';
+
+/**
+ * Den træning, der vises i editoren: enten den aktive træning eller en kladde af en afsluttet træning (#92).
+ * `base` er tilstanden, som "forrige", rekorder og opvarmning beregnes ud fra (ved en kladde: træningerne før den).
+ */
+interface WorkoutCtxValue {
+  w: Workout;
+  base: AppState;
+  edit: boolean;
+  send: (a: WorkoutChange) => void;
+}
+const WorkoutCtx = createContext<WorkoutCtxValue | null>(null);
+const useWorkout = () => useContext(WorkoutCtx)!;
 
 export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
-  const { state, dispatch, exerciseById } = useStore();
+  const { state, dispatch } = useStore();
   const now = useNow();
-  const [picking, setPicking] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const w = state.active;
   if (!w) return null;
@@ -33,6 +47,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
 
   return (
+    <WorkoutCtx.Provider value={{ w, base: state, edit: false, send: dispatch }}>
     <section className="workout" aria-label="Aktiv træning">
       <header className="workout-head">
         <button className="btn-ghost" onClick={onMinimize} aria-label="Minimér">
@@ -68,42 +83,11 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
           Træningen er sat på pause – uret står stille.
         </p>
       )}
-      <div className="workout-body">
-        <input
-          className="title-input"
-          aria-label="Navn på træning"
-          value={w.name}
-          onChange={(e) => dispatch({ type: 'RENAME_WORKOUT', name: e.target.value })}
-        />
-
-        {!w.exercises.length && <Empty>Tilføj din første øvelse for at komme i gang.</Empty>}
-
-        {supersetGroups(w.exercises).map((g) =>
-          g.length > 1 ? (
-            <div
-              key={g[0].supersetId}
-              className="superset"
-              role="group"
-              aria-label={`Supersæt: ${g.map((e) => exerciseById(e.exerciseId)?.name ?? '').join(' + ')}`}
-            >
-              <span className="superset-tag">Supersæt</span>
-              {g.map((we) => (
-                <ExerciseBlock key={we.id} we={we} />
-              ))}
-            </div>
-          ) : (
-            <ExerciseBlock key={g[0].id} we={g[0]} />
-          ),
-        )}
-
-        <button className="btn-secondary wide" onClick={() => setPicking(true)}>
-          + Tilføj øvelser
-        </button>
-        <WorkoutNote />
+      <WorkoutBody>
         <ConfirmButton className="btn-danger wide" onConfirm={() => dispatch({ type: 'CANCEL_WORKOUT' })}>
           Annullér træning
         </ConfirmButton>
-      </div>
+      </WorkoutBody>
 
       <RestBar />
 
@@ -128,16 +112,98 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
           </div>
         </Modal>
       )}
+    </section>
+    </WorkoutCtx.Provider>
+  );
+}
+
+/** Retter en afsluttet træning (#92): samme editor som under træningen, men med "Gem" og "Annullér" og uden pausetimer */
+export function WorkoutEditor() {
+  const { state, dispatch } = useStore();
+  const w = state.editing;
+  if (!w) return null;
+  const base: AppState = {
+    ...state,
+    history: state.history.filter((x) => x.id !== w.id && x.startedAt < w.startedAt),
+    active: null,
+    rest: null,
+  };
+  const send = (a: WorkoutChange) => dispatch({ ...a, edit: true } as Action);
+  const canSave = w.exercises.some((e) => e.sets.some((x) => x.done || x.reps.trim() !== ''));
+
+  return (
+    <WorkoutCtx.Provider value={{ w, base, edit: true, send }}>
+      <section className="workout" aria-label="Redigér træning">
+        <header className="workout-head">
+          <button className="btn-ghost" onClick={() => dispatch({ type: 'CANCEL_EDIT' })}>
+            Annullér
+          </button>
+          <strong className="edit-title">Redigér træning</strong>
+          <button className="btn-primary" disabled={!canSave} onClick={() => dispatch({ type: 'SAVE_EDIT' })}>
+            Gem
+          </button>
+        </header>
+        <WorkoutBody>
+          {!canSave && (
+            <p className="muted" role="status">
+              Udfyld mindst ét sæt for at gemme – vil du fjerne hele træningen, så brug "Slet" i Historik.
+            </p>
+          )}
+        </WorkoutBody>
+      </section>
+    </WorkoutCtx.Provider>
+  );
+}
+
+/** Navn, øvelser, "Tilføj øvelser" og note – fælles for den aktive træning og editoren */
+function WorkoutBody({ children }: { children?: ReactNode }) {
+  const { exerciseById } = useStore();
+  const { w, send } = useWorkout();
+  const [picking, setPicking] = useState(false);
+  return (
+    <div className="workout-body">
+      <input
+        className="title-input"
+        aria-label="Navn på træning"
+        value={w.name}
+        onChange={(e) => send({ type: 'RENAME_WORKOUT', name: e.target.value })}
+      />
+
+      {!w.exercises.length && <Empty>Tilføj din første øvelse for at komme i gang.</Empty>}
+
+      {supersetGroups(w.exercises).map((g) =>
+        g.length > 1 ? (
+          <div
+            key={g[0].supersetId}
+            className="superset"
+            role="group"
+            aria-label={`Supersæt: ${g.map((e) => exerciseById(e.exerciseId)?.name ?? '').join(' + ')}`}
+          >
+            <span className="superset-tag">Supersæt</span>
+            {g.map((we) => (
+              <ExerciseBlock key={we.id} we={we} />
+            ))}
+          </div>
+        ) : (
+          <ExerciseBlock key={g[0].id} we={g[0]} />
+        ),
+      )}
+
+      <button className="btn-secondary wide" onClick={() => setPicking(true)}>
+        + Tilføj øvelser
+      </button>
+      <WorkoutNote />
+      {children}
       {picking && (
         <ExercisePicker
           onClose={() => setPicking(false)}
           onPick={(ids) => {
-            dispatch({ type: 'ADD_EXERCISES', exerciseIds: ids });
+            send({ type: 'ADD_EXERCISES', exerciseIds: ids });
             setPicking(false);
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 
@@ -151,7 +217,7 @@ function recordText(kinds: RecordKind[], weight: string): string {
 const kgText = (n: number) => String(n).replace('.', ',');
 
 function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
-  const { dispatch } = useStore();
+  const { send: dispatch } = useWorkout();
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
@@ -169,13 +235,14 @@ function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
 }
 
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
-  const { state, dispatch, exerciseById } = useStore();
+  const { exerciseById } = useStore();
+  const { w, base: state, edit, send: dispatch } = useWorkout();
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
-  const hint = state.showHints ? progressionHint(state, we.exerciseId) : null;
+  const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
   const [warmupMsg, setWarmupMsg] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
-  const all = state.active?.exercises ?? [];
+  const all = w.exercises;
   const pos = all.findIndex((e) => e.id === we.id);
   const next = all[pos + 1];
   const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
@@ -373,9 +440,9 @@ function RestBar() {
 
 /** Note til hele træningen (fx "sov dårligt") – vises på kortet i Historik */
 function WorkoutNote() {
-  const { state, dispatch } = useStore();
+  const { w, send: dispatch } = useWorkout();
   // Lokal kladde, så mellemrum mens man skriver ikke forsvinder (noten renses i reduceren)
-  const [draft, setDraft] = useState(state.active?.note ?? '');
+  const [draft, setDraft] = useState(w.note ?? '');
   return (
     <label className="workout-note">
       <span>Note til træningen</span>
