@@ -28,6 +28,7 @@ import {
   trainingDays,
   uncheckedFilledCount,
   warmupSets,
+  warmupBaseWeight,
   weekStreak,
   weeklyVolume,
   workoutVolume,
@@ -367,6 +368,19 @@ describe('opvarmningssæt (#25)', () => {
     const { s, weId } = withBench('120');
     const sets = reducer(s, { type: 'ADD_WARMUP_SETS', weId }).active!.exercises[0].sets;
     expect(sets[1].weight).toBe('47,5');
+  });
+
+  it('bruger sidste gangs vægt når feltet er tomt', () => {
+    let { s, weId } = withBench('100');
+    for (const set of s.active!.exercises[0].sets) s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'START_WORKOUT', now: T0 + 1 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    expect(we.sets[0].weight).toBe('');
+    expect(warmupBaseWeight(s.history, we)).toBe(100);
+    const sets = reducer(s, { type: 'ADD_WARMUP_SETS', weId: we.id }).active!.exercises[0].sets;
+    expect(sets.filter((x) => x.warmup).map((x) => x.weight)).toEqual(['20', '40', '60', '80']);
   });
 
   it('gør intet uden vægt i arbejdssættet', () => {

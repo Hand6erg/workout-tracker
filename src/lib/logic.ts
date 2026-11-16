@@ -372,6 +372,18 @@ export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR): Warm
   return out;
 }
 
+/**
+ * Vægten opvarmningen regnes ud fra: første arbejdssæt med en indtastet vægt,
+ * ellers sidste gangs vægt (den grå forslagsvægt i feltet). 0 = ingen vægt kendt.
+ */
+export function warmupBaseWeight(history: Workout[], we: WorkoutExercise): number {
+  const work = we.sets.filter((x) => !x.warmup);
+  const typed = work.find((x) => num(x.weight) > 0);
+  if (typed) return num(typed.weight);
+  const prev = previousSets(history, we.exerciseId).find((x) => num(x.weight) > 0);
+  return prev ? num(prev.weight) : 0;
+}
+
 /* ---------- Supersæt ---------- */
 
 /**
@@ -688,9 +700,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => {
           const work = e.sets.filter((x) => !x.warmup);
-          const first = work.find((x) => num(x.weight) > 0);
-          if (!first) return e;
-          const warm = warmupSets(num(first.weight), action.barWeight ?? state.barWeight).map(
+          const base = warmupBaseWeight(state.history, e);
+          if (!base) return e;
+          const warm = warmupSets(base, action.barWeight ?? state.barWeight).map(
             (ws): SetEntry => ({ ...emptySet(), weight: String(ws.weight).replace('.', ','), reps: String(ws.reps), warmup: true }),
           );
           return { ...e, sets: [...warm, ...work] };

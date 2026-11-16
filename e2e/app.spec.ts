@@ -239,8 +239,10 @@ test('tilføjer opvarmningssæt ud fra første arbejdssæt (#25)', async ({ page
   await page.getByRole('button', { name: 'Start Push' }).click();
   const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
   const add = bench.getByRole('button', { name: 'Tilføj opvarmning' });
-  await expect(add).toBeDisabled();
+  await add.click();
+  await expect(bench.getByRole('status')).toContainText('Skriv vægten i sæt 1 først');
   await bench.getByLabel('Vægt sæt 1').fill('100');
+  await expect(bench.getByRole('status')).toHaveCount(0);
   await add.click();
   await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('20');
   await expect(bench.getByLabel('Vægt opvarmning 4')).toHaveValue('80');
