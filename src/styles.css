@@ -257,3 +257,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .program-name { flex: 1; font-weight: 600; }
 .program-list .btn-ghost:disabled { opacity: 0.3; }
 .program-add { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* "Næste" i programmet på Træning (#108) */
+.next-up { border: 2px solid var(--accent); margin-bottom: 14px; }
+.next-up h2 { margin: 0; font-size: 1.2rem; }
+.next-up .btn-primary { margin-top: 12px; }

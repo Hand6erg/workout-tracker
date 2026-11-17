@@ -49,3 +49,41 @@ test('en slettet skabelon forsvinder fra programmet', async ({ page }) => {
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
   await expect(page.getByRole('region', { name: 'Program' }).getByRole('listitem')).toHaveText([/Pull/]);
 });
+
+async function setProgram(page: import('@playwright/test').Page, names: string[]) {
+  const program = page.getByRole('region', { name: 'Program' });
+  for (const n of names) await program.getByRole('button', { name: `Tilføj ${n} til program` }).click();
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+}
+
+test('startskærmen viser næste skabelon i programmet og går videre efter en træning (#108)', async ({ page }) => {
+  await setProgram(page, ['Push', 'Pull']);
+  const next = page.getByRole('region', { name: 'Næste i programmet' });
+  await expect(next.getByRole('heading')).toHaveText('Næste: Push');
+
+  await next.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const first = workout.getByRole('article').first();
+  await first.getByLabel('Vægt sæt 1').fill('50');
+  await first.getByLabel('Reps sæt 1').fill('5');
+  await first.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await expect(workout).toBeHidden();
+
+  await expect(next.getByRole('heading')).toHaveText('Næste: Pull');
+});
+
+test('"Spring over" går videre til den følgende skabelon (#108)', async ({ page }) => {
+  await setProgram(page, ['Pull', 'Push']);
+  const next = page.getByRole('region', { name: 'Næste i programmet' });
+  await expect(next.getByRole('heading')).toHaveText('Næste: Pull');
+  await next.getByRole('button', { name: 'Spring over' }).click();
+  await expect(next.getByRole('heading')).toHaveText('Næste: Push');
+});
+
+test('uden program vises intet "Næste"-kort (#108)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await expect(page.getByRole('button', { name: 'Start tom træning' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Næste i programmet' })).toHaveCount(0);
+});
