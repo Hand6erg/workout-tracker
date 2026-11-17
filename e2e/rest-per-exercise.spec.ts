@@ -66,3 +66,49 @@ test('pausetiden huskes til næste træning (#120)', async ({ page }) => {
   const again = await startWithBench(page);
   await expect(again.getByRole('button', { name: 'Pause for Bænkpres: 2:00' })).toBeVisible();
 });
+
+test('pausetid på øvelsessiden bruges i træningen og overlever backup (#121)', async ({ page }) => {
+  const nav = page.getByRole('navigation');
+  await nav.getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByPlaceholder('Søg').fill('squat');
+  await page.getByRole('button', { name: /^Squat/ }).click();
+  const detail = page.getByRole('dialog', { name: 'Squat' });
+  const rest = detail.getByRole('region', { name: 'Pause mellem sæt' });
+  await expect(rest.getByLabel('Pausetid')).toHaveText('3:00');
+  await expect(rest.getByText('Forslag til denne type øvelse')).toBeVisible();
+  await rest.getByRole('button', { name: '15 sekunder længere' }).click();
+  await rest.getByRole('button', { name: '15 sekunder længere' }).click();
+  await expect(rest.getByLabel('Pausetid')).toHaveText('3:30');
+  await expect(rest.getByText('Egen tid for øvelsen')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(detail).toHaveCount(0);
+
+  // Profil fortæller, at øvelser kan have egen tid
+  await nav.getByRole('button', { name: /Profil/ }).click();
+  await expect(page.getByText(/Øvelser kan have deres egen pausetid/)).toBeVisible();
+
+  // Backup → slet alt → gendan
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Tag backup (JSON)' }).click();
+  const backup = await (await dl).path();
+  await page.getByRole('button', { name: 'Slet alle data' }).click();
+  await page.getByRole('button', { name: 'Tryk igen for at bekræfte' }).click();
+  await page.locator('input[type="file"]').setInputFiles(backup!);
+  await expect(page.getByRole('status').filter({ hasText: 'Gendannet' })).toBeVisible();
+
+  // En ny træning bruger squattens egen tid
+  await nav.getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByPlaceholder('Søg efter øvelse').fill('squat');
+  await picker.getByRole('button', { name: /^Squat/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+  const squat = workout.getByRole('article', { name: 'Squat', exact: true });
+  await expect(squat.getByRole('button', { name: 'Pause for Squat: 3:30' })).toBeVisible();
+  await squat.getByLabel('Vægt sæt 1').fill('100');
+  await squat.getByLabel('Reps sæt 1').fill('5');
+  await squat.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toContainText(/3:(30|29)/);
+});
