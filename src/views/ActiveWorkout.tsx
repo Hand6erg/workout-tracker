@@ -1,6 +1,7 @@
 import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { RestPicker, formatRest } from '../components/RestPicker';
+import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   doneSetCount,
@@ -331,6 +332,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const [noteDraft, setNoteDraft] = useState(we.note ?? '');
   const name = ex?.name ?? 'Ukendt øvelse';
   const [restOpen, setRestOpen] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
   const { state: live } = useStore();
   const restLabel = formatRest(restFor(live, we.exerciseId));
 
@@ -351,11 +353,25 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         >
           Note
         </button>
+        <button className="btn-ghost small" aria-label={`Byt ${name}`} onClick={() => setSwapOpen(true)}>
+          Byt
+        </button>
         <ConfirmButton className="btn-ghost small" confirmText="Fjern?" onConfirm={() => dispatch({ type: 'REMOVE_EXERCISE', weId: we.id })}>
           Fjern
         </ConfirmButton>
       </header>
       {restOpen && <RestPicker exerciseId={we.exerciseId} onClose={() => setRestOpen(false)} />}
+      {swapOpen && (
+        <SwapPicker
+          exerciseId={we.exerciseId}
+          workout={w}
+          onClose={() => setSwapOpen(false)}
+          onPick={(exerciseId) => {
+            dispatch({ type: 'SWAP_EXERCISE', weId: we.id, exerciseId });
+            setSwapOpen(false);
+          }}
+        />
+      )}
       {hint && <HintButton weId={we.id} hint={hint} />}
       {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}
       {noteOpen && (
