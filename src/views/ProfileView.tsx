@@ -66,6 +66,7 @@ export function ProfileView() {
           onChange={(e) => dispatch({ type: 'SET_REST_SECONDS', seconds: Number(e.target.value) })}
         />
       </label>
+      <p className="muted rest-global-note">Øvelser kan have deres egen pausetid – vælg den under Øvelser eller med ⏱ på øvelsen i træningen.</p>
 
       <div className="rest-alert-settings" role="group" aria-label="Signal når pausen er slut">
         <label className="toggle">

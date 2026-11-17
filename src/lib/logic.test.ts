@@ -1270,6 +1270,15 @@ describe('pausetid pr. øvelse (#119)', () => {
     expect(restFor(merged, 'bench')).toBe(150);
   });
 
+  it('backup (JSON) og gendan beholder øvelsernes egne pausetider (#121)', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'squat', seconds: 240 });
+    s = reducer(s, { type: 'SET_EXERCISE_REST', exerciseId: 'curl', seconds: 45 });
+    const restored = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(s)) });
+    expect(restInfo(restored, 'squat')).toEqual({ seconds: 240, source: 'own' });
+    expect(restFor(restored, 'curl')).toBe(45);
+    expect(restInfo(restored, 'bench').source).toBe('suggested');
+  });
+
   it('gamle gemte data indlæses og opfører sig som før', () => {
     const old = { ...initialState(), restSeconds: 100 } as Partial<AppState>;
     old.exercises = old.exercises!.map(({ restSeconds: _r, ...e }) => e);

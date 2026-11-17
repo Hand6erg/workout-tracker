@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import { exerciseHistory, formatKg, formatSet, personalRecords, uid, type PersonalRecords } from '../lib/logic';
 import { useStore } from '../lib/store';
@@ -111,6 +112,10 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
       <p className="muted">
         {ex.muscle} · {ex.equipment}
       </p>
+      <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
+        <h3 className="section">⏱ Pause mellem sæt</h3>
+        <RestControls exerciseId={ex.id} />
+      </section>
       {!hist.length ? (
         <>
           <Empty>Du har ikke lavet denne øvelse endnu.</Empty>

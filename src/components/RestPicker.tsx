@@ -15,41 +15,51 @@ const SOURCE_TEXT: Record<RestSource, string> = {
 
 const QUICK = [60, 90, 120, 180];
 
-/** Vælg pausetid for én øvelse (#120). Gemmes på øvelsen, så den bruges næste gang. */
-export function RestPicker({ exerciseId, onClose }: { exerciseId: string; onClose: () => void }) {
-  const { state, dispatch, exerciseById } = useStore();
+/** Knapper til at vælge pausetid for én øvelse. Gemmes på øvelsen, så den bruges næste gang. */
+export function RestControls({ exerciseId }: { exerciseId: string }) {
+  const { state, dispatch } = useStore();
   const { seconds, source } = restInfo(state, exerciseId);
   const set = (s: number) => dispatch({ type: 'SET_EXERCISE_REST', exerciseId, seconds: Math.max(0, Math.min(MAX_REST, s)) });
+  return (
+    <>
+      <div className="rest-picker-value">
+        <button className="btn-ghost" aria-label="15 sekunder kortere" onClick={() => set(seconds - 15)} disabled={seconds <= 0}>
+          −15
+        </button>
+        <output aria-label="Pausetid" aria-live="polite">
+          {formatRest(seconds)}
+        </output>
+        <button className="btn-ghost" aria-label="15 sekunder længere" onClick={() => set(seconds + 15)} disabled={seconds >= MAX_REST}>
+          +15
+        </button>
+      </div>
+      <p className="muted rest-picker-source">{SOURCE_TEXT[source]}</p>
+      <div className="chips rest-picker-quick" role="group" aria-label="Hurtige valg">
+        {QUICK.map((q) => (
+          <button key={q} className={`chip ${source === 'own' && seconds === q ? 'on' : ''}`} onClick={() => set(q)}>
+            {formatRest(q)}
+          </button>
+        ))}
+      </div>
+      <button
+        className="btn-secondary"
+        disabled={source !== 'own'}
+        onClick={() => dispatch({ type: 'SET_EXERCISE_REST', exerciseId })}
+      >
+        Brug standard ({formatRest(restInfoWithout(state, exerciseId))})
+      </button>
+    </>
+  );
+}
+
+/** Vælg pausetid for én øvelse fra træningen (#120) */
+export function RestPicker({ exerciseId, onClose }: { exerciseId: string; onClose: () => void }) {
+  const { exerciseById } = useStore();
   const name = exerciseById(exerciseId)?.name ?? 'øvelsen';
   return (
     <Modal title={`Pause: ${name}`} onClose={onClose}>
       <div className="rest-picker">
-        <div className="rest-picker-value">
-          <button className="btn-ghost" aria-label="15 sekunder kortere" onClick={() => set(seconds - 15)} disabled={seconds <= 0}>
-            −15
-          </button>
-          <output aria-label="Pausetid" aria-live="polite">
-            {formatRest(seconds)}
-          </output>
-          <button className="btn-ghost" aria-label="15 sekunder længere" onClick={() => set(seconds + 15)} disabled={seconds >= MAX_REST}>
-            +15
-          </button>
-        </div>
-        <p className="muted rest-picker-source">{SOURCE_TEXT[source]}</p>
-        <div className="chips rest-picker-quick" role="group" aria-label="Hurtige valg">
-          {QUICK.map((q) => (
-            <button key={q} className={`chip ${source === 'own' && seconds === q ? 'on' : ''}`} onClick={() => set(q)}>
-              {formatRest(q)}
-            </button>
-          ))}
-        </div>
-        <button
-          className="btn-secondary"
-          disabled={source !== 'own'}
-          onClick={() => dispatch({ type: 'SET_EXERCISE_REST', exerciseId })}
-        >
-          Brug standard ({formatRest(restInfoWithout(state, exerciseId))})
-        </button>
+        <RestControls exerciseId={exerciseId} />
         <button className="btn-primary" onClick={onClose}>
           Færdig
         </button>
