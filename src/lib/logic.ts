@@ -614,6 +614,12 @@ export function nextInProgram(state: AppState): Template | null {
 
 /* ---------- Byt øvelse (#126) ---------- */
 
+/** Kan et byt i den aktive træning gemmes i skabelonen, den blev startet fra? (#128) */
+export function canSwapInTemplate(state: AppState, templateId: string | undefined, fromExerciseId: string): boolean {
+  const tpl = templateId ? state.templates.find((t) => t.id === templateId) : undefined;
+  return !!tpl && tpl.exercises.some((e) => e.exerciseId === fromExerciseId);
+}
+
 /** Højst så mange forslag, når en øvelse byttes */
 export const SWAP_SUGGESTIONS_MAX = 6;
 
@@ -702,6 +708,7 @@ export type Action =
   | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
+  | { type: 'SWAP_IN_TEMPLATE'; templateId: string; fromExerciseId: string; toExerciseId: string }
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
   | { type: 'MERGE_REMOTE'; remote: AppState };
@@ -1059,6 +1066,16 @@ export function reducer(state: AppState, action: Action): AppState {
         ),
       };
       return { ...state, templates: [...state.templates, tpl] };
+    }
+    case 'SWAP_IN_TEMPLATE': {
+      // Byt øvelsen i skabelonen (#128): samme antal sæt og supersæt – den første forekomst af den gamle øvelse
+      if (action.fromExerciseId === action.toExerciseId) return state;
+      if (!state.exercises.some((e) => e.id === action.toExerciseId)) return state;
+      const tpl = state.templates.find((t) => t.id === action.templateId);
+      const i = tpl?.exercises.findIndex((e) => e.exerciseId === action.fromExerciseId) ?? -1;
+      if (!tpl || i < 0) return state;
+      const exercises = tpl.exercises.map((e, k) => (k === i ? { ...e, exerciseId: action.toExerciseId } : e));
+      return { ...state, templates: state.templates.map((t) => (t === tpl ? { ...t, exercises } : t)) };
     }
     case 'DELETE_TEMPLATE':
       return { ...state, templates: state.templates.filter((t) => t.id !== action.templateId) };
