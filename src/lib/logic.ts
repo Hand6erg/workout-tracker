@@ -37,6 +37,8 @@ export function initialState(): AppState {
     showHints: true,
     restSound: true,
     restVibrate: true,
+    program: [],
+    programSkip: { after: null, n: 0 },
     settingsAt: 0,
     deleted: {},
   };
@@ -539,6 +541,36 @@ export function lastExerciseNote(history: Workout[], exerciseId: string): { note
   return best;
 }
 
+/* ---------- Program (#106) ---------- */
+
+/** Programmets skabeloner i rækkefølge – slettede skabeloner springes over */
+export function programTemplates(state: AppState): Template[] {
+  const byId = new Map(state.templates.map((t) => [t.id, t]));
+  return (state.program ?? []).map((id) => byId.get(id)).filter((t): t is Template => !!t);
+}
+
+/** Den seneste træning fra programmet, og hvor mange gange der er sprunget over siden */
+function programPosition(state: AppState): { lastWorkoutId: string | null; lastTemplateId: string | null; skips: number } {
+  const ids = new Set(programTemplates(state).map((t) => t.id));
+  const last = state.history.find((w) => w.templateId && ids.has(w.templateId)) ?? null; // historikken er nyeste først
+  const lastWorkoutId = last?.id ?? null;
+  const skip = state.programSkip ?? { after: null, n: 0 };
+  return { lastWorkoutId, lastTemplateId: last?.templateId ?? null, skips: skip.after === lastWorkoutId ? skip.n : 0 };
+}
+
+/**
+ * Næste skabelon i programmet: den efter skabelonen fra den seneste træning i programmet (starter forfra efter
+ * den sidste), flyttet med antallet af "Spring over". Uden træninger endnu er det den første. Null uden program.
+ * Træninger fra skabeloner uden for programmet flytter ikke rækkefølgen.
+ */
+export function nextInProgram(state: AppState): Template | null {
+  const list = programTemplates(state);
+  if (!list.length) return null;
+  const { lastTemplateId, skips } = programPosition(state);
+  const start = lastTemplateId ? list.findIndex((t) => t.id === lastTemplateId) + 1 : 0;
+  return list[(start + skips) % list.length];
+}
+
 /* ---------- Reducer ---------- */
 
 /** Handlinger på en træning, der også virker på kladden (`edit: true`) i stedet for den aktive træning */
@@ -592,6 +624,8 @@ export type Action =
   | { type: 'SET_SHOW_HINTS'; on: boolean }
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
+  | { type: 'SET_PROGRAM'; templateIds: string[] }
+  | { type: 'SKIP_PROGRAM' }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
@@ -722,6 +756,7 @@ export function reducer(state: AppState, action: Action): AppState {
         id: uid(),
         name: tpl?.name ?? defaultWorkoutName(action.now),
         startedAt: action.now,
+        ...(tpl ? { templateId: tpl.id } : {}),
         exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
       };
       return { ...state, active, rest: null };
@@ -884,6 +919,17 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restSound: action.on };
     case 'SET_REST_VIBRATE':
       return { ...state, restVibrate: action.on };
+    case 'SET_PROGRAM': {
+      const known = new Set(state.templates.map((t) => t.id));
+      const program = [...new Set(action.templateIds)].filter((id) => known.has(id));
+      if (program.length === state.program.length && program.every((id, i) => id === state.program[i])) return state;
+      return { ...state, program, programSkip: { after: null, n: 0 } };
+    }
+    case 'SKIP_PROGRAM': {
+      const { lastWorkoutId, skips } = programPosition(state);
+      if (!programTemplates(state).length) return state;
+      return { ...state, programSkip: { after: lastWorkoutId, n: skips + 1 } };
+    }
     case 'SET_WEEKLY_GOAL':
       return { ...state, weeklyGoal: Math.max(1, Math.min(7, Math.round(action.goal) || 1)) };
     case 'SET_BAR_WEIGHT':
@@ -975,7 +1021,17 @@ export function restAlertDue(
 
 /* ---------- Online-gemning: flet to versioner ---------- */
 
-const SETTINGS = ['restSeconds', 'barWeight', 'plates', 'weeklyGoal', 'showHints', 'restSound', 'restVibrate'] as const;
+const SETTINGS = [
+  'restSeconds',
+  'barWeight',
+  'plates',
+  'weeklyGoal',
+  'showHints',
+  'restSound',
+  'restVibrate',
+  'program',
+  'programSkip',
+] as const;
 
 type Stamped = { id: string; updatedAt?: number };
 
