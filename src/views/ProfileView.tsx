@@ -3,6 +3,7 @@ import { AccountSection } from '../components/AccountSection';
 import { playRestAlert } from '../lib/alerts';
 import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
+import { ProgramSection } from '../components/ProgramSection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -51,6 +52,7 @@ export function ProfileView() {
       <WeeklyVolume />
       <MuscleSplit />
       <BodySection />
+      <ProgramSection />
 
       <h2 className="section">Indstillinger</h2>
       <label className="field">
