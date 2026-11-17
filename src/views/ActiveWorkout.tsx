@@ -4,6 +4,7 @@ import { RestPicker, formatRest } from '../components/RestPicker';
 import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
+  canSwapInTemplate,
   doneSetCount,
   formatDuration,
   lastExerciseNote,
@@ -333,7 +334,13 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const name = ex?.name ?? 'Ukendt øvelse';
   const [restOpen, setRestOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
-  const { state: live } = useStore();
+  // Øvelsen fra skabelonen før byttet (#128) – null = ikke byttet, eller valget er truffet
+  const [swappedFrom, setSwappedFrom] = useState<string | null>(null);
+  const [savedInTemplate, setSavedInTemplate] = useState(false);
+  const { state: live, dispatch: liveDispatch } = useStore();
+  const askTemplate =
+    !edit && !!swappedFrom && swappedFrom !== we.exerciseId && canSwapInTemplate(live, w.templateId, swappedFrom);
+  const templateName = live.templates.find((t) => t.id === w.templateId)?.name ?? '';
   const restLabel = formatRest(restFor(live, we.exerciseId));
 
   return (
@@ -368,9 +375,36 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           onClose={() => setSwapOpen(false)}
           onPick={(exerciseId) => {
             dispatch({ type: 'SWAP_EXERCISE', weId: we.id, exerciseId });
+            setSwappedFrom((f) => f ?? we.exerciseId);
+            setSavedInTemplate(false);
             setSwapOpen(false);
           }}
         />
+      )}
+      {askTemplate && (
+        <div className="swap-ask" role="group" aria-label="Gem byttet">
+          <span>
+            {exerciseById(swappedFrom!)?.name} → {name}. Også i skabelonen "{templateName}"?
+          </span>
+          <button className="btn-ghost small" onClick={() => setSwappedFrom(null)}>
+            Kun i dag
+          </button>
+          <button
+            className="btn-primary small"
+            onClick={() => {
+              liveDispatch({ type: 'SWAP_IN_TEMPLATE', templateId: w.templateId!, fromExerciseId: swappedFrom!, toExerciseId: we.exerciseId });
+              setSwappedFrom(null);
+              setSavedInTemplate(true);
+            }}
+          >
+            Gem i skabelonen
+          </button>
+        </div>
+      )}
+      {savedInTemplate && (
+        <p className="swap-saved" role="status">
+          ✓ Gemt i skabelonen "{templateName}"
+        </p>
       )}
       {hint && <HintButton weId={we.id} hint={hint} />}
       {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}

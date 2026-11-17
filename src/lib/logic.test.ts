@@ -42,6 +42,7 @@ import {
   workoutDuration,
   syncPayload,
   swapSuggestions,
+  canSwapInTemplate,
 } from './logic';
 import type { AppState } from './types';
 
@@ -1365,5 +1366,55 @@ describe('byt øvelse (#126)', () => {
     expect(out.editing!.exercises[0].exerciseId).toBe('dips');
     expect(out.active).toBe(active);
     expect(out.history[0].exercises[0].exerciseId).toBe('bench');
+  });
+});
+
+describe('byt øvelsen i skabelonen (#128)', () => {
+  it('erstatter øvelsen i skabelonen og beholder antal sæt og supersæt', () => {
+    let s = initialState();
+    s = {
+      ...s,
+      templates: [
+        { id: 't1', name: 'Bryst', exercises: [{ exerciseId: 'ohp', sets: 2 }, { exerciseId: 'bench', sets: 4, supersetId: 'x' }, { exerciseId: 'dips', sets: 3, supersetId: 'x' }] },
+        ...s.templates,
+      ],
+    };
+    const out = reducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 't1', fromExerciseId: 'bench', toExerciseId: 'cable-fly' });
+    expect(out.templates[0].exercises).toEqual([
+      { exerciseId: 'ohp', sets: 2 },
+      { exerciseId: 'cable-fly', sets: 4, supersetId: 'x' },
+      { exerciseId: 'dips', sets: 3, supersetId: 'x' },
+    ]);
+    expect(out.templates.slice(1)).toEqual(s.templates.slice(1));
+    // Næste træning fra skabelonen starter med den nye øvelse
+    const next = reducer(out, { type: 'START_WORKOUT', templateId: 't1', now: T0 });
+    expect(next.active!.exercises.map((e) => e.exerciseId)).toEqual(['ohp', 'cable-fly', 'dips']);
+    expect(next.active!.exercises[1].sets).toHaveLength(4);
+  });
+
+  it('gør intet ved ukendt skabelon, øvelse der ikke er i skabelonen eller ukendt ny øvelse', () => {
+    const s = initialState();
+    expect(reducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 'nej', fromExerciseId: 'bench', toExerciseId: 'dips' })).toBe(s);
+    expect(reducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 'tpl-push', fromExerciseId: 'squat', toExerciseId: 'dips' })).toBe(s);
+    expect(reducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 'tpl-push', fromExerciseId: 'bench', toExerciseId: 'ukendt' })).toBe(s);
+    expect(reducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 'tpl-push', fromExerciseId: 'bench', toExerciseId: 'bench' })).toBe(s);
+  });
+
+  it('canSwapInTemplate kræver en skabelon med den gamle øvelse', () => {
+    const s = initialState();
+    expect(canSwapInTemplate(s, 'tpl-push', 'bench')).toBe(true);
+    expect(canSwapInTemplate(s, 'tpl-push', 'squat')).toBe(false);
+    expect(canSwapInTemplate(s, undefined, 'bench')).toBe(false);
+    expect(canSwapInTemplate(s, 'slettet', 'bench')).toBe(false);
+  });
+
+  it('ændringen stemples, så den synkroniseres, og gamle data uden templateId indlæses', () => {
+    const s = initialState();
+    const out = trackedReducer(s, { type: 'SWAP_IN_TEMPLATE', templateId: 'tpl-push', fromExerciseId: 'bench', toExerciseId: 'dips' });
+    expect(out.templates.find((t) => t.id === 'tpl-push')!.updatedAt).toBeGreaterThan(0);
+    const old = { ...initialState(), history: [{ id: 'w', name: 'Gammel', startedAt: T0, finishedAt: T0 + 1, exercises: [] }] };
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.history[0].templateId).toBeUndefined();
+    expect(canSwapInTemplate(loaded, loaded.history[0].templateId, 'bench')).toBe(false);
   });
 });
