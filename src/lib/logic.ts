@@ -3,6 +3,7 @@ import { MUSCLES } from './types';
 import type {
   AppState,
   Equipment,
+  Exercise,
   Muscle,
   SetEntry,
   Template,
@@ -455,6 +456,46 @@ export function roundComplete(w: Workout, we: WorkoutExercise, k: number): boole
     });
 }
 
+/* ---------- Pausetid pr. øvelse (#119) ---------- */
+
+export const DEFAULT_REST = 90;
+export const MAX_REST = 600;
+
+/** Fornuftigt forslag ud fra øvelsestypen: tunge stangløft længst, isolation/kabel/maskine kortest. */
+export function suggestedRest(ex: Pick<Exercise, 'muscle' | 'equipment'>): number {
+  if (ex.equipment === 'Stang' && (ex.muscle === 'Ben' || ex.muscle === 'Ryg' || ex.muscle === 'Bryst')) return 180;
+  if (ex.muscle === 'Arme' || ex.muscle === 'Mave' || ex.equipment === 'Kabel' || ex.equipment === 'Maskine') return 60;
+  return 120;
+}
+
+/** Hvor pausetiden for en øvelse kommer fra */
+export type RestSource = 'own' | 'suggested' | 'global';
+
+/**
+ * Pausetiden for en øvelse: øvelsens egen tid, ellers et forslag (kun så længe den fælles
+ * pausetid i Profil står på standard), ellers den fælles pausetid.
+ */
+export function restInfo(state: AppState, exerciseId: string): { seconds: number; source: RestSource } {
+  const ex = state.exercises.find((e) => e.id === exerciseId);
+  if (ex?.restSeconds !== undefined) return { seconds: ex.restSeconds, source: 'own' };
+  if (ex && state.restSeconds === DEFAULT_REST) return { seconds: suggestedRest(ex), source: 'suggested' };
+  return { seconds: state.restSeconds, source: 'global' };
+}
+
+export function restFor(state: AppState, exerciseId: string): number {
+  return restInfo(state, exerciseId).seconds;
+}
+
+/**
+ * Pausen efter et udført sæt: længste pause i supersættet. Opvarmning beholder en kort pause
+ * (højst den fælles pausetid, som før #119).
+ */
+function restAfterSet(state: AppState, w: Workout, we: WorkoutExercise, warmup: boolean): number {
+  const group = we.supersetId ? w.exercises.filter((e) => e.supersetId === we.supersetId) : [we];
+  const longest = Math.max(...group.map((e) => restFor(state, e.exerciseId)));
+  return warmup ? Math.min(longest, state.restSeconds) : longest;
+}
+
 /* ---------- Forslag til progression ---------- */
 
 export interface ProgressionHint {
@@ -619,6 +660,7 @@ export type Action =
   | { type: 'ADJUST_REST'; delta: number }
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
+  | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
   | { type: 'SET_WEEKLY_GOAL'; goal: number }
   | { type: 'SET_SHOW_HINTS'; on: boolean }
@@ -888,10 +930,11 @@ export function reducer(state: AppState, action: Action): AppState {
         patch = { ...patch, weight, reps };
       }
       const next = reducer(state, { type: 'UPDATE_SET', weId: action.weId, setId: action.setId, patch });
-      const startRest = nowDone && state.restSeconds > 0 && (set.warmup || roundComplete(next.active!, we, workIdxOf(we, idx)));
+      const seconds = nowDone ? restAfterSet(state, next.active!, we, !!set.warmup) : 0;
+      const startRest = seconds > 0 && (set.warmup || roundComplete(next.active!, we, workIdxOf(we, idx)));
       return {
         ...next,
-        rest: startRest ? { endsAt: action.now + state.restSeconds * 1000, total: state.restSeconds } : next.rest,
+        rest: startRest ? { endsAt: action.now + seconds * 1000, total: seconds } : next.rest,
       };
     }
     case 'ADJUST_REST': {
@@ -902,7 +945,19 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SKIP_REST':
       return { ...state, rest: null };
     case 'SET_REST_SECONDS':
-      return { ...state, restSeconds: Math.max(0, Math.min(600, Math.round(action.seconds))) };
+      return { ...state, restSeconds: Math.max(0, Math.min(MAX_REST, Math.round(action.seconds))) };
+    case 'SET_EXERCISE_REST': {
+      const ex = state.exercises.find((e) => e.id === action.exerciseId);
+      if (!ex) return state;
+      const seconds =
+        action.seconds === undefined || !Number.isFinite(action.seconds)
+          ? undefined
+          : Math.max(0, Math.min(MAX_REST, Math.round(action.seconds)));
+      if (seconds === ex.restSeconds) return state;
+      const { restSeconds: _old, ...base } = ex;
+      const updated: Exercise = seconds === undefined ? base : { ...base, restSeconds: seconds };
+      return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
+    }
     case 'ADD_MEASUREMENT': {
       const pos = (n?: number) => (n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined);
       const m = { id: action.id, date: action.date, weight: pos(action.weight), bodyFat: pos(action.bodyFat), waist: pos(action.waist) };
