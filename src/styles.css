@@ -88,6 +88,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .field { display: grid; gap: 6px; margin-bottom: 14px; color: var(--muted); font-size: 0.9rem; }
 
 .error { color: var(--danger); margin: 0 0 8px; }
+.timing-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 8px; }
+.timing-grid .field { margin-bottom: 4px; font-size: 0.8rem; min-width: 0; }
+.timing-grid input { width: 100%; min-width: 0; box-sizing: border-box; }
 .account-card { display: grid; gap: 4px; }
 .sync-line { color: var(--muted); }
 .sync-line:empty { display: none; }

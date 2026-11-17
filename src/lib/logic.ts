@@ -583,6 +583,7 @@ export type Action =
   | { type: 'EDIT_WORKOUT'; workoutId: string }
   | { type: 'SAVE_EDIT' }
   | { type: 'CANCEL_EDIT' }
+  | { type: 'SET_EDIT_TIMING'; startedAt: number; durationMin: number; now: number }
   | { type: 'ADJUST_REST'; delta: number }
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
@@ -636,6 +637,22 @@ export function workoutDuration(w: Workout, now: number): number {
   return Math.max(0, end - w.startedAt - (w.pausedMs ?? 0));
 }
 
+/** Længste tilladte varighed for en træning, når den rettes bagefter (#93) */
+export const MAX_DURATION_MIN = 24 * 60;
+
+/**
+ * Tjekker navn, starttid og varighed for en rettet træning (#93).
+ * Returnerer en dansk fejlbesked, eller null hvis alt er i orden.
+ */
+export function workoutTimingError(name: string, startedAt: number, durationMin: number, now: number): string | null {
+  if (!name.trim()) return 'Træningen skal have et navn.';
+  if (!Number.isFinite(startedAt)) return 'Vælg en gyldig dato og starttid.';
+  if (startedAt > now) return 'Datoen kan ikke ligge i fremtiden.';
+  if (!Number.isFinite(durationMin) || durationMin <= 0) return 'Varigheden skal være mindst 1 minut.';
+  if (durationMin > MAX_DURATION_MIN) return 'Varigheden kan højst være 24 timer.';
+  return null;
+}
+
 /** Dyb kopi af en træning, så kladden aldrig deler objekter med historikken */
 function structuredCloneWorkout(w: Workout): Workout {
   return { ...w, exercises: w.exercises.map((e) => ({ ...e, sets: e.sets.map((x) => ({ ...x })) })) };
@@ -675,15 +692,26 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'CANCEL_EDIT':
       return state.editing ? { ...state, editing: null } : state;
+    case 'SET_EDIT_TIMING': {
+      // Ny dato/starttid og varighed for kladden (#93). Pausetid nulstilles, så varigheden er præcis den indtastede.
+      const draft = state.editing;
+      if (!draft) return state;
+      const { startedAt, durationMin, now } = action;
+      if (workoutTimingError(draft.name || '-', startedAt, durationMin, now)) return state;
+      const { pausedAt: _p, pausedMs: _m, ...rest } = draft;
+      const finishedAt = startedAt + Math.round(durationMin * 60_000);
+      return { ...state, editing: { ...rest, startedAt, finishedAt } };
+    }
     case 'SAVE_EDIT': {
       const draft = state.editing;
       if (!draft) return state;
       if (!state.history.some((w) => w.id === draft.id)) return { ...state, editing: null }; // slettet imens
+      if (!draft.name.trim()) return state; // en træning skal have et navn (#93)
       const exercises = draft.exercises
         .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done || s.reps.trim() !== '').map((s) => ({ ...s, done: true })) }))
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return state; // en tom træning gemmes ikke – brug "Slet" i stedet
-      const saved: Workout = { ...draft, exercises: normalizeSupersets(exercises) };
+      const saved: Workout = { ...draft, name: draft.name.trim(), exercises: normalizeSupersets(exercises) };
       const history = state.history.map((w) => (w.id === saved.id ? saved : w)).sort((a, b) => b.startedAt - a.startedAt);
       return { ...state, history, editing: null };
     }

@@ -3,6 +3,8 @@ import {
   estimate1RM,
   exerciseHistory,
   formatDuration,
+  workoutTimingError,
+  MAX_DURATION_MIN,
   hasOwnData,
   initialState,
   isoWeek,
@@ -1032,5 +1034,58 @@ describe('ret en afsluttet træning (#90)', () => {
     expect(s.history).toHaveLength(1);
     const withDraft = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
     expect('editing' in syncPayload(withDraft)).toBe(false);
+  });
+});
+
+describe('ret navn, dato og varighed (#93)', () => {
+  const T = Date.UTC(2026, 10, 10, 17, 0);
+  function logged(at = T): AppState {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: at });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '80', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: at });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: at + 3_600_000 });
+  }
+  const now = T + 10 * 86_400_000;
+
+  it('validerer navn, fremtidig dato og varighed', () => {
+    expect(workoutTimingError('Push', T, 60, now)).toBeNull();
+    expect(workoutTimingError('  ', T, 60, now)).toMatch(/navn/);
+    expect(workoutTimingError('Push', now + 60_000, 60, now)).toMatch(/fremtiden/);
+    expect(workoutTimingError('Push', T, 0, now)).toMatch(/mindst 1 minut/);
+    expect(workoutTimingError('Push', T, MAX_DURATION_MIN + 1, now)).toMatch(/24 timer/);
+    expect(workoutTimingError('Push', T, MAX_DURATION_MIN, now)).toBeNull();
+    expect(workoutTimingError('Push', NaN, 60, now)).toMatch(/gyldig dato/);
+  });
+
+  it('flytter start- og sluttid, nulstiller pausetid og sorterer historikken', () => {
+    const older = logged(T - 2 * 86_400_000);
+    let s = { ...logged(), history: [...logged().history, ...older.history] };
+    s = { ...s, history: s.history.map((w, i) => (i === 0 ? { ...w, pausedMs: 120_000 } : w)) };
+    const target = s.history[0];
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: target.id });
+    const newStart = T - 3 * 86_400_000;
+    s = reducer(s, { type: 'SET_EDIT_TIMING', startedAt: newStart, durationMin: 45, now });
+    expect(s.editing).toMatchObject({ startedAt: newStart, finishedAt: newStart + 45 * 60_000 });
+    expect(s.editing!.pausedMs).toBeUndefined();
+    expect(s.history[0]).toBe(target); // urørt indtil der gemmes
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.history.map((w) => w.id)).toEqual([older.history[0].id, target.id]);
+    expect(s.history[1]).toMatchObject({ startedAt: newStart, finishedAt: newStart + 45 * 60_000 });
+  });
+
+  it('afviser ugyldige tider og tomt navn', () => {
+    let s = logged();
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    const draft = s.editing;
+    expect(reducer(s, { type: 'SET_EDIT_TIMING', startedAt: now + 1, durationMin: 30, now }).editing).toBe(draft);
+    expect(reducer(s, { type: 'SET_EDIT_TIMING', startedAt: T, durationMin: 0, now }).editing).toBe(draft);
+    expect(reducer(s, { type: 'SET_EDIT_TIMING', startedAt: T, durationMin: 25 * 60, now }).editing).toBe(draft);
+    expect(reducer(initialState(), { type: 'SET_EDIT_TIMING', startedAt: T, durationMin: 30, now }).editing).toBeNull();
+    s = reducer(s, { type: 'RENAME_WORKOUT', name: '   ', edit: true });
+    expect(reducer(s, { type: 'SAVE_EDIT' })).toBe(s);
+    s = reducer(s, { type: 'RENAME_WORKOUT', name: '  Ben  ', edit: true });
+    expect(reducer(s, { type: 'SAVE_EDIT' }).history[0].name).toBe('Ben');
   });
 });
