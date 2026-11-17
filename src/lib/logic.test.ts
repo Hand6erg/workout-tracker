@@ -41,6 +41,7 @@ import {
   workoutVolume,
   workoutDuration,
   syncPayload,
+  swapSuggestions,
 } from './logic';
 import type { AppState } from './types';
 
@@ -1287,5 +1288,82 @@ describe('pausetid pr. øvelse (#119)', () => {
     for (const id of ['squat', 'curl', 'bench']) expect(restFor(s, id)).toBe(100);
     const done = toggle(tick(s, ['squat']), 0);
     expect(done.rest?.total).toBe(100);
+  });
+});
+
+describe('byt øvelse (#126)', () => {
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+  function logged(state: AppState, exerciseId: string, at: number) {
+    let s = reducer(startWith(state), { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: at });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: at + 1000 });
+  }
+
+  it('foreslår øvelser for samme muskelgruppe, andet udstyr først, uden dem i træningen', () => {
+    let s = reducer(startWith(initialState()), { type: 'ADD_EXERCISES', exerciseIds: ['bench', 'dips'] });
+    s = reducer(s, { type: 'ADD_CUSTOM_EXERCISE', id: 'close-grip', name: 'Smalt bænkpres', muscle: 'Bryst', equipment: 'Stang' });
+    const list = swapSuggestions(s, 'bench');
+    expect(ids(list)).toEqual(['cable-fly', 'incline-db', 'close-grip']);
+    expect(list.every((e) => e.muscle === 'Bryst')).toBe(true);
+    expect(ids(list)).not.toContain('bench');
+    expect(ids(list)).not.toContain('dips');
+  });
+
+  it('øvelser brugeren har logget flest gange kommer først, og der er højst 6 forslag', () => {
+    let s = initialState();
+    for (let i = 0; i < 2; i++) s = logged(s, 'lunge', T0 + i * 10_000);
+    for (let i = 0; i < 6; i++) {
+      s = reducer(s, { type: 'ADD_CUSTOM_EXERCISE', id: `ben-${i}`, name: `Ben ${i}`, muscle: 'Ben', equipment: 'Kropsvægt' });
+    }
+    const list = swapSuggestions(s, 'squat', null);
+    expect(list).toHaveLength(6);
+    expect(list[0].id).toBe('lunge');
+    expect(swapSuggestions(s, 'ukendt')).toEqual([]);
+  });
+
+  it('bytter øvelsen og beholder udfyldte og afkrydsede sæt, supersæt og note', () => {
+    let s = reducer(startWith(initialState()), { type: 'ADD_EXERCISES', exerciseIds: ['bench', 'ohp'] });
+    const [a] = s.active!.exercises;
+    const setId = a.sets[0].id;
+    s = reducer(s, { type: 'UPDATE_SET', weId: a.id, setId, patch: { weight: '60', reps: '8' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: a.id, setId, now: T0 });
+    s = reducer(s, { type: 'ADD_SET', weId: a.id });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: a.id });
+    s = reducer(s, { type: 'SET_EXERCISE_NOTE', weId: a.id, note: 'smal greb' });
+    const before = s;
+    const after = reducer(s, { type: 'SWAP_EXERCISE', weId: a.id, exerciseId: 'incline-db' });
+    const swapped = after.active!.exercises[0];
+    expect(swapped.exerciseId).toBe('incline-db');
+    expect(swapped.id).toBe(a.id);
+    expect(swapped.sets).toEqual(before.active!.exercises[0].sets);
+    expect(swapped.sets[0]).toMatchObject({ weight: '60', reps: '8', done: true });
+    expect(swapped.supersetId).toBe(before.active!.exercises[0].supersetId);
+    expect(swapped.note).toBe('smal greb');
+    expect(after.active!.exercises[1]).toBe(before.active!.exercises[1]);
+    expect(after.rest).toBe(before.rest);
+    expect({ ...after.active!, exercises: [] }).toEqual({ ...before.active!, exercises: [] });
+  });
+
+  it('at bytte til samme eller en ukendt øvelse gør intet', () => {
+    const s = reducer(startWith(initialState()), { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const weId = s.active!.exercises[0].id;
+    expect(reducer(s, { type: 'SWAP_EXERCISE', weId, exerciseId: 'bench' })).toBe(s);
+    expect(reducer(s, { type: 'SWAP_EXERCISE', weId, exerciseId: 'ukendt' })).toBe(s);
+    expect(reducer(s, { type: 'SWAP_EXERCISE', weId: 'ukendt', exerciseId: 'dips' })).toBe(s);
+    expect(reducer(initialState(), { type: 'SWAP_EXERCISE', weId, exerciseId: 'dips' })).toEqual(initialState());
+  });
+
+  it('virker på kladden (edit: true) uden at røre den aktive træning', () => {
+    let s = logged(initialState(), 'bench', T0);
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    s = reducer(startWith(s), { type: 'ADD_EXERCISES', exerciseIds: ['squat'] });
+    const active = s.active;
+    const weId = s.editing!.exercises[0].id;
+    const out = reducer(s, { type: 'SWAP_EXERCISE', weId, exerciseId: 'dips', edit: true });
+    expect(out.editing!.exercises[0].exerciseId).toBe('dips');
+    expect(out.active).toBe(active);
+    expect(out.history[0].exercises[0].exerciseId).toBe('bench');
   });
 });
