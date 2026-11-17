@@ -14,6 +14,7 @@ import {
   uncheckedFilledCount,
   warmupBaseWeight,
   workoutDuration,
+  workoutTimingError,
   type Action,
   type ProgressionHint,
   type RecordKind,
@@ -129,7 +130,10 @@ export function WorkoutEditor() {
     rest: null,
   };
   const send = (a: WorkoutChange) => dispatch({ ...a, edit: true } as Action);
-  const canSave = w.exercises.some((e) => e.sets.some((x) => x.done || x.reps.trim() !== ''));
+  const hasSets = w.exercises.some((e) => e.sets.some((x) => x.done || x.reps.trim() !== ''));
+  const [timingError, setTimingError] = useState<string | null>(null);
+  const error = w.name.trim() ? timingError : 'Træningen skal have et navn.';
+  const canSave = hasSets && !error;
 
   return (
     <WorkoutCtx.Provider value={{ w, base, edit: true, send }}>
@@ -143,8 +147,13 @@ export function WorkoutEditor() {
             Gem
           </button>
         </header>
-        <WorkoutBody>
-          {!canSave && (
+        <WorkoutBody top={<WorkoutTiming w={w} onError={setTimingError} />}>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          {!hasSets && (
             <p className="muted" role="status">
               Udfyld mindst ét sæt for at gemme – vil du fjerne hele træningen, så brug "Slet" i Historik.
             </p>
@@ -155,8 +164,76 @@ export function WorkoutEditor() {
   );
 }
 
+const pad = (n: number) => String(n).padStart(2, '0');
+const dateValue = (t: number) => {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+const timeValue = (t: number) => {
+  const d = new Date(t);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+/** Dato, starttid og varighed for en træning, der rettes bagefter (#93) */
+function WorkoutTiming({ w, onError }: { w: Workout; onError: (msg: string | null) => void }) {
+  const { dispatch } = useStore();
+  const [date, setDate] = useState(() => dateValue(w.startedAt));
+  const [time, setTime] = useState(() => timeValue(w.startedAt));
+  const [minutes, setMinutes] = useState(() => String(Math.max(1, Math.round(workoutDuration(w, w.startedAt) / 60_000))));
+
+  const apply = (d: string, t: string, m: string) => {
+    const [y, mo, day] = d.split('-').map(Number);
+    const [h, mi] = t.split(':').map(Number);
+    const startedAt = d && t ? new Date(y, mo - 1, day, h, mi).getTime() : NaN;
+    const durationMin = m.trim() === '' ? NaN : Number(m.replace(',', '.'));
+    const now = Date.now();
+    const err = workoutTimingError(w.name || '-', startedAt, Number.isNaN(durationMin) ? 0 : durationMin, now);
+    onError(err);
+    if (!err) dispatch({ type: 'SET_EDIT_TIMING', startedAt, durationMin, now });
+  };
+
+  return (
+    <div className="timing-grid" role="group" aria-label="Tidspunkt">
+      <label className="field">
+        Dato
+        <input
+          type="date"
+          value={date}
+          max={dateValue(Date.now())}
+          onChange={(e) => {
+            setDate(e.target.value);
+            apply(e.target.value, time, minutes);
+          }}
+        />
+      </label>
+      <label className="field">
+        Starttid
+        <input
+          type="time"
+          value={time}
+          onChange={(e) => {
+            setTime(e.target.value);
+            apply(date, e.target.value, minutes);
+          }}
+        />
+      </label>
+      <label className="field">
+        Varighed (min)
+        <input
+          inputMode="numeric"
+          value={minutes}
+          onChange={(e) => {
+            setMinutes(e.target.value);
+            apply(date, time, e.target.value);
+          }}
+        />
+      </label>
+    </div>
+  );
+}
+
 /** Navn, øvelser, "Tilføj øvelser" og note – fælles for den aktive træning og editoren */
-function WorkoutBody({ children }: { children?: ReactNode }) {
+function WorkoutBody({ children, top }: { children?: ReactNode; top?: ReactNode }) {
   const { exerciseById } = useStore();
   const { w, send } = useWorkout();
   const [picking, setPicking] = useState(false);
@@ -168,6 +245,7 @@ function WorkoutBody({ children }: { children?: ReactNode }) {
         value={w.name}
         onChange={(e) => send({ type: 'RENAME_WORKOUT', name: e.target.value })}
       />
+      {top}
 
       {!w.exercises.length && <Empty>Tilføj din første øvelse for at komme i gang.</Empty>}
 

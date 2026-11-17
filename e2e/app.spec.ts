@@ -570,3 +570,39 @@ test('"Annullér" i editoren lader træningen være uændret (#92)', async ({ pa
   await expect(card).toContainText('80 kg × 5');
   await expect(card).not.toContainText('120');
 });
+
+test('retter navn, dato og varighed på en afsluttet træning (#93)', async ({ page }) => {
+  await page.clock.setFixedTime(new Date(2026, 10, 17, 18, 0));
+  await page.reload();
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  const timing = editor.getByRole('group', { name: 'Tidspunkt' });
+
+  // Ugyldige værdier afvises med en dansk besked
+  await editor.getByLabel('Navn på træning').fill('');
+  await expect(editor.getByRole('alert')).toHaveText('Træningen skal have et navn.');
+  await expect(editor.getByRole('button', { name: 'Gem' })).toBeDisabled();
+  await editor.getByLabel('Navn på træning').fill('Bryst og triceps');
+  await timing.getByLabel('Varighed (min)').fill('0');
+  await expect(editor.getByRole('alert')).toHaveText('Varigheden skal være mindst 1 minut.');
+  await timing.getByLabel('Varighed (min)').fill('2000');
+  await expect(editor.getByRole('alert')).toHaveText('Varigheden kan højst være 24 timer.');
+  await timing.getByLabel('Varighed (min)').fill('45');
+  await timing.getByLabel('Dato').fill('2026-11-18');
+  await expect(editor.getByRole('alert')).toHaveText('Datoen kan ikke ligge i fremtiden.');
+
+  await timing.getByLabel('Dato').fill('2026-11-16');
+  await timing.getByLabel('Starttid').fill('07:30');
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/edit-timing.png' });
+  await editor.getByRole('button', { name: 'Gem' }).click();
+  await expect(editor).toHaveCount(0);
+
+  const calendar = page.getByRole('region', { name: /^Kalender/ });
+  await expect(calendar.getByRole('button', { name: '16. november: Bryst og triceps' })).toBeVisible();
+  await expect(calendar.getByRole('button', { name: /^17\. november/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Træning Bryst og triceps' })).toContainText('45');
+});
