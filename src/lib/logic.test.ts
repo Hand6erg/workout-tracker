@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  restFor,
+  restInfo,
+  suggestedRest,
   estimate1RM,
   exerciseHistory,
   formatDuration,
@@ -76,7 +79,7 @@ describe('træningsflow', () => {
     const set1 = we.sets[0];
     s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set1.id, patch: { weight: '80', reps: '5' } });
     s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: set1.id, now: T0 + 1000 });
-    expect(s.rest?.endsAt).toBe(T0 + 1000 + 90_000);
+    expect(s.rest?.endsAt).toBe(T0 + 1000 + 180_000); // bænkpres: foreslået 3:00 (#119)
 
     s = reducer(s, { type: 'ADD_SET', weId: we.id }); // kopierer 80×5, men ikke udført
     expect(s.active!.exercises[0].sets[1]).toMatchObject({ weight: '80', reps: '5', done: false });
@@ -1182,5 +1185,98 @@ describe('program (#106)', () => {
     const skipped = trackedReducer(pc, { type: 'SKIP_PROGRAM', at: 300 });
     expect(skipped.settingsAt).toBe(300);
     expect(mergeStates(phone, skipped).programSkip).toEqual({ after: null, n: 1 });
+  });
+});
+
+describe('pausetid pr. øvelse (#119)', () => {
+  const T = 1_800_000_000_000;
+  function tick(s: AppState, exerciseIds: string[], k = 0, warmup = false) {
+    s = reducer(s, { type: 'START_WORKOUT', now: T });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds });
+    for (const we of s.active!.exercises) {
+      const set = we.sets[k] ?? we.sets[0];
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set.id, patch: { weight: '20', reps: '8', warmup } });
+    }
+    return s;
+  }
+  const toggle = (s: AppState, i: number) => {
+    const we = s.active!.exercises[i];
+    return reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T });
+  };
+
+  it('foreslår længere pause til tunge stangløft og kortere til isolation', () => {
+    const s = initialState();
+    expect(suggestedRest({ muscle: 'Ben', equipment: 'Stang' })).toBe(180);
+    expect(restFor(s, 'squat')).toBe(180);
+    expect(restFor(s, 'ohp')).toBe(120);
+    expect(restFor(s, 'pullup')).toBe(120);
+    expect(restFor(s, 'curl')).toBe(60);
+    expect(restFor(s, 'cable-fly')).toBe(60);
+    expect(restFor(s, 'leg-ext')).toBe(60);
+    expect(restInfo(s, 'curl').source).toBe('suggested');
+  });
+
+  it('en øvelse med egen pausetid starter timeren med den tid', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'curl', seconds: 75 });
+    expect(restInfo(s, 'curl')).toEqual({ seconds: 75, source: 'own' });
+    s = toggle(tick(s, ['curl']), 0);
+    expect(s.rest).toEqual({ endsAt: T + 75_000, total: 75 });
+  });
+
+  it('begrænser tiden og "brug standard" fjerner den egen tid', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'bench', seconds: 9999 });
+    expect(restFor(s, 'bench')).toBe(600);
+    s = reducer(s, { type: 'SET_EXERCISE_REST', exerciseId: 'bench', seconds: -5 });
+    expect(restFor(s, 'bench')).toBe(0);
+    s = reducer(s, { type: 'SET_EXERCISE_REST', exerciseId: 'bench' });
+    expect(s.exercises.find((e) => e.id === 'bench')).not.toHaveProperty('restSeconds');
+    expect(restFor(s, 'bench')).toBe(180);
+    expect(reducer(s, { type: 'SET_EXERCISE_REST', exerciseId: 'ukendt', seconds: 60 })).toBe(s);
+  });
+
+  it('egen pausetid på 0 starter ingen timer', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'curl', seconds: 0 });
+    s = toggle(tick(s, ['curl']), 0);
+    expect(s.rest).toBeNull();
+  });
+
+  it('uden egen tid bruges den fælles pausetid, når den er ændret i Profil', () => {
+    let s = reducer(initialState(), { type: 'SET_REST_SECONDS', seconds: 120 });
+    expect(restInfo(s, 'squat')).toEqual({ seconds: 120, source: 'global' });
+    s = toggle(tick(s, ['curl']), 0);
+    expect(s.rest?.total).toBe(120);
+  });
+
+  it('i et supersæt bruges den længste pause i runden', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'curl', seconds: 45 });
+    s = tick(s, ['curl', 'bench']);
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: s.active!.exercises[0].id });
+    s = toggle(s, 0);
+    expect(s.rest).toBeNull(); // runden er ikke færdig
+    s = toggle(s, 1);
+    expect(s.rest?.total).toBe(180);
+  });
+
+  it('opvarmningssæt beholder en kort pause', () => {
+    let s = reducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'squat', seconds: 240 });
+    s = toggle(tick(s, ['squat'], 0, true), 0);
+    expect(s.rest?.total).toBe(90);
+  });
+
+  it('ændringen stemples og flettes som andre øvelsesændringer', () => {
+    const a = trackedReducer(initialState(), { type: 'SET_EXERCISE_REST', exerciseId: 'bench', seconds: 150, at: T });
+    expect(a.exercises.find((e) => e.id === 'bench')).toMatchObject({ restSeconds: 150, updatedAt: T });
+    const merged = mergeStates(initialState(), a);
+    expect(restFor(merged, 'bench')).toBe(150);
+  });
+
+  it('gamle gemte data indlæses og opfører sig som før', () => {
+    const old = { ...initialState(), restSeconds: 100 } as Partial<AppState>;
+    old.exercises = old.exercises!.map(({ restSeconds: _r, ...e }) => e);
+    const s = loadState(JSON.stringify(old));
+    expect(s.exercises.every((e) => e.restSeconds === undefined)).toBe(true);
+    for (const id of ['squat', 'curl', 'bench']) expect(restFor(s, id)).toBe(100);
+    const done = toggle(tick(s, ['squat']), 0);
+    expect(done.rest?.total).toBe(100);
   });
 });

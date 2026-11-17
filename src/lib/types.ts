@@ -10,6 +10,8 @@ export interface Exercise {
   muscle: Muscle;
   equipment: Equipment;
   custom?: boolean;
+  /** Egen pausetid i sekunder (#119). Mangler = forslag/standard fra Profil */
+  restSeconds?: number;
   /** Hvornår en egen øvelse sidst blev ændret (til fletning mellem enheder) */
   updatedAt?: number;
 }
