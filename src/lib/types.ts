@@ -47,6 +47,8 @@ export interface Workout {
   exercises: WorkoutExercise[];
   /** Note til hele træningen (fx "sov dårligt") */
   note?: string;
+  /** Skabelonen træningen blev startet fra (til programmet, #106) */
+  templateId?: string;
   /** Hvornår træningen sidst blev rettet efter den var afsluttet (til fletning mellem enheder, #91) */
   updatedAt?: number;
 }
@@ -106,6 +108,10 @@ export interface AppState {
   restSound: boolean;
   /** Vibration, når pausen er ved at være / er slut */
   restVibrate: boolean;
+  /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
+  program: string[];
+  /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */
+  programSkip: { after: string | null; n: number };
   /** Hvornår indstillingerne sidst blev ændret (0 = aldrig). Den nyeste ændring vinder ved fletning. */
   settingsAt: number;
   /** Slettede træninger, skabeloner, øvelser og kropsmål: id → tidspunkt. Så de forbliver slettede på alle enheder. */

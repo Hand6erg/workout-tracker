@@ -4,6 +4,8 @@ import {
   exerciseHistory,
   formatDuration,
   workoutTimingError,
+  nextInProgram,
+  trackedReducer,
   MAX_DURATION_MIN,
   hasOwnData,
   initialState,
@@ -1087,5 +1089,98 @@ describe('ret navn, dato og varighed (#93)', () => {
     expect(reducer(s, { type: 'SAVE_EDIT' })).toBe(s);
     s = reducer(s, { type: 'RENAME_WORKOUT', name: '  Ben  ', edit: true });
     expect(reducer(s, { type: 'SAVE_EDIT' }).history[0].name).toBe('Ben');
+  });
+});
+
+describe('program (#106)', () => {
+  const T = Date.UTC(2026, 10, 10, 17, 0);
+  /** Logger en træning fra en skabelon (eller tom) og afslutter den */
+  function train(s: AppState, templateId: string | undefined, at: number): AppState {
+    s = reducer(s, { type: 'START_WORKOUT', templateId, now: at });
+    if (!templateId) s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '50', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: at });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: at + 3_600_000 });
+  }
+  const withProgram = () => reducer(initialState(), { type: 'SET_PROGRAM', templateIds: ['tpl-push', 'tpl-pull', 'tpl-legs'] });
+  const next = (s: AppState) => nextInProgram(s)?.id ?? null;
+
+  it('roterer Push → Pull → Ben → Push', () => {
+    let s = withProgram();
+    expect(next(s)).toBe('tpl-push');
+    s = train(s, 'tpl-push', T);
+    expect(next(s)).toBe('tpl-pull');
+    s = train(s, 'tpl-pull', T + 86_400_000);
+    expect(next(s)).toBe('tpl-legs');
+    s = train(s, 'tpl-legs', T + 2 * 86_400_000);
+    expect(next(s)).toBe('tpl-push');
+  });
+
+  it('spring over flytter én frem og nulstilles efter næste træning', () => {
+    let s = withProgram();
+    s = reducer(s, { type: 'SKIP_PROGRAM' });
+    expect(next(s)).toBe('tpl-pull');
+    s = reducer(s, { type: 'SKIP_PROGRAM' });
+    s = reducer(s, { type: 'SKIP_PROGRAM' });
+    expect(next(s)).toBe('tpl-push'); // starter forfra
+    s = train(s, 'tpl-push', T);
+    expect(next(s)).toBe('tpl-pull');
+    s = reducer(s, { type: 'SKIP_PROGRAM' });
+    expect(next(s)).toBe('tpl-legs');
+    s = train(s, 'tpl-legs', T + 86_400_000);
+    expect(next(s)).toBe('tpl-push');
+  });
+
+  it('uden for rækkefølge fortsætter fra den udførte; andre skabeloner flytter intet', () => {
+    let s = withProgram();
+    s = train(s, 'tpl-pull', T);
+    expect(next(s)).toBe('tpl-legs');
+    s = train(s, undefined, T + 86_400_000); // tom træning
+    expect(next(s)).toBe('tpl-legs');
+    s = reducer(s, { type: 'SET_PROGRAM', templateIds: ['tpl-push', 'tpl-legs'] });
+    s = train(s, 'tpl-pull', T + 2 * 86_400_000); // ikke i programmet længere
+    expect(next(s)).toBe('tpl-push'); // efter Pull kom ingen programtræning → første
+  });
+
+  it('springer slettede skabeloner over, og intet program giver null', () => {
+    let s = withProgram();
+    s = train(s, 'tpl-push', T);
+    s = reducer(s, { type: 'DELETE_TEMPLATE', templateId: 'tpl-pull' });
+    expect(next(s)).toBe('tpl-legs');
+    expect(next(initialState())).toBeNull();
+    expect(reducer(initialState(), { type: 'SKIP_PROGRAM' })).toEqual(initialState());
+  });
+
+  it('SET_PROGRAM dropper ukendte og dobbelte id’er', () => {
+    const s = reducer(initialState(), { type: 'SET_PROGRAM', templateIds: ['tpl-pull', 'nope', 'tpl-pull', 'tpl-push'] });
+    expect(s.program).toEqual(['tpl-pull', 'tpl-push']);
+    expect(reducer(s, { type: 'SET_PROGRAM', templateIds: ['tpl-pull', 'tpl-push'] })).toBe(s);
+  });
+
+  it('START_WORKOUT gemmer skabelonen; gamle data indlæses uændret', () => {
+    const s = reducer(initialState(), { type: 'START_WORKOUT', templateId: 'tpl-push', now: T });
+    expect(s.active!.templateId).toBe('tpl-push');
+    expect(reducer(initialState(), { type: 'START_WORKOUT', now: T }).active!.templateId).toBeUndefined();
+    const old = train(initialState(), undefined, T) as Partial<AppState>;
+    delete old.program;
+    delete old.programSkip;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.program).toEqual([]);
+    expect(loaded.programSkip).toEqual({ after: null, n: 0 });
+    expect(loaded.history).toEqual(old.history);
+    expect(next(loaded)).toBeNull();
+  });
+
+  it('programmet flettes som de andre indstillinger (nyeste ændring vinder)', () => {
+    const base = initialState();
+    const phone = trackedReducer(base, { type: 'SET_PROGRAM', templateIds: ['tpl-push', 'tpl-pull'], at: 100 });
+    const pc = trackedReducer(base, { type: 'SET_PROGRAM', templateIds: ['tpl-legs'], at: 200 });
+    expect(phone.settingsAt).toBe(100);
+    expect(mergeStates(phone, pc).program).toEqual(['tpl-legs']);
+    expect(mergeStates(pc, phone).program).toEqual(['tpl-legs']);
+    const skipped = trackedReducer(pc, { type: 'SKIP_PROGRAM', at: 300 });
+    expect(skipped.settingsAt).toBe(300);
+    expect(mergeStates(phone, skipped).programSkip).toEqual({ after: null, n: 1 });
   });
 });
