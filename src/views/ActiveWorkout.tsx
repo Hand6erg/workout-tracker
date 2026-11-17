@@ -1,5 +1,6 @@
 import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
+import { RestPicker, formatRest } from '../components/RestPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   doneSetCount,
@@ -9,6 +10,7 @@ import {
   num,
   previousSets,
   progressionHint,
+  restFor,
   recordsBrokenBy,
   supersetGroups,
   uncheckedFilledCount,
@@ -328,11 +330,19 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const [noteOpen, setNoteOpen] = useState(!!we.note);
   const [noteDraft, setNoteDraft] = useState(we.note ?? '');
   const name = ex?.name ?? 'Ukendt øvelse';
+  const [restOpen, setRestOpen] = useState(false);
+  const { state: live } = useStore();
+  const restLabel = formatRest(restFor(live, we.exerciseId));
 
   return (
     <article className="ex-block" aria-label={ex?.name}>
       <header>
         <h3>{name}</h3>
+        {!edit && ex && (
+          <button className="btn-ghost small rest-btn" aria-label={`Pause for ${name}: ${restLabel}`} onClick={() => setRestOpen(true)}>
+            ⏱ {restLabel}
+          </button>
+        )}
         <button
           className="btn-ghost small"
           aria-expanded={noteOpen}
@@ -345,6 +355,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           Fjern
         </ConfirmButton>
       </header>
+      {restOpen && <RestPicker exerciseId={we.exerciseId} onClose={() => setRestOpen(false)} />}
       {hint && <HintButton weId={we.id} hint={hint} />}
       {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}
       {noteOpen && (
