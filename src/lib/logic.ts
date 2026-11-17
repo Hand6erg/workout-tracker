@@ -612,6 +612,32 @@ export function nextInProgram(state: AppState): Template | null {
   return list[(start + skips) % list.length];
 }
 
+/* ---------- Byt øvelse (#126) ---------- */
+
+/** Højst så mange forslag, når en øvelse byttes */
+export const SWAP_SUGGESTIONS_MAX = 6;
+
+/**
+ * Forslag til en øvelse at bytte til: samme muskelgruppe, helst andet udstyr, derefter dem brugeren har
+ * logget flest gange. Aldrig øvelsen selv eller øvelser, der allerede er med i træningen.
+ */
+export function swapSuggestions(state: AppState, exerciseId: string, workout: Workout | null = state.active): Exercise[] {
+  const ex = state.exercises.find((e) => e.id === exerciseId);
+  if (!ex) return [];
+  const taken = new Set((workout?.exercises ?? []).map((e) => e.exerciseId));
+  taken.add(exerciseId);
+  const logged = new Map<string, number>();
+  for (const w of state.history) {
+    for (const id of new Set(w.exercises.map((e) => e.exerciseId))) logged.set(id, (logged.get(id) ?? 0) + 1);
+  }
+  return state.exercises
+    .filter((e) => e.muscle === ex.muscle && !taken.has(e.id))
+    .map((e) => ({ e, other: e.equipment !== ex.equipment ? 1 : 0, n: logged.get(e.id) ?? 0 }))
+    .sort((a, b) => b.other - a.other || b.n - a.n || a.e.name.localeCompare(b.e.name, 'da'))
+    .slice(0, SWAP_SUGGESTIONS_MAX)
+    .map((x) => x.e);
+}
+
 /* ---------- Reducer ---------- */
 
 /** Handlinger på en træning, der også virker på kladden (`edit: true`) i stedet for den aktive træning */
@@ -621,6 +647,7 @@ export type WorkoutChange =
   | { type: 'SET_WORKOUT_NOTE'; note: string }
   | { type: 'ADD_EXERCISES'; exerciseIds: string[] }
   | { type: 'REMOVE_EXERCISE'; weId: string }
+  | { type: 'SWAP_EXERCISE'; weId: string; exerciseId: string }
   | { type: 'LINK_SUPERSET'; weId: string }
   | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
@@ -636,6 +663,7 @@ const WORKOUT_CHANGES = new Set<string>([
   'SET_WORKOUT_NOTE',
   'ADD_EXERCISES',
   'REMOVE_EXERCISE',
+  'SWAP_EXERCISE',
   'LINK_SUPERSET',
   'UNLINK_SUPERSET',
   'ADD_SET',
@@ -840,6 +868,15 @@ export function reducer(state: AppState, action: Action): AppState {
         ...w,
         exercises: normalizeSupersets(w.exercises.filter((e) => e.id !== action.weId)),
       }));
+    case 'SWAP_EXERCISE': {
+      // Sæt, supersæt og note bliver; "forrige", forslag og rekorder følger den nye øvelse via exerciseId
+      if (!state.exercises.some((e) => e.id === action.exerciseId)) return state;
+      return mapActive(state, (w) => {
+        const cur = w.exercises.find((e) => e.id === action.weId);
+        if (!cur || cur.exerciseId === action.exerciseId) return w;
+        return mapExercise(w, action.weId, (e) => ({ ...e, exerciseId: action.exerciseId }));
+      });
+    }
     case 'LINK_SUPERSET':
       return mapActive(state, (w) => {
         const i = w.exercises.findIndex((e) => e.id === action.weId);
