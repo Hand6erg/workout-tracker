@@ -34,6 +34,9 @@ import {
   toCsv,
   trainingDays,
   uncheckedFilledCount,
+  exerciseKind,
+  isSetFilled,
+  formatSet,
   warmupSets,
   warmupBaseWeight,
   weekStreak,
@@ -1416,5 +1419,118 @@ describe('byt øvelsen i skabelonen (#128)', () => {
     const loaded = loadState(JSON.stringify(old));
     expect(loaded.history[0].templateId).toBeUndefined();
     expect(canSwapInTemplate(loaded, loaded.history[0].templateId, 'bench')).toBe(false);
+  });
+});
+
+describe('tids- og distancesæt (#133)', () => {
+  function logOne(state: AppState, exerciseId: string, patch: Record<string, string>, toggle = true) {
+    let s = startWith(state);
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'ADD_SET', weId: we.id });
+    const [a] = s.active!.exercises[0].sets;
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: a.id, patch });
+    if (toggle) s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: a.id, now: T0 });
+    return s;
+  }
+
+  it('Planke er en tidsøvelse og de nye indbyggede øvelser findes', () => {
+    const s = initialState();
+    expect(exerciseKind(s, 'plank')).toBe('time');
+    expect(exerciseKind(s, 'dead-hang')).toBe('time');
+    expect(exerciseKind(s, 'farmers-walk')).toBe('distance');
+    expect(exerciseKind(s, 'rower')).toBe('distance');
+    expect(exerciseKind(s, 'bench')).toBe('reps');
+    expect(exerciseKind(s, 'findes-ikke')).toBe('reps');
+  });
+
+  it('eksisterende brugere får de nye øvelser, og Planke bliver en tidsøvelse', () => {
+    const old = {
+      ...initialState(),
+      exercises: [
+        { id: 'plank', name: 'Planke', muscle: 'Mave', equipment: 'Kropsvægt' },
+        { id: 'bench', name: 'Bænkpres', muscle: 'Bryst', equipment: 'Stang' },
+        { id: 'egen', name: 'Egen planke', muscle: 'Mave', equipment: 'Kropsvægt', custom: true },
+      ],
+    };
+    const s = loadState(JSON.stringify(old));
+    expect(exerciseKind(s, 'plank')).toBe('time');
+    expect(exerciseKind(s, 'egen')).toBe('reps');
+    expect(s.exercises.find((e) => e.id === 'bench')!.kind).toBeUndefined();
+    for (const id of ['dead-hang', 'farmers-walk', 'rower']) expect(s.exercises.filter((e) => e.id === id)).toHaveLength(1);
+  });
+
+  it('gamle sæt (uden type og sekunder) indlæses uændret', () => {
+    const set = { id: 's1', weight: '60', reps: '30', rpe: '', done: true };
+    const old = {
+      ...initialState(),
+      history: [{ id: 'w1', name: 'Gammel', startedAt: T0, finishedAt: T0 + 1, exercises: [{ id: 'e1', exerciseId: 'plank', sets: [set] }] }],
+    };
+    const s = loadState(JSON.stringify(old));
+    expect(s.history[0].exercises[0].sets[0]).toEqual(set);
+    expect(formatSet(s.history[0].exercises[0].sets[0])).toBe('60 kg × 30');
+  });
+
+  it('formatSet for alle tre typer', () => {
+    const base = { id: 'x', weight: '', reps: '', rpe: '', done: true };
+    expect(formatSet({ ...base, weight: '62.5', reps: '5' })).toBe('62,5 kg × 5');
+    expect(formatSet({ ...base, reps: '12' })).toBe('12 reps');
+    expect(formatSet({ ...base, seconds: '45' })).toBe('45 sek.');
+    expect(formatSet({ ...base, meters: '500', seconds: '125' })).toBe('500 m · 2:05');
+    expect(formatSet({ ...base, meters: '40' })).toBe('40 m');
+  });
+
+  it('isSetFilled ser på det rigtige felt', () => {
+    const base = { id: 'x', weight: '', reps: '', rpe: '', done: false };
+    expect(isSetFilled({ ...base, reps: '5' })).toBe(true);
+    expect(isSetFilled({ ...base, seconds: '30' }, 'time')).toBe(true);
+    expect(isSetFilled({ ...base, reps: '5' }, 'time')).toBe(false);
+    expect(isSetFilled({ ...base, meters: '500' }, 'distance')).toBe(true);
+    expect(isSetFilled({ ...base, seconds: '120' }, 'distance')).toBe(false);
+  });
+
+  it('afslutning beholder udfyldte tidssæt og dropper tomme', () => {
+    const s = reducer(logOne(initialState(), 'plank', { seconds: '45' }), { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    const sets = s.history[0].exercises[0].sets;
+    expect(sets).toHaveLength(1);
+    expect(formatSet(sets[0])).toBe('45 sek.');
+  });
+
+  it('afslutning med "gem uafkrydsede" beholder udfyldte distancesæt', () => {
+    let s = logOne(initialState(), 'rower', { meters: '500', seconds: '125' }, false);
+    expect(uncheckedFilledCount(s.active!, s)).toBe(1);
+    expect(uncheckedFilledCount(s.active!)).toBe(0); // uden typer ses kun reps
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 1000, includeUnchecked: true });
+    const sets = s.history[0].exercises[0].sets;
+    expect(sets).toHaveLength(1);
+    expect(formatSet(sets[0])).toBe('500 m · 2:05');
+  });
+
+  it('et tidssæt uden sekunder kan ikke krydses af, men bruger sidste gangs tid', () => {
+    let s = logOne(initialState(), 'plank', {}, true);
+    expect(s.active!.exercises[0].sets.every((x) => !x.done)).toBe(true);
+    s = reducer(logOne(initialState(), 'plank', { seconds: '40' }), { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    s = startWith(s);
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['plank'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 + 5000 });
+    expect(s.active!.exercises[0].sets[0]).toMatchObject({ done: true, seconds: '40' });
+  });
+
+  it('nyt sæt kopierer sekunder og meter fra forrige sæt', () => {
+    let s = logOne(initialState(), 'rower', { meters: '500', seconds: '125' });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'REMOVE_SET', weId: we.id, setId: we.sets[1].id });
+    const next = reducer(s, { type: 'ADD_SET', weId: we.id }).active!.exercises[0].sets.at(-1)!;
+    expect(next).toMatchObject({ meters: '500', seconds: '125', done: false });
+  });
+
+  it('rettelse af en træning beholder tidssæt', () => {
+    let s = reducer(logOne(initialState(), 'plank', { seconds: '45' }), { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    const we = s.editing!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { seconds: '50', done: false }, edit: true });
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(formatSet(s.history[0].exercises[0].sets[0])).toBe('50 sek.');
   });
 });

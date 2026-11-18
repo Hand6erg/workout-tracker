@@ -23,7 +23,10 @@ export const SEED_EXERCISES: Exercise[] = [
   { id: 'hammer', name: 'Hammer curl', muscle: 'Arme', equipment: 'Håndvægt' },
   { id: 'pushdown', name: 'Triceps pushdown', muscle: 'Arme', equipment: 'Kabel' },
   { id: 'skullcrusher', name: 'Skullcrusher', muscle: 'Arme', equipment: 'Stang' },
-  { id: 'plank', name: 'Planke', muscle: 'Mave', equipment: 'Kropsvægt' },
+  { id: 'plank', name: 'Planke', muscle: 'Mave', equipment: 'Kropsvægt', kind: 'time' },
+  { id: 'dead-hang', name: 'Hæng i stang', muscle: 'Ryg', equipment: 'Kropsvægt', kind: 'time' },
+  { id: 'farmers-walk', name: "Farmer's walk", muscle: 'Arme', equipment: 'Håndvægt', kind: 'distance' },
+  { id: 'rower', name: 'Romaskine', muscle: 'Ryg', equipment: 'Maskine', kind: 'distance' },
   { id: 'crunch', name: 'Kabel crunch', muscle: 'Mave', equipment: 'Kabel' },
 ];
 

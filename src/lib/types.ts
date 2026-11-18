@@ -4,12 +4,18 @@ export type Equipment = 'Stang' | 'Håndvægt' | 'Kabel' | 'Maskine' | 'Kropsvæ
 export const MUSCLES: Muscle[] = ['Bryst', 'Ryg', 'Ben', 'Skuldre', 'Arme', 'Mave'];
 export const EQUIPMENT: Equipment[] = ['Stang', 'Håndvægt', 'Kabel', 'Maskine', 'Kropsvægt'];
 
+/** Hvordan en øvelse logges (#133): vægt × reps (standard), tid i sekunder, eller distance + tid */
+export type ExerciseKind = 'reps' | 'time' | 'distance';
+export const EXERCISE_KINDS: ExerciseKind[] = ['reps', 'time', 'distance'];
+
 export interface Exercise {
   id: string;
   name: string;
   muscle: Muscle;
   equipment: Equipment;
   custom?: boolean;
+  /** Mangler = 'reps' (vægt × reps), så gamle data er uændrede */
+  kind?: ExerciseKind;
   /** Egen pausetid i sekunder (#119). Mangler = forslag/standard fra Profil */
   restSeconds?: number;
   /** Hvornår en egen øvelse sidst blev ændret (til fletning mellem enheder) */
@@ -23,6 +29,10 @@ export interface SetEntry {
   reps: string;
   rpe: string;
   done: boolean;
+  /** Tid i sekunder (tidssæt og distancesæt, #133) */
+  seconds?: string;
+  /** Distance i meter (distancesæt, #133) */
+  meters?: string;
   /** Opvarmningssæt tæller ikke med i volumen, rekorder og statistik */
   warmup?: boolean;
 }
