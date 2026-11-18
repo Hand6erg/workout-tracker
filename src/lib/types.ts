@@ -106,6 +106,8 @@ export interface AppState {
   active: Workout | null;
   /** Kladde af en afsluttet træning, der rettes i (#87). Kun på denne enhed – rører aldrig `active`. */
   editing: Workout | null;
+  /** Træningen, der lige er afsluttet – dens opsummering vises (#142). Kun på denne enhed og nulstilles ved genindlæsning. */
+  lastFinishedId?: string | null;
   rest: RestTimer | null;
   restSeconds: number;
   /** Stangvægt i kg til pladeberegner og opvarmning */
