@@ -75,6 +75,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .search { margin-bottom: 10px; }
 .chips { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; scrollbar-width: none; }
 .chip { padding: 6px 14px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; font-size: 0.9rem; }
+.kind-tag { display: inline-block; font-weight: 500; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--surface-2); color: var(--text); font-size: 0.75rem; line-height: 1.5; }
 .chip.on { background: var(--accent); color: #fff; }
 .list { list-style: none; margin: 0; padding: 0; }
 .list-row {

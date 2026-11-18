@@ -93,6 +93,11 @@ describe('fletning mellem to enheder (#38)', () => {
     expect(mergeStates(older, s).exercises.find((e) => e.id === 'x')?.name).toBe('Hip thrust');
   });
 
+  it('typen på en egen øvelse følger med til den anden enhed (#135)', () => {
+    const phone = trackedReducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'ws', name: 'Wall sit', muscle: 'Ben', equipment: 'Kropsvægt', kind: 'time', at: 50 });
+    expect(mergeStates(initialState(), phone).exercises.find((e) => e.id === 'ws')?.kind).toBe('time');
+  });
+
   it('indstillinger: den enhed, der ændrede dem senest, vinder', () => {
     const phone = trackedReducer(initialState(), { type: 'SET_REST_SECONDS', seconds: 120, at: 100 });
     const pc = trackedReducer(trackedReducer(initialState(), { type: 'SET_BAR_WEIGHT', weight: 15, at: 200 }), { type: 'SET_WEEKLY_GOAL', goal: 4, at: 200 });

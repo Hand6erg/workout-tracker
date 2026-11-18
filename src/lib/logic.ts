@@ -756,7 +756,7 @@ export type Action =
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
-  | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment }
+  | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment; kind?: ExerciseKind }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
   | { type: 'SWAP_IN_TEMPLATE'; templateId: string; fromExerciseId: string; toExerciseId: string }
@@ -1137,7 +1137,15 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         exercises: [
           ...state.exercises,
-          { id: action.id, name, muscle: action.muscle, equipment: action.equipment, custom: true },
+          {
+            id: action.id,
+            name,
+            muscle: action.muscle,
+            equipment: action.equipment,
+            custom: true,
+            // Kun tid og distance gemmes; alt andet er vægt × reps (#135)
+            ...(action.kind === 'time' || action.kind === 'distance' ? { kind: action.kind } : {}),
+          },
         ],
       };
     }
