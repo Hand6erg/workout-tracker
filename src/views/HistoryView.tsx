@@ -17,7 +17,7 @@ import type { Workout } from '../lib/types';
 
 const dateFmt = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-export function HistoryView() {
+export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
   const { state, exerciseById } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = state.history.find((w) => w.id === openId);
@@ -80,13 +80,19 @@ export function HistoryView() {
           );
         })}
       </div>
-      {open && <WorkoutDetail w={open} onClose={() => setOpenId(null)} />}
+      {open && <WorkoutDetail w={open} onClose={() => setOpenId(null)} onOpenWorkout={onOpenWorkout} />}
     </div>
   );
 }
 
-function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
-  const { dispatch, exerciseById } = useStore();
+function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () => void; onOpenWorkout?: () => void }) {
+  const { state, dispatch, exerciseById } = useStore();
+  // Gentag træningen (#150): start en ny med samme øvelser og sæt, og vis den dags tal som "Forrige"
+  const repeat = () => {
+    dispatch({ type: 'REPEAT_WORKOUT', workoutId: w.id, now: Date.now(), replace: true });
+    onClose();
+    onOpenWorkout?.();
+  };
   const [saved, setSaved] = useState(false);
 
   return (
@@ -126,6 +132,15 @@ function WorkoutDetail({ w, onClose }: { w: Workout; onClose: () => void }) {
       }
     >
       <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
+      {state.active ? (
+        <ConfirmButton className="btn-primary wide repeat-btn" confirmText="Erstat igangværende træning?" onConfirm={repeat}>
+          <span aria-hidden>🔁</span> Gentag
+        </ConfirmButton>
+      ) : (
+        <button className="btn-primary wide repeat-btn" onClick={repeat}>
+          <span aria-hidden>🔁</span> Gentag
+        </button>
+      )}
       {w.note && <p className="workout-note-full">📝 {w.note}</p>}
       {w.exercises.map((e) => (
         <section key={e.id} className="detail-ex">
