@@ -37,6 +37,7 @@ import {
   exerciseKind,
   isSetFilled,
   formatSet,
+  parseClock,
   warmupSets,
   warmupBaseWeight,
   weekStreak,
@@ -1532,5 +1533,58 @@ describe('tids- og distancesæt (#133)', () => {
     s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { seconds: '50', done: false }, edit: true });
     s = reducer(s, { type: 'SAVE_EDIT' });
     expect(formatSet(s.history[0].exercises[0].sets[0])).toBe('50 sek.');
+  });
+});
+
+describe('stopur og tid i felter (#134)', () => {
+  function withPlank() {
+    let s = startWith(initialState());
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['plank'] });
+    s = reducer(s, { type: 'ADD_SET', weId: s.active!.exercises[0].id });
+    return s;
+  }
+
+  it('læser m:ss og sekunder', () => {
+    expect(parseClock('2:05')).toBe(125);
+    expect(parseClock('2:')).toBe(120);
+    expect(parseClock('2.30')).toBe(150);
+    expect(parseClock('45')).toBe(45);
+    expect(parseClock('')).toBeNull();
+    expect(parseClock('abc')).toBeNull();
+  });
+
+  it('stopuret gemmer starttidspunktet og skriver sekunderne ved stop', () => {
+    let s = withPlank();
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'START_SET_TIMER', weId: we.id, setId: we.sets[0].id, now: T0 });
+    expect(s.active!.exercises[0].sets[0].timerStartedAt).toBe(T0);
+    // Overlever en genindlæsning, fordi det er et tidspunkt
+    s = loadState(JSON.stringify(s));
+    s = reducer(s, { type: 'STOP_SET_TIMER', weId: we.id, setId: we.sets[0].id, now: T0 + 30_400 });
+    const set = s.active!.exercises[0].sets[0];
+    expect(set.seconds).toBe('30');
+    expect(set.timerStartedAt).toBeUndefined();
+  });
+
+  it('kun ét stopur kører ad gangen', () => {
+    let s = withPlank();
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'START_SET_TIMER', weId: we.id, setId: we.sets[0].id, now: T0 });
+    s = reducer(s, { type: 'START_SET_TIMER', weId: we.id, setId: we.sets[1].id, now: T0 + 20_000 });
+    const [a, b] = s.active!.exercises[0].sets;
+    expect(a).toMatchObject({ seconds: '20' });
+    expect(a.timerStartedAt).toBeUndefined();
+    expect(b.timerStartedAt).toBe(T0 + 20_000);
+  });
+
+  it('afslutning stopper et kørende stopur, og tiden kommer med', () => {
+    let s = withPlank();
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'START_SET_TIMER', weId: we.id, setId: we.sets[0].id, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 50_000, includeUnchecked: true });
+    const sets = s.history[0].exercises[0].sets;
+    expect(sets).toHaveLength(1);
+    expect(sets[0].timerStartedAt).toBeUndefined();
+    expect(formatSet(sets[0])).toBe('50 sek.');
   });
 });

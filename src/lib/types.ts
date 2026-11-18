@@ -33,6 +33,8 @@ export interface SetEntry {
   seconds?: string;
   /** Distance i meter (distancesæt, #133) */
   meters?: string;
+  /** Stopuret for et tidssæt kører siden dette tidspunkt (ms, #134). Gemmes som tidspunkt, så det tåler skærmlås og genindlæsning. */
+  timerStartedAt?: number;
   /** Opvarmningssæt tæller ikke med i volumen, rekorder og statistik */
   warmup?: boolean;
 }
