@@ -1711,3 +1711,66 @@ describe('rekorder, forslag og statistik for tids- og distancesæt (#136)', () =
     expect(dist.find((m) => m.muscle === 'Bryst')!.volume).toBe(500);
   });
 });
+
+describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
+  function finishedWith(sets: Record<string, Record<string, string>>): AppState {
+    let s = startWith(initialState());
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: Object.keys(sets) });
+    for (const we of s.active!.exercises) {
+      const set = we.sets[0];
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set.id, patch: sets[we.exerciseId] });
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: set.id, now: T0 });
+    }
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 60_000 });
+  }
+
+  it('CSV har kolonnerne "Sek." og "Meter", tomme for vægt × reps', () => {
+    const s = finishedWith({ bench: { weight: '80', reps: '5' }, plank: { seconds: '45' }, rower: { meters: '500,5', seconds: '125' } });
+    const lines = toCsv(s).split('\n');
+    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter');
+    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,$/);
+    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,$/);
+    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5$/);
+  });
+
+  it('backup og gendan beholder type, sekunder og meter', () => {
+    let s = finishedWith({ plank: { seconds: '60' }, 'farmers-walk': { meters: '40', seconds: '30' } });
+    s = reducer(s, { type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: s.history[0].id, name: 'Core' });
+    const restored = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(s)) });
+    expect(restored.history[0]).toEqual(s.history[0]);
+    expect(exerciseKind(restored, 'farmers-walk')).toBe('distance');
+    expect(restored.templates.at(-1)).toEqual(s.templates.at(-1));
+  });
+
+  it('en gammel backup uden typer og tider indlæses uændret', () => {
+    const set = { id: 's1', weight: '100', reps: '5', rpe: '8', done: true };
+    const old = {
+      ...initialState(),
+      exercises: initialState().exercises.map(({ kind: _k, ...e }) => e),
+      history: [{ id: 'w1', name: 'Gammel', startedAt: T0, finishedAt: T0 + 1, exercises: [{ id: 'e1', exerciseId: 'squat', sets: [set] }] }],
+    };
+    const s = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(old)) });
+    expect(s.history[0].exercises[0].sets[0]).toEqual(set);
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,$/);
+  });
+
+  it('fletning mellem to enheder holder tidssæt intakte', () => {
+    const phone = finishedWith({ plank: { seconds: '50' } });
+    const pc = finishedWith({ rower: { meters: '1000', seconds: '240' } });
+    const merged = mergeStates(phone, pc);
+    expect(merged.history).toHaveLength(2);
+    const sets = merged.history.flatMap((w) => w.exercises.flatMap((e) => e.sets));
+    expect(sets.find((x) => x.seconds === '50')).toMatchObject({ seconds: '50', done: true });
+    expect(sets.find((x) => x.meters === '1000')).toMatchObject({ meters: '1000', seconds: '240', done: true });
+    expect(mergeStates(pc, phone).history.map((w) => w.id).sort()).toEqual(merged.history.map((w) => w.id).sort());
+  });
+
+  it('en skabelon gemt fra en træning med Planke starter med Planke', () => {
+    let s = finishedWith({ plank: { seconds: '45' } });
+    s = reducer(s, { type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: s.history[0].id, name: 'Core' });
+    const tpl = s.templates.at(-1)!;
+    s = reducer(s, { type: 'START_WORKOUT', templateId: tpl.id, now: T0 + 3_600_000 });
+    expect(s.active!.exercises.map((e) => e.exerciseId)).toEqual(['plank']);
+    expect(exerciseKind(s, s.active!.exercises[0].exerciseId)).toBe('time');
+  });
+});
