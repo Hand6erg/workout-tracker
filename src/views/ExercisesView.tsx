@@ -1,8 +1,21 @@
 import { useMemo, useState } from 'react';
+import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
-import { exerciseHistory, formatKg, formatSet, uid } from '../lib/logic';
+import {
+  exerciseHistory,
+  exerciseKind,
+  formatClock,
+  formatKg,
+  formatSet,
+  num,
+  personalRecords,
+  uid,
+  type PersonalRecords,
+} from '../lib/logic';
 import { useStore } from '../lib/store';
-import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type Muscle } from '../lib/types';
+import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type Muscle } from '../lib/types';
+
+const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
 
 const shortDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short' });
 
@@ -41,6 +54,7 @@ export function ExercisesView() {
                 <small>
                   {e.muscle} · {e.equipment}
                   {e.custom ? ' · egen' : ''}
+                  {e.kind === 'time' || e.kind === 'distance' ? <b className="kind-tag">{KIND_LABEL[e.kind]}</b> : null}
                 </small>
               </span>
               <span className="muted">›</span>
@@ -60,10 +74,11 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [muscle, setMuscle] = useState<Muscle>('Bryst');
   const [equipment, setEquipment] = useState<Equipment>('Stang');
+  const [kind, setKind] = useState<ExerciseKind>('reps');
 
   const save = () => {
     if (!name.trim()) return;
-    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment });
+    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind });
     onClose();
   };
 
@@ -97,6 +112,16 @@ function NewExercise({ onClose }: { onClose: () => void }) {
           ))}
         </select>
       </label>
+      <label className="field">
+        Type
+        <select value={kind} onChange={(e) => setKind(e.target.value as ExerciseKind)}>
+          {(Object.keys(KIND_LABEL) as ExerciseKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
+          ))}
+        </select>
+      </label>
     </Modal>
   );
 }
@@ -105,27 +130,51 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
   const { state } = useStore();
   const hist = exerciseHistory(state.history, ex.id);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
+  const kind = exerciseKind(state, ex.id);
+  // Tids- og distanceøvelser måles i sekunder/meter i stedet for 1RM (#136)
+  const field = kind === 'time' ? 'seconds' : 'meters';
+  const bestOf = (h: (typeof hist)[number]) => Math.max(0, ...h.sets.map((s) => num(s[field] ?? '')));
+  const fmt = (n: number) => (kind === 'time' ? `${n} sek.` : `${String(n).replace('.', ',')} m`);
 
   return (
     <Modal title={ex.name} onClose={onClose}>
       <p className="muted">
         {ex.muscle} · {ex.equipment}
       </p>
+      <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
+        <h3 className="section">⏱ Pause mellem sæt</h3>
+        <RestControls exerciseId={ex.id} />
+      </section>
       {!hist.length ? (
-        <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
+        <>
+          <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
+          <Records records={personalRecords(state, ex.id)} />
+        </>
       ) : (
         <>
           <div className="kpis">
-            <div>
-              <small>Est. 1RM</small>
-              <strong data-testid="best-1rm">{formatKg(best)}</strong>
-            </div>
+            {kind === 'reps' ? (
+              <div>
+                <small>Est. 1RM</small>
+                <strong data-testid="best-1rm">{formatKg(best)}</strong>
+              </div>
+            ) : (
+              <div>
+                <small>{kind === 'time' ? 'Længste hold' : 'Længste distance'}</small>
+                <strong>{fmt(Math.max(0, ...hist.map(bestOf)))}</strong>
+              </div>
+            )}
             <div>
               <small>Træninger</small>
               <strong>{hist.length}</strong>
             </div>
           </div>
-          <Sparkline values={[...hist].reverse().map((h) => h.best1RM)} />
+          <Sparkline
+            values={[...hist].reverse().map((h) => (kind === 'reps' ? h.best1RM : bestOf(h)))}
+            label={kind === 'reps' ? 'Udvikling i estimeret 1RM' : kind === 'time' ? 'Udvikling i længste hold' : 'Udvikling i længste distance'}
+          />
+          <Records records={personalRecords(state, ex.id)} />
+          <h3 className="section">Historik</h3>
           <ul className="list">
             {hist.map((h) => (
               <li key={h.workoutId} className="list-row static">
@@ -133,7 +182,7 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
                   <strong>{shortDate.format(h.date)}</strong>
                   <small>{h.sets.map(formatSet).join(' · ')}</small>
                 </span>
-                <span className="muted">{formatKg(h.best1RM)}</span>
+                <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
               </li>
             ))}
           </ul>
@@ -143,7 +192,88 @@ function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) 
   );
 }
 
-function Sparkline({ values }: { values: number[] }) {
+function Records({ records }: { records: PersonalRecords }) {
+  const reps = Object.entries(records.repsAtWeight)
+    .map(([w, r]) => ({ weight: Number(w), ...r }))
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 5);
+  const kg = (n: number) => (n > 0 ? formatKg(n) : 'Kropsvægt');
+  return (
+    <section aria-label="Rekorder">
+      <h3 className="section">🏆 Rekorder</h3>
+      {!records.heaviest && !records.best1RM && !reps.length && !records.longestHold && !records.longestDistance ? (
+        <Empty>Ingen rekorder endnu</Empty>
+      ) : (
+        <ul className="list">
+          {records.longestHold && (
+            <li className="list-row static">
+              <span>
+                <strong>Længste hold</strong>
+                <small>{shortDate.format(records.longestHold.date)}</small>
+              </span>
+              <span>{records.longestHold.seconds} sek.</span>
+            </li>
+          )}
+          {records.longestDistance && (
+            <li className="list-row static">
+              <span>
+                <strong>Længste distance</strong>
+                <small>{shortDate.format(records.longestDistance.date)}</small>
+              </span>
+              <span>{String(records.longestDistance.meters).replace('.', ',')} m</span>
+            </li>
+          )}
+          {records.fastest && (
+            <li className="list-row static">
+              <span>
+                <strong>Hurtigste tid</strong>
+                <small>
+                  {formatClock(records.fastest.pace * 500)} pr. 500 m · {shortDate.format(records.fastest.date)}
+                </small>
+              </span>
+              <span>
+                {String(records.fastest.meters).replace('.', ',')} m · {formatClock(records.fastest.seconds)}
+              </span>
+            </li>
+          )}
+          {records.heaviest && (
+            <li className="list-row static">
+              <span>
+                <strong>Tungeste vægt</strong>
+                <small>{shortDate.format(records.heaviest.date)}</small>
+              </span>
+              <span>
+                {formatKg(records.heaviest.weight)} × {records.heaviest.reps}
+              </span>
+            </li>
+          )}
+          {records.best1RM && (
+            <li className="list-row static">
+              <span>
+                <strong>Bedste est. 1RM</strong>
+                <small>
+                  {formatKg(records.best1RM.weight)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
+                </small>
+              </span>
+              <span>{formatKg(records.best1RM.value)}</span>
+            </li>
+          )}
+          {reps.map((r) => (
+            <li key={r.weight} className="list-row static">
+              <span>
+                <strong>Flest reps på {kg(r.weight)}</strong>
+                <small>{shortDate.format(r.date)}</small>
+              </span>
+              <span>{r.reps} reps</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function Sparkline({ values, label }: { values: number[]; label: string }) {
   if (values.length < 2) return null;
   const w = 300;
   const h = 80;
@@ -152,7 +282,7 @@ function Sparkline({ values }: { values: number[] }) {
   const span = max - min || 1;
   const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 8 - ((v - min) / span) * (h - 16)]);
   return (
-    <svg className="spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Udvikling i estimeret 1RM">
+    <svg className="spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
       <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
       {pts.map(([x, y], i) => (
         <circle key={i} cx={x} cy={y} r="3.5" fill="currentColor" />

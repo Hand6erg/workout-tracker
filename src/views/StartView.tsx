@@ -1,4 +1,6 @@
 import { ConfirmButton, Empty } from '../components/ui';
+import { nextInProgram, supersetGroups } from '../lib/logic';
+import type { Template } from '../lib/types';
 import { useStore } from '../lib/store';
 
 export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
@@ -9,16 +11,40 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
     onOpenWorkout();
   };
 
+  const next = state.active ? null : nextInProgram(state);
+  const summary = (t: Template) =>
+    supersetGroups(t.exercises)
+      .map((g) => {
+        const names = g.map((e) => `${e.sets}× ${exerciseById(e.exerciseId)?.name ?? '?'}`);
+        return g.length > 1 ? `Supersæt: ${names.join(' + ')}` : names[0];
+      })
+      .join(', ');
+
   return (
     <div className="page">
       <h1>Træning</h1>
+
+      {next && (
+        <section className="card next-up" aria-label="Næste i programmet">
+          <header>
+            <h2>Næste: {next.name}</h2>
+            <button className="btn-ghost small" onClick={() => dispatch({ type: 'SKIP_PROGRAM' })}>
+              Spring over
+            </button>
+          </header>
+          <p className="muted">{summary(next)}</p>
+          <button className="btn-primary wide" onClick={() => start(next.id)}>
+            Start {next.name}
+          </button>
+        </section>
+      )}
 
       {state.active ? (
         <button className="btn-primary wide" onClick={onOpenWorkout}>
           Fortsæt: {state.active.name}
         </button>
       ) : (
-        <button className="btn-primary wide" onClick={() => start()}>
+        <button className={next ? 'btn-secondary wide' : 'btn-primary wide'} onClick={() => start()}>
           Start tom træning
         </button>
       )}
@@ -34,11 +60,7 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
                 ✕
               </ConfirmButton>
             </header>
-            <p className="muted">
-              {t.exercises
-                .map((e) => `${e.sets}× ${exerciseById(e.exerciseId)?.name ?? '?'}`)
-                .join(', ')}
-            </p>
+            <p className="muted">{summary(t)}</p>
             <button className="btn-secondary wide small" disabled={!!state.active} onClick={() => start(t.id)}>
               Start {t.name}
             </button>

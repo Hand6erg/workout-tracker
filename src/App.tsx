@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { formatDuration, IS_STAGING } from './lib/logic';
+import { formatDuration, IS_STAGING, workoutDuration } from './lib/logic';
+import { useRestAlerts } from './lib/alerts';
 import { useNow, useStore } from './lib/store';
-import { ActiveWorkout } from './views/ActiveWorkout';
+import { ActiveWorkout, WorkoutEditor } from './views/ActiveWorkout';
 import { ExercisesView } from './views/ExercisesView';
 import { HistoryView } from './views/HistoryView';
 import { ProfileView } from './views/ProfileView';
@@ -21,6 +22,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('start');
   const [workoutOpen, setWorkoutOpen] = useState(true);
   const showWorkout = !!state.active && workoutOpen;
+  useRestAlerts();
 
   return (
     <div className="app">
@@ -51,6 +53,7 @@ export default function App() {
       </nav>
 
       {showWorkout && <ActiveWorkout onMinimize={() => setWorkoutOpen(false)} />}
+      {state.editing && <WorkoutEditor />}
     </div>
   );
 }
@@ -62,7 +65,7 @@ function MiniBar({ onOpen }: { onOpen: () => void }) {
   return (
     <button className="minibar" onClick={onOpen}>
       <strong>{state.active.name}</strong>
-      <span>{formatDuration(now - state.active.startedAt)}</span>
+      <span>{formatDuration(workoutDuration(state.active, now))}</span>
     </button>
   );
 }

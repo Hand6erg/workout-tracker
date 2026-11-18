@@ -102,3 +102,507 @@ test('afslut gemmer udfyldte sæt, selvom de ikke er krydset af (#9)', async ({ 
   await page.getByRole('button', { name: 'Historik' }).click();
   await expect(page.getByText('Bænkpres').first()).toBeVisible();
 });
+
+test('viser 🏆 når et sæt slår en rekord (#16)', async ({ page }) => {
+  async function benchSet(weight: string, reps: string) {
+    await page.getByRole('button', { name: 'Start tom træning' }).click();
+    const workout = page.getByRole('region', { name: 'Aktiv træning' });
+    await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+    const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+    await picker.getByPlaceholder('Søg efter øvelse').fill('bænk');
+    await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+    await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+    const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+    await bench.getByLabel('Vægt sæt 1').fill(weight);
+    await bench.getByLabel('Reps sæt 1').fill(reps);
+    await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+    return { workout, bench };
+  }
+
+  const first = await benchSet('80', '5');
+  await expect(first.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0); // første gang er ingen rekord
+  await first.workout.getByRole('button', { name: 'Afslut' }).click();
+  await first.workout.getByRole('button', { name: 'Bekræft' }).click();
+
+  const second = await benchSet('85', '5');
+  await expect(second.bench.getByRole('img', { name: 'Ny rekord: tungeste vægt, estimeret 1RM' })).toBeVisible();
+  await second.bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(second.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0);
+});
+
+test('viser rekorder på øvelsens side (#22)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const detail = page.getByRole('dialog', { name: 'Bænkpres' });
+  await expect(detail.getByRole('region', { name: 'Rekorder' })).toContainText('Ingen rekorder endnu');
+  await detail.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByLabel('Reps sæt 1').fill('3');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const records = page.getByRole('dialog', { name: 'Bænkpres' }).getByRole('region', { name: 'Rekorder' });
+  await expect(records).toContainText('Tungeste vægt');
+  await expect(records).toContainText('100 kg × 3');
+  await expect(records).toContainText('Flest reps på 100 kg');
+});
+test('viser 🏆 på træningskortet i historikken (#28)', async ({ page }) => {
+  for (const weight of ['80', '90']) {
+    await page.getByRole('button', { name: 'Start Push' }).click();
+    const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+    await bench.getByLabel('Vægt sæt 1').fill(weight);
+    await bench.getByLabel('Reps sæt 1').fill('5');
+    await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+    await page.getByRole('button', { name: 'Afslut' }).click();
+    await page.getByRole('button', { name: 'Bekræft' }).click();
+  }
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const cards = page.getByRole('button', { name: 'Træning Push' });
+  await expect(cards).toHaveCount(2);
+  await expect(cards.nth(0)).toContainText('🏆 2 rekorder');
+  await expect(cards.nth(0).getByRole('img', { name: 'Ny rekord' })).toBeVisible();
+  await expect(cards.nth(1)).not.toContainText('🏆');
+});
+
+test('viser volumen pr. uge under Profil (#17)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const section = page.getByRole('region', { name: 'Volumen pr. uge' });
+  await expect(section).toContainText('Afslut en træning');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(section.getByRole('img', { name: /Volumen pr. uge.*Denne uge: 500 kg/ })).toBeVisible();
+});
+
+test('viser fordeling på muskelgrupper under Profil (#23)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Ben' }).click();
+  const squat = page.getByRole('article', { name: 'Squat' });
+  await squat.getByLabel('Vægt sæt 1').fill('100');
+  await squat.getByLabel('Reps sæt 1').fill('5');
+  await squat.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const section = page.getByRole('region', { name: 'Muskelgrupper' });
+  await expect(section.getByRole('listitem').filter({ hasText: 'Ben' })).toContainText('1 sæt');
+  await expect(section.getByRole('listitem').filter({ hasText: 'Bryst' })).toContainText('1 sæt');
+  const all = section.getByRole('button', { name: 'Alt' });
+  await all.click();
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(section.getByRole('button', { name: 'Sidste 4 uger' })).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('tilføjer opvarmningssæt ud fra første arbejdssæt (#25)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  const add = bench.getByRole('button', { name: 'Tilføj opvarmning' });
+  await add.click();
+  await expect(bench.getByRole('status')).toContainText('Skriv vægten i sæt 1 først');
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await expect(bench.getByRole('status')).toHaveCount(0);
+  await add.click();
+  await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('20');
+  await expect(bench.getByLabel('Vægt opvarmning 4')).toHaveValue('80');
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('100');
+  await expect(bench.getByRole('button', { name: 'Beregn opvarmning igen' })).toBeVisible();
+});
+
+test('ingen skiveknap i træningen, og stangvægten bruges til opvarmning (#113)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await page.getByRole('region', { name: 'Stang' }).getByLabel('Stangvægt').selectOption('15');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByRole('button', { name: 'Skiver' })).toHaveCount(0);
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByRole('button', { name: 'Tilføj opvarmning' }).click();
+  await expect(bench.getByLabel('Vægt opvarmning 1')).toHaveValue('15');
+});
+
+test('registrerer, viser og sletter kropsmål (#20)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  const save = body.getByRole('button', { name: 'Gem måling' });
+  await expect(save).toBeDisabled();
+  await body.getByLabel('Vægt (kg)').fill('82,5');
+  await body.getByLabel('Talje (cm)').fill('88');
+  await save.click();
+  const list = body.getByRole('list', { name: 'Målinger' });
+  await expect(list.getByRole('listitem')).toHaveCount(1);
+  await expect(list).toContainText('82,5 kg · talje 88 cm');
+  await expect(body.getByLabel('Vægt (kg)')).toHaveValue('');
+
+  await list.getByRole('button', { name: 'Slet' }).click();
+  await list.getByRole('button', { name: 'Slet?' }).click();
+  await expect(body).toContainText('Ingen målinger endnu.');
+});
+
+test('viser graf over kropsmål (#26)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  async function measure(date: string, weight: string) {
+    await body.getByLabel('Dato').fill(date);
+    await body.getByLabel('Vægt (kg)').fill(weight);
+    await body.getByRole('button', { name: 'Gem måling' }).click();
+  }
+  await measure('2026-10-01', '84');
+  await expect(body).toContainText('Tilføj flere målinger for at se en graf.');
+  await measure('2026-11-01', '82,5');
+  await expect(body.getByRole('img', { name: 'Vægt over tid: fra 84 til 82,5 kg' })).toBeVisible();
+  await expect(body).toContainText('Ændring: -1,5 kg');
+  await body.getByRole('button', { name: 'Talje' }).click();
+  await expect(body).toContainText('Tilføj flere målinger for at se en graf.');
+});
+
+test('kropsmål kommer med i backup og gendannelse (#31)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  await body.getByLabel('Vægt (kg)').fill('81');
+  await body.getByRole('button', { name: 'Gem måling' }).click();
+
+  const csv = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Eksportér kropsmål (CSV)' }).click();
+  expect((await csv).suggestedFilename()).toMatch(/^kropsmaal-.*\.csv$/);
+
+  const dl = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Tag backup (JSON)' }).click();
+  const backup = await (await dl).path();
+
+  await page.getByRole('button', { name: 'Slet alle data' }).click();
+  await page.getByRole('button', { name: 'Tryk igen for at bekræfte' }).click();
+  await expect(body).toContainText('Ingen målinger endnu.');
+
+  await page.locator('input[type="file"]').setInputFiles(backup!);
+  await expect(page.getByRole('status').filter({ hasText: 'Gendannet' })).toHaveText('Gendannet 0 træninger og 1 kropsmål.');
+  await expect(body.getByRole('list', { name: 'Målinger' })).toContainText('81 kg');
+});
+
+test('kobler øvelser sammen i et supersæt (#18)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByRole('button', { name: 'Supersæt med næste' }).click();
+  const group = workout.getByRole('group', { name: 'Supersæt: Bænkpres + Militærpres' });
+  await expect(group).toBeVisible();
+  await expect(group.getByRole('article')).toHaveCount(2);
+  await expect(bench.getByRole('button', { name: 'Supersæt med næste' })).toHaveCount(0);
+
+  await group.getByRole('article', { name: 'Militærpres' }).getByRole('button', { name: 'Fjern fra supersæt' }).click();
+  await expect(workout.getByRole('group', { name: /^Supersæt/ })).toHaveCount(0);
+});
+
+test('pausetimeren starter først når supersæt-runden er færdig (#24)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const bench = workout.getByRole('article', { name: 'Bænkpres', exact: true });
+  const ohp = workout.getByRole('article', { name: 'Militærpres' });
+  await bench.getByRole('button', { name: 'Supersæt med næste' }).click();
+  for (const ex of [bench, ohp]) {
+    await ex.getByLabel('Vægt sæt 1').fill('40');
+    await ex.getByLabel('Reps sæt 1').fill('8');
+  }
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toHaveCount(0);
+  await ohp.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toBeVisible();
+});
+
+test('supersæt bevares i skabelon og vises i historikken (#29)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+  await picker.getByRole('button', { name: /^Roning/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (2)' }).click();
+  await workout.getByRole('article', { name: 'Bænkpres', exact: true }).getByRole('button', { name: 'Supersæt med næste' }).click();
+  for (const name of ['Bænkpres', 'Roning']) {
+    const ex = workout.getByRole('article', { name, exact: true });
+    await ex.getByLabel('Vægt sæt 1').fill('50');
+    await ex.getByLabel('Reps sæt 1').fill('8');
+    await ex.getByRole('button', { name: 'Udført sæt 1' }).click();
+  }
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: /^Træning / }).first();
+  await expect(card).toContainText('Supersæt: Bænkpres + Roning');
+  await card.click();
+  await page.getByRole('button', { name: 'Gem som skabelon' }).click();
+  await page.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  const tpl = page.getByRole('article', { name: /^Skabelon / }).last();
+  await expect(tpl).toContainText('Supersæt: 1× Bænkpres + 1× Roning');
+  await tpl.getByRole('button', { name: /^Start/ }).click();
+  await expect(page.getByRole('group', { name: 'Supersæt: Bænkpres + Roning' })).toBeVisible();
+});
+
+test('kalender i Historik markerer træningsdage og åbner træningen (#69)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const cal = page.getByRole('region', { name: /^Kalender / });
+  await expect(cal).toContainText('1 træning i');
+  await cal.getByRole('button', { name: /: Push$/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Push' })).toBeVisible();
+  await page.getByRole('button', { name: 'Luk' }).click();
+
+  await cal.getByRole('button', { name: 'Forrige måned' }).click();
+  await expect(cal.getByRole('button', { name: /: Push$/ })).toHaveCount(0);
+});
+
+test('viser stime og ugemål under Profil (#70)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const streak = page.getByRole('region', { name: 'Stime' });
+  await expect(streak).toContainText('0 af 2 træninger denne uge');
+  await page.getByLabel('Mål: træninger pr. uge').fill('1');
+  await expect(streak).toContainText('0 af 1 træning denne uge');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(streak).toContainText('1 af 1 træning denne uge ✓');
+  await expect(streak).toContainText('🔥 1 uge i træk');
+});
+
+test('viser forslag til næste vægt og udfylder med ét tryk (#72)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  let bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  for (const i of [1, 2, 3]) {
+    await bench.getByLabel(`Vægt sæt ${i}`).fill('60');
+    await bench.getByLabel(`Reps sæt ${i}`).fill('8');
+    await bench.getByRole('button', { name: `Udført sæt ${i}` }).click();
+  }
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  const hint = bench.getByRole('button', { name: /^Sidst: 3 × 8 @ 60 kg\. Prøv 62,5 kg/ });
+  await expect(hint).toBeVisible();
+  await hint.click();
+  for (const i of [1, 2, 3]) await expect(bench.getByLabel(`Vægt sæt ${i}`)).toHaveValue('62,5');
+  await bench.getByLabel('Vægt sæt 1').fill('65');
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('65');
+});
+
+test('forslag til næste vægt kan slås fra (#73)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await page.getByLabel('Vis forslag til næste vægt').uncheck();
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  await expect(page.getByRole('article', { name: 'Bænkpres', exact: true }).getByRole('button', { name: /^Sidst/ })).toHaveCount(0);
+});
+
+test('note på en øvelse vises næste gang og i historikken (#100)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  let bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByRole('button', { name: 'Note til Bænkpres' }).click();
+  await bench.getByLabel('Skriv note til Bænkpres').fill('sædehøjde 4');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await expect(page.getByRole('dialog').getByText('📝 sædehøjde 4')).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByText('📝 Sidst: sædehøjde 4')).toBeVisible();
+  await expect(bench.getByLabel('Skriv note til Bænkpres')).toHaveCount(0);
+});
+
+test('note til hele træningen vises på kortet og i detaljen (#101)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await page.getByLabel('Note til træningen').fill('sov dårligt');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card.getByText('📝 sov dårligt')).toBeVisible();
+  await card.click();
+  await expect(page.getByRole('dialog').getByText('📝 sov dårligt')).toBeVisible();
+});
+
+test('træning uden note viser ingen tom notelinje (#101)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await page.getByLabel('Note til træningen').fill('   ');
+  await bench.getByLabel('Vægt sæt 1').fill('60');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toBeVisible();
+  await expect(card.getByText('📝')).toHaveCount(0);
+  await card.click();
+  await expect(page.getByRole('dialog').getByText('📝')).toHaveCount(0);
+});
+
+test('sætter træningen på pause og fortsætter (#115)', async ({ page }) => {
+  await page.clock.install();
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await page.clock.runFor(65_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:05');
+  await workout.getByRole('button', { name: '⏸ Pause' }).click();
+  await expect(workout.getByRole('status')).toContainText('sat på pause');
+  await page.clock.runFor(120_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:05');
+  await workout.getByRole('button', { name: '▶ Fortsæt' }).click();
+  await expect(workout.getByRole('status')).toHaveCount(0);
+  await page.clock.runFor(10_000);
+  await expect(workout.getByTestId('elapsed')).toHaveText('1:15');
+});
+
+async function logBench(page: import('@playwright/test').Page, weight: string) {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill(weight);
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+}
+
+test('retter en afsluttet træning fra Historik (#92)', async ({ page }) => {
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  await expect(editor.getByRole('button', { name: 'Afslut' })).toHaveCount(0);
+  const bench = editor.getByRole('article', { name: 'Bænkpres', exact: true });
+  await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('80');
+  await bench.getByLabel('Vægt sæt 1').fill('85');
+  await bench.getByRole('button', { name: '+ Tilføj sæt' }).click();
+  await bench.getByLabel('Vægt sæt 2').fill('80');
+  await bench.getByLabel('Reps sæt 2').fill('6');
+  await bench.getByRole('button', { name: 'Udført sæt 2' }).click();
+  await expect(page.getByRole('status', { name: 'Pausetimer' })).toHaveCount(0); // ingen pausetimer under redigering
+  await page.screenshot({ path: 'test-results/edit-workout.png' });
+  await editor.getByRole('button', { name: 'Gem' }).click();
+  await expect(editor).toHaveCount(0);
+
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toContainText('2 × Bænkpres');
+  await expect(card).toContainText('85 kg × 5');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const records = page.getByRole('dialog', { name: 'Bænkpres' }).getByRole('region', { name: 'Rekorder' });
+  await expect(records).toContainText('85 kg × 5');
+});
+
+test('"Annullér" i editoren lader træningen være uændret (#92)', async ({ page }) => {
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  await editor.getByRole('article', { name: 'Bænkpres', exact: true }).getByLabel('Vægt sæt 1').fill('120');
+  await editor.getByRole('button', { name: 'Annullér' }).click();
+  await expect(editor).toHaveCount(0);
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card).toContainText('80 kg × 5');
+  await expect(card).not.toContainText('120');
+});
+
+test('retter navn, dato og varighed på en afsluttet træning (#93)', async ({ page }) => {
+  await page.clock.setFixedTime(new Date(2026, 10, 17, 18, 0));
+  await page.reload();
+  await logBench(page, '80');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await page.getByRole('dialog', { name: 'Push' }).getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  const timing = editor.getByRole('group', { name: 'Tidspunkt' });
+
+  // Ugyldige værdier afvises med en dansk besked
+  await editor.getByLabel('Navn på træning').fill('');
+  await expect(editor.getByRole('alert')).toHaveText('Træningen skal have et navn.');
+  await expect(editor.getByRole('button', { name: 'Gem' })).toBeDisabled();
+  await editor.getByLabel('Navn på træning').fill('Bryst og triceps');
+  await timing.getByLabel('Varighed (min)').fill('0');
+  await expect(editor.getByRole('alert')).toHaveText('Varigheden skal være mindst 1 minut.');
+  await timing.getByLabel('Varighed (min)').fill('2000');
+  await expect(editor.getByRole('alert')).toHaveText('Varigheden kan højst være 24 timer.');
+  await timing.getByLabel('Varighed (min)').fill('45');
+  await timing.getByLabel('Dato').fill('2026-11-18');
+  await expect(editor.getByRole('alert')).toHaveText('Datoen kan ikke ligge i fremtiden.');
+
+  await timing.getByLabel('Dato').fill('2026-11-16');
+  await timing.getByLabel('Starttid').fill('07:30');
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/edit-timing.png' });
+  await editor.getByRole('button', { name: 'Gem' }).click();
+  await expect(editor).toHaveCount(0);
+
+  const calendar = page.getByRole('region', { name: /^Kalender/ });
+  await expect(calendar.getByRole('button', { name: '16. november: Bryst og triceps' })).toBeVisible();
+  await expect(calendar.getByRole('button', { name: /^17\. november/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Træning Bryst og triceps' })).toContainText('45');
+});
