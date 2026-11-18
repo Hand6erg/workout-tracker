@@ -15,7 +15,7 @@ import {
   lastExerciseNote,
   NOTE_MAX,
   num,
-  previousSets,
+  previousSetsFor,
   progressionHint,
   restFor,
   recordsBrokenBy,
@@ -399,7 +399,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { exerciseById } = useStore();
   const { w, base: state, edit, send: dispatch } = useWorkout();
   const ex = exerciseById(we.exerciseId);
-  const prev = previousSets(state.history, we.exerciseId);
+  const prev = previousSetsFor(state.history, w, we.exerciseId);
   const kind = exerciseKind(state, we.exerciseId);
   const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
   const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;

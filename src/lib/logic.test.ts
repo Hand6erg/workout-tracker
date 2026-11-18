@@ -22,6 +22,7 @@ import {
   personalRecords,
   platesPerSide,
   previousSets,
+  previousSetsFor,
   progressionHint,
   recordCount,
   recordsBrokenBy,
@@ -1890,5 +1891,77 @@ describe('delebillede af opsummeringen (#144)', () => {
     expect(card.change).toBeNull();
     expect(card.records).toEqual([]);
     expect(shareCardLines({ ...base, volumeChangePct: -10, previousVolume: 10 }).change).toBe('−10 % volumen siden sidst');
+  });
+});
+
+describe('gentag en træning (#149)', () => {
+  const set = (weight: string, reps: string, extra: Partial<SetEntry> = {}): SetEntry => ({
+    id: Math.random().toString(36).slice(2), weight, reps, rpe: '', done: true, ...extra,
+  });
+  const tuesday: Workout = {
+    id: 'tue', name: 'Tirsdag', startedAt: T0 - 7 * 86_400_000, finishedAt: T0 - 7 * 86_400_000 + 3_600_000,
+    exercises: [
+      { id: 'e1', exerciseId: 'bench', sets: [set('40', '10', { warmup: true }), set('80', '8'), set('80', '7')] },
+      { id: 'e2', exerciseId: 'row', supersetId: 'ss', sets: [set('60', '10')] },
+      { id: 'e3', exerciseId: 'curl', supersetId: 'ss', sets: [set('12', '12'), set('12', '10'), set('', '', { done: false })] },
+    ],
+  };
+  const latest: Workout = {
+    id: 'latest', name: 'Senest', startedAt: T0 - 86_400_000, finishedAt: T0 - 86_400_000 + 3_600_000,
+    exercises: [{ id: 'e9', exerciseId: 'bench', sets: [set('100', '3')] }],
+  };
+  const withHistory = (): AppState => ({ ...initialState(), history: [latest, tuesday] });
+
+  it('kopierer øvelser, antal arbejdssæt og supersæt med nye id’er og springer opvarmning over', () => {
+    const s = reducer(withHistory(), { type: 'REPEAT_WORKOUT', workoutId: 'tue', now: T0 });
+    const a = s.active!;
+    expect(a.name).toBe('Tirsdag');
+    expect(a.repeatOf).toBe('tue');
+    expect(a.startedAt).toBe(T0);
+    expect(a.exercises.map((e) => e.exerciseId)).toEqual(['bench', 'row', 'curl']);
+    expect(a.exercises.map((e) => e.sets.length)).toEqual([2, 1, 3]);
+    expect(a.exercises.every((e) => e.sets.every((x) => !x.done && !x.weight && !x.reps && !x.warmup))).toBe(true);
+    expect(a.exercises[0].id).not.toBe('e1');
+    expect(a.exercises[1].supersetId).toBeTruthy();
+    expect(a.exercises[1].supersetId).toBe(a.exercises[2].supersetId);
+    expect(a.exercises[1].supersetId).not.toBe('ss');
+    expect(a.exercises[0].supersetId).toBeUndefined();
+  });
+
+  it('"Forrige" kommer fra den gentagne træning, og afkrydsning udfylder den dags tal', () => {
+    let s = reducer(withHistory(), { type: 'REPEAT_WORKOUT', workoutId: 'tue', now: T0 });
+    expect(previousSetsFor(s.history, s.active, 'bench').map((x) => x.weight)).toEqual(['80', '80']);
+    // uden repeatOf: seneste gang
+    expect(previousSetsFor(s.history, { id: 'x' }, 'bench').map((x) => x.weight)).toEqual(['100']);
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[1].id, now: T0 });
+    const done = s.active!.exercises[0].sets[1];
+    expect(done).toMatchObject({ done: true, weight: '80', reps: '7' });
+  });
+
+  it('falder tilbage til seneste gang for øvelser, der ikke var med den dag', () => {
+    const s = reducer(withHistory(), { type: 'REPEAT_WORKOUT', workoutId: 'tue', now: T0 });
+    const other = { ...tuesday, id: 'x', exercises: [] };
+    expect(previousSetsFor([latest, other], { id: 'n', repeatOf: 'x' }, 'bench').map((x) => x.weight)).toEqual(['100']);
+    expect(s.active).not.toBeNull();
+  });
+
+  it('erstatter kun en igangværende træning med replace, og ukendt træning gør intet', () => {
+    const running = reducer(withHistory(), { type: 'START_WORKOUT', now: T0 });
+    const same = reducer(running, { type: 'REPEAT_WORKOUT', workoutId: 'tue', now: T0 + 1 });
+    expect(same).toBe(running);
+    const replaced = reducer(running, { type: 'REPEAT_WORKOUT', workoutId: 'tue', now: T0 + 1, replace: true });
+    expect(replaced.active!.repeatOf).toBe('tue');
+    expect(replaced.active!.id).not.toBe(running.active!.id);
+    const s0 = withHistory();
+    expect(reducer(s0, { type: 'REPEAT_WORKOUT', workoutId: 'nope', now: T0 })).toBe(s0);
+  });
+
+  it('gamle gemte data uden repeatOf indlæses uændret', () => {
+    const old = { ...initialState(), history: [tuesday], active: { ...latest, finishedAt: undefined } };
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.history).toEqual([tuesday]);
+    expect(loaded.active!.repeatOf).toBeUndefined();
+    expect(previousSetsFor(loaded.history, loaded.active, 'bench').map((x) => x.weight)).toEqual(['80', '80']);
   });
 });
