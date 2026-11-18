@@ -333,7 +333,17 @@ function ClockInput({
 
 function recordText(kinds: RecordKind[], weight: string): string {
   const names = kinds.map((k) =>
-    k === 'heaviest' ? 'tungeste vægt' : k === '1rm' ? 'estimeret 1RM' : `flest reps på ${num(weight) || 0} kg`,
+    k === 'heaviest'
+      ? 'tungeste vægt'
+      : k === '1rm'
+        ? 'estimeret 1RM'
+        : k === 'hold'
+          ? 'længste hold'
+          : k === 'distance'
+            ? 'længste distance'
+            : k === 'pace'
+              ? 'hurtigste tid'
+              : `flest reps på ${num(weight) || 0} kg`,
   );
   return `Ny rekord: ${names.join(', ')}`;
 }
@@ -341,6 +351,33 @@ function recordText(kinds: RecordKind[], weight: string): string {
 const kgText = (n: number) => String(n).replace('.', ',');
 
 function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
+  if (hint.timed) return <TimedHintButton weId={weId} timed={hint.timed} />;
+  return <RepsHintButton weId={weId} hint={hint} />;
+}
+
+/** Afslutter en tekst med punktum, uden at "sek." får to */
+const sentence = (t: string) => (t.endsWith('.') ? t : `${t}.`);
+
+/** Forslag for tids- og distanceøvelser (#136) */
+function TimedHintButton({ weId, timed }: { weId: string; timed: NonNullable<ProgressionHint['timed']> }) {
+  const { send: dispatch } = useWorkout();
+  const { last, next } = timed;
+  const lastText = timed.kind === 'time' ? `${last.seconds} sek.` : `${kgText(last.meters)} m på ${formatClock(last.seconds)}`;
+  const nextText = timed.kind === 'time' ? `${next.seconds} sek.` : `${kgText(next.meters)} m på ${formatClock(next.seconds)}`;
+  return (
+    <button
+      className="hint"
+      aria-label={`Sidst: ${sentence(lastText)} Prøv ${sentence(nextText)} Tryk for at udfylde.`}
+      onClick={() =>
+        dispatch({ type: 'APPLY_HINT', weId, weight: 0, reps: 0, seconds: next.seconds, meters: next.meters || undefined })
+      }
+    >
+      Sidst: {lastText} → <strong>prøv {nextText}</strong>
+    </button>
+  );
+}
+
+function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
   const { send: dispatch } = useWorkout();
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);

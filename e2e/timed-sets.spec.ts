@@ -93,3 +93,36 @@ test('egen øvelse med typen "Tid" får et sekundfelt i træningen (#135)', asyn
   await card.getByLabel('Sekunder sæt 1').fill('45');
   await expect(card.getByLabel('Sekunder sæt 1')).toHaveValue('45');
 });
+
+test('Planke 30 sek. og så 40 sek. giver rekorden "Længste hold 40 sek." (#136)', async ({ page }) => {
+  const first = await startWith(page, 'plank', 'Planke');
+  await first.card.getByLabel('Sekunder sæt 1').fill('30');
+  await first.card.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await finishAndOpenHistory(page);
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  const { card } = await startWith(page, 'plank', 'Planke');
+  // Forslaget er +5 sek. og udfyldes i sekundfeltet
+  await card.getByRole('button', { name: /Sidst: 30 sek\. Prøv 35 sek\./ }).click();
+  await expect(card.getByLabel('Sekunder sæt 1')).toHaveValue('35');
+  await card.getByLabel('Sekunder sæt 1').fill('40');
+  await card.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await expect(card.getByRole('img', { name: 'Ny rekord: længste hold' })).toBeVisible();
+  await page.screenshot({ path: 'test-results/136-hold-record.png' });
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const newest = page.getByRole('button', { name: /^Træning / }).first();
+  await expect(newest).toContainText('1 rekord');
+  await expect(newest).toContainText('40 sek.');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByPlaceholder('Søg').fill('planke');
+  await page.getByRole('button', { name: /^Planke/ }).click();
+  const records = page.getByRole('region', { name: 'Rekorder' });
+  await expect(records.getByRole('listitem').filter({ hasText: 'Længste hold' })).toContainText('40 sek.');
+  await expect(page.getByRole('dialog', { name: 'Planke' })).not.toContainText('Est. 1RM');
+  await page.screenshot({ path: 'test-results/136-exercise-page.png' });
+});
