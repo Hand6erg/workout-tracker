@@ -1465,15 +1465,16 @@ export function bodyToCsv(state: AppState): string {
   return rows.map((r) => r.join(',')).join('\n');
 }
 
+/** Alle træninger som CSV. "Sek." og "Meter" er kun udfyldt for tids- og distancesæt (#137). */
 export function toCsv(state: AppState): string {
   const name = new Map(state.exercises.map((e) => [e.id, e.name]));
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE']];
+  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter']];
   for (const w of [...state.history].reverse()) {
     const date = new Date(w.startedAt).toISOString();
     for (const ex of w.exercises) {
       ex.sets.forEach((s, i) =>
-        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe]),
+        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.')]),
       );
     }
   }
