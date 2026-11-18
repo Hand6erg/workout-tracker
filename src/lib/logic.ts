@@ -4,6 +4,7 @@ import type {
   AppState,
   Equipment,
   Exercise,
+  ExerciseKind,
   Muscle,
   SetEntry,
   Template,
@@ -79,9 +80,24 @@ export function doneSetCount(w: Workout): number {
   return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => s.done).length, 0);
 }
 
-/** Sæt hvor der er skrevet reps, men som ikke er krydset af */
-export function uncheckedFilledCount(w: Workout): number {
-  return w.exercises.reduce((n, ex) => n + ex.sets.filter((s) => !s.done && s.reps.trim() !== '').length, 0);
+/** Hvordan en øvelse logges (#133). Ukendte øvelser og øvelser uden type er vægt × reps. */
+export function exerciseKind(state: Pick<AppState, 'exercises'>, exerciseId: string): ExerciseKind {
+  const kind = state.exercises.find((e) => e.id === exerciseId)?.kind;
+  return kind === 'time' || kind === 'distance' ? kind : 'reps';
+}
+
+/** Er sættets hovedfelt udfyldt? Reps for vægt × reps, sekunder for tid, meter for distance. */
+export function isSetFilled(s: SetEntry, kind: ExerciseKind = 'reps'): boolean {
+  const v = kind === 'time' ? s.seconds : kind === 'distance' ? s.meters : s.reps;
+  return (v ?? '').trim() !== '';
+}
+
+/** Sæt der er udfyldt, men som ikke er krydset af */
+export function uncheckedFilledCount(w: Workout, state?: Pick<AppState, 'exercises'>): number {
+  return w.exercises.reduce(
+    (n, ex) => n + ex.sets.filter((s) => !s.done && isSetFilled(s, state ? exerciseKind(state, ex.exerciseId) : 'reps')).length,
+    0,
+  );
 }
 
 /** Bedste sæt (højeste estimerede 1RM) for en øvelse i en træning */
@@ -113,7 +129,19 @@ export function formatKg(n: number): string {
   return `${Math.round(n * 10) / 10} kg`.replace('.', ',');
 }
 
+/** Sekunder som m:ss (fx 125 → "2:05") */
+export function formatClock(seconds: number): string {
+  const t = Math.max(0, Math.round(seconds));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+}
+
+/** Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før. */
 export function formatSet(s: SetEntry): string {
+  if ((s.meters ?? '').trim()) {
+    const sec = num(s.seconds ?? '');
+    return `${s.meters!.trim().replace('.', ',')} m${sec > 0 ? ` · ${formatClock(sec)}` : ''}`;
+  }
+  if ((s.seconds ?? '').trim() && !s.reps.trim()) return `${num(s.seconds!)} sek.`;
   const w = num(s.weight);
   return w ? `${s.weight.replace('.', ',')} kg × ${s.reps}` : `${s.reps} reps`;
 }
@@ -819,7 +847,10 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!state.history.some((w) => w.id === draft.id)) return { ...state, editing: null }; // slettet imens
       if (!draft.name.trim()) return state; // en træning skal have et navn (#93)
       const exercises = draft.exercises
-        .map((e) => ({ ...e, sets: e.sets.filter((s) => s.done || s.reps.trim() !== '').map((s) => ({ ...s, done: true })) }))
+        .map((e) => {
+          const kind = exerciseKind(state, e.exerciseId);
+          return { ...e, sets: e.sets.filter((s) => s.done || isSetFilled(s, kind)).map((s) => ({ ...s, done: true })) };
+        })
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return state; // en tom træning gemmes ikke – brug "Slet" i stedet
       const saved: Workout = { ...draft, name: draft.name.trim(), exercises: normalizeSupersets(exercises) };
@@ -843,12 +874,15 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'FINISH_WORKOUT': {
       if (!state.active) return state;
       const exercises = state.active.exercises
-        .map((e) => ({
-          ...e,
-          sets: e.sets
-            .filter((s) => s.done || (action.includeUnchecked && s.reps.trim() !== ''))
-            .map((s) => ({ ...s, done: true })),
-        }))
+        .map((e) => {
+          const kind = exerciseKind(state, e.exerciseId);
+          return {
+            ...e,
+            sets: e.sets
+              .filter((s) => s.done || (action.includeUnchecked && isSetFilled(s, kind)))
+              .map((s) => ({ ...s, done: true })),
+          };
+        })
         .filter((e) => e.sets.length > 0);
       if (!exercises.length) return { ...state, active: null, rest: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
@@ -913,6 +947,8 @@ export function reducer(state: AppState, action: Action): AppState {
           if (last) {
             next.weight = last.weight;
             next.reps = last.reps;
+            if (last.seconds !== undefined) next.seconds = last.seconds;
+            if (last.meters !== undefined) next.meters = last.meters;
           }
           return { ...e, sets: [...e.sets, next] };
         }),
@@ -968,10 +1004,19 @@ export function reducer(state: AppState, action: Action): AppState {
         // Udfyld tomme felter med sidste gangs tal, ligesom placeholderen viser
         const workIdx = workIdxOf(we, idx);
         const prev = set.warmup ? undefined : previousSets(state.history, we.exerciseId)[workIdx];
-        const weight = set.weight || prev?.weight || '';
-        const reps = set.reps || prev?.reps || '';
-        if (!reps) return state; // kan ikke markere et sæt uden reps
-        patch = { ...patch, weight, reps };
+        const kind = exerciseKind(state, we.exerciseId);
+        if (kind === 'reps') {
+          const weight = set.weight || prev?.weight || '';
+          const reps = set.reps || prev?.reps || '';
+          if (!reps) return state; // kan ikke markere et sæt uden reps
+          patch = { ...patch, weight, reps };
+        } else {
+          // Tid/distance (#133): brug sidste gangs sekunder/meter, hvis feltet er tomt
+          const seconds = set.seconds || prev?.seconds || '';
+          const meters = set.meters || prev?.meters || '';
+          if (kind === 'time' ? !seconds : !meters) return state;
+          patch = { ...patch, seconds, ...(kind === 'distance' ? { meters } : {}) };
+        }
       }
       const next = reducer(state, { type: 'UPDATE_SET', weId: action.weId, setId: action.setId, patch });
       const seconds = nowDone ? restAfterSet(state, next.active!, we, !!set.warmup) : 0;
@@ -1265,10 +1310,15 @@ export function loadState(raw: string | null): AppState {
     if (parsed.version !== 1) return base;
     // Sørg for at nye standardøvelser kommer med, uden at overskrive brugerens egne
     const known = new Set((parsed.exercises ?? []).map((e) => e.id));
+    // Indbyggede øvelser får deres type (fx bliver "Planke" en tidsøvelse, #133); egne øvelser røres ikke
+    const seedKind = new Map(base.exercises.filter((e) => e.kind).map((e) => [e.id, e.kind]));
+    const own = (parsed.exercises ?? []).map((e) =>
+      !e.custom && !e.kind && seedKind.has(e.id) ? { ...e, kind: seedKind.get(e.id) } : e,
+    );
     return {
       ...base,
       ...parsed,
-      exercises: [...(parsed.exercises ?? []), ...base.exercises.filter((e) => !known.has(e.id))],
+      exercises: [...own, ...base.exercises.filter((e) => !known.has(e.id))],
     } as AppState;
   } catch {
     return base;

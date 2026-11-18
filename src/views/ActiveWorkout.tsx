@@ -6,6 +6,8 @@ import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   canSwapInTemplate,
   doneSetCount,
+  exerciseKind,
+  isSetFilled,
   formatDuration,
   lastExerciseNote,
   NOTE_MAX,
@@ -48,7 +50,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   if (!w) return null;
 
   const done = doneSetCount(w);
-  const unchecked = uncheckedFilledCount(w);
+  const unchecked = uncheckedFilledCount(w, state);
   const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
 
   return (
@@ -134,7 +136,7 @@ export function WorkoutEditor() {
     rest: null,
   };
   const send = (a: WorkoutChange) => dispatch({ ...a, edit: true } as Action);
-  const hasSets = w.exercises.some((e) => e.sets.some((x) => x.done || x.reps.trim() !== ''));
+  const hasSets = w.exercises.some((e) => e.sets.some((x) => x.done || isSetFilled(x, exerciseKind(state, e.exerciseId))));
   const [timingError, setTimingError] = useState<string | null>(null);
   const error = w.name.trim() ? timingError : 'Træningen skal have et navn.';
   const canSave = hasSets && !error;
