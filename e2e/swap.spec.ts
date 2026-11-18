@@ -44,6 +44,7 @@ test('søgning i "Byt øvelse" finder øvelser uden for forslagene (#127)', asyn
 async function finish(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Afslut' }).click();
   await page.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
 }
 
 async function swapBenchToDips(page: import('@playwright/test').Page) {

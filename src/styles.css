@@ -286,3 +286,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .swap-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }
 .swap-ask span { flex: 1 1 100%; }
 .swap-saved { color: var(--muted); font-size: 0.85rem; margin: 2px 0 6px; }
+
+/* Opsummering efter træning (#143) */
+.summary h1 { margin-bottom: 4px; }
+.summary > .muted { margin: 0 0 16px; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.summary-stat { background: var(--surface); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.summary-stat strong { font-size: 1.4rem; }
+.summary-change { background: var(--surface-2); border-radius: var(--radius); padding: 12px 16px; margin: 0 0 14px; font-weight: 600; }
+.summary-change.up { color: var(--ok); background: var(--ok-soft); }
+.summary-change.down { color: var(--danger); }
+.summary-records { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.summary .card { margin-bottom: 16px; }
