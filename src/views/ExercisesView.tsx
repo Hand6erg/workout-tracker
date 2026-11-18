@@ -3,7 +3,9 @@ import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import { exerciseHistory, formatKg, formatSet, personalRecords, uid, type PersonalRecords } from '../lib/logic';
 import { useStore } from '../lib/store';
-import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type Muscle } from '../lib/types';
+import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type Muscle } from '../lib/types';
+
+const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
 
 const shortDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short' });
 
@@ -42,6 +44,7 @@ export function ExercisesView() {
                 <small>
                   {e.muscle} · {e.equipment}
                   {e.custom ? ' · egen' : ''}
+                  {e.kind === 'time' || e.kind === 'distance' ? <b className="kind-tag">{KIND_LABEL[e.kind]}</b> : null}
                 </small>
               </span>
               <span className="muted">›</span>
@@ -61,10 +64,11 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState('');
   const [muscle, setMuscle] = useState<Muscle>('Bryst');
   const [equipment, setEquipment] = useState<Equipment>('Stang');
+  const [kind, setKind] = useState<ExerciseKind>('reps');
 
   const save = () => {
     if (!name.trim()) return;
-    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment });
+    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind });
     onClose();
   };
 
@@ -95,6 +99,16 @@ function NewExercise({ onClose }: { onClose: () => void }) {
         <select value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)}>
           {EQUIPMENT.map((m) => (
             <option key={m}>{m}</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Type
+        <select value={kind} onChange={(e) => setKind(e.target.value as ExerciseKind)}>
+          {(Object.keys(KIND_LABEL) as ExerciseKind[]).map((k) => (
+            <option key={k} value={k}>
+              {KIND_LABEL[k]}
+            </option>
           ))}
         </select>
       </label>

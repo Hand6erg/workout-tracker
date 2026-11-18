@@ -1588,3 +1588,34 @@ describe('stopur og tid i felter (#134)', () => {
     expect(formatSet(sets[0])).toBe('50 sek.');
   });
 });
+
+describe('type på egne øvelser (#135)', () => {
+  const add = (kind?: unknown) =>
+    reducer(initialState(), {
+      type: 'ADD_CUSTOM_EXERCISE',
+      id: 'wall-sit',
+      name: 'Wall sit',
+      muscle: 'Ben',
+      equipment: 'Kropsvægt',
+      kind: kind as 'time',
+    });
+
+  it('gemmer tid og distance', () => {
+    expect(exerciseKind(add('time'), 'wall-sit')).toBe('time');
+    expect(add('time').exercises.find((e) => e.id === 'wall-sit')!.kind).toBe('time');
+    expect(exerciseKind(add('distance'), 'wall-sit')).toBe('distance');
+  });
+
+  it('standard og ugyldige typer bliver vægt × reps uden et kind-felt', () => {
+    for (const k of [undefined, 'reps', 'svømning', 42]) {
+      const s = add(k);
+      expect(exerciseKind(s, 'wall-sit')).toBe('reps');
+      expect(s.exercises.find((e) => e.id === 'wall-sit')!.kind).toBeUndefined();
+    }
+  });
+
+  it('typen overlever gem og indlæsning', () => {
+    const s = loadState(JSON.stringify(add('distance')));
+    expect(exerciseKind(s, 'wall-sit')).toBe('distance');
+  });
+});

@@ -72,3 +72,24 @@ test('Romaskine: meter og tid vises som "500 m · 2:05" (#134)', async ({ page }
   expect(box!.x + box!.width).toBeLessThanOrEqual(360);
   await page.screenshot({ path: 'test-results/distance-set-360.png' });
 });
+
+test('egen øvelse med typen "Tid" får et sekundfelt i træningen (#135)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: '+ Ny' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Ny øvelse' });
+  await dialog.getByLabel('Navn').fill('Wall sit');
+  await dialog.getByLabel('Muskelgruppe').selectOption('Ben');
+  await dialog.getByLabel('Udstyr').selectOption('Kropsvægt');
+  await expect(dialog.getByLabel('Type')).toHaveValue('reps');
+  await dialog.getByLabel('Type').selectOption('time');
+  await dialog.getByRole('button', { name: 'Gem øvelse' }).click();
+  await expect(page.getByRole('button', { name: /Wall sit.*Tid/ })).toBeVisible();
+  await page.screenshot({ path: 'test-results/135-exercise-list.png' });
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  const { card } = await startWith(page, 'wall', 'Wall sit');
+  await expect(card.getByRole('columnheader', { name: 'Sek.' })).toBeVisible();
+  await expect(card.getByLabel('Vægt sæt 1')).toHaveCount(0);
+  await card.getByLabel('Sekunder sæt 1').fill('45');
+  await expect(card.getByLabel('Sekunder sæt 1')).toHaveValue('45');
+});
