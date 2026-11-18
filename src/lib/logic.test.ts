@@ -33,6 +33,7 @@ import {
   bodyToCsv,
   toCsv,
   workoutSummary,
+  shareCardLines,
   trainingDays,
   uncheckedFilledCount,
   exerciseKind,
@@ -1849,5 +1850,45 @@ describe('opsummering af en træning (#142)', () => {
     expect(reloaded.lastFinishedId).toBeNull();
     expect(reloaded.history).toEqual(s.history);
     expect('lastFinishedId' in syncPayload(s)).toBe(false);
+  });
+});
+
+describe('delebillede af opsummeringen (#144)', () => {
+  it('bygger tekstlinjerne ud fra en opsummering', () => {
+    const card = shareCardLines({
+      workoutId: 'w1',
+      name: 'Push',
+      startedAt: T0,
+      durationMs: 45 * 60_000,
+      volume: 1250.5,
+      sets: 12,
+      records: [{ exerciseId: 'bench', name: 'Bænkpres', kinds: ['heaviest', '1rm'] }],
+      recordCount: 2,
+      volumeChangePct: 25,
+      previousVolume: 1000,
+    });
+    expect(card.app).toBe('Løft');
+    expect(card.date).toBe('15. november 2026');
+    expect(card.title).toBe('Push');
+    expect(card.stats).toEqual([
+      { label: 'Tid', value: '45:00' },
+      { label: 'Volumen', value: '1250,5 kg' },
+      { label: 'Sæt', value: '12 sæt' },
+      { label: 'Rekorder', value: '2' },
+    ]);
+    expect(card.change).toBe('+25 % volumen siden sidst');
+    expect(card.records).toEqual(['🏆 Bænkpres – tungeste vægt, estimeret 1RM']);
+    expect(card.fileName).toBe('loeft-2026-11-15.png');
+  });
+
+  it('uden sammenligning og rekorder er de linjer tomme', () => {
+    const base = {
+      workoutId: 'w1', name: 'Tom træning', startedAt: T0, durationMs: 0, volume: 0, sets: 1,
+      records: [], recordCount: 0, volumeChangePct: null, previousVolume: null,
+    };
+    const card = shareCardLines(base);
+    expect(card.change).toBeNull();
+    expect(card.records).toEqual([]);
+    expect(shareCardLines({ ...base, volumeChangePct: -10, previousVolume: 10 }).change).toBe('−10 % volumen siden sidst');
   });
 });

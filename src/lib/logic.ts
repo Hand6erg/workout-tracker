@@ -368,6 +368,54 @@ export function workoutSummary(state: AppState, workoutId: string): WorkoutSumma
   };
 }
 
+const MONTHS_DA = ['januar', 'februar', 'marts', 'april', 'maj', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'december'];
+
+/** Navne på rekordtyper, som de vises for brugeren */
+export const RECORD_NAMES: Record<RecordKind, string> = {
+  heaviest: 'tungeste vægt',
+  '1rm': 'estimeret 1RM',
+  reps: 'flest reps',
+  hold: 'længste hold',
+  distance: 'længste distance',
+  pace: 'hurtigste tid',
+};
+
+/** "+25 % volumen siden sidst" (null når der ikke er noget at sammenligne med) */
+export function volumeChangeText(pct: number | null): string | null {
+  if (pct === null) return null;
+  return `${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${Math.abs(pct)} % volumen siden sidst`;
+}
+
+export interface ShareCard {
+  app: string;
+  date: string;
+  title: string;
+  stats: { label: string; value: string }[];
+  change: string | null;
+  records: string[];
+  fileName: string;
+}
+
+/** Teksten til delebilledet af en opsummering (#144) – ren funktion, så den kan testes */
+export function shareCardLines(s: WorkoutSummary): ShareCard {
+  const d = new Date(s.startedAt);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    app: 'Løft',
+    date: `${d.getDate()}. ${MONTHS_DA[d.getMonth()]} ${d.getFullYear()}`,
+    title: s.name,
+    stats: [
+      { label: 'Tid', value: formatDuration(s.durationMs) },
+      { label: 'Volumen', value: formatKg(s.volume) },
+      { label: 'Sæt', value: `${s.sets} sæt` },
+      { label: 'Rekorder', value: String(s.recordCount) },
+    ],
+    change: volumeChangeText(s.volumeChangePct),
+    records: s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
+    fileName: `loeft-${iso}.png`,
+  };
+}
+
 /* ---------- Statistik til grafer ---------- */
 
 const DAY_MS = 86_400_000;
