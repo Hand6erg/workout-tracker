@@ -46,7 +46,7 @@ export default function App() {
           />
         )}
         {!summaryOpen && tab === 'start' && <StartView onOpenWorkout={() => setWorkoutOpen(true)} />}
-        {!summaryOpen && tab === 'history' && <HistoryView />}
+        {!summaryOpen && tab === 'history' && <HistoryView onOpenWorkout={() => setWorkoutOpen(true)} />}
         {!summaryOpen && tab === 'exercises' && <ExercisesView />}
         {!summaryOpen && tab === 'profile' && <ProfileView />}
       </main>
