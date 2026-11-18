@@ -185,6 +185,16 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
   return [];
 }
 
+/** "Forrige" sæt for en øvelse i en træning: fra den gentagne træning (#149), ellers seneste gang */
+export function previousSetsFor(history: Workout[], w: Pick<Workout, 'id' | 'repeatOf'> | null | undefined, exerciseId: string): SetEntry[] {
+  if (w?.repeatOf) {
+    const src = history.find((h) => h.id === w.repeatOf && h.id !== w.id);
+    const sets = src?.exercises.find((e) => e.exerciseId === exerciseId)?.sets.filter(isWorkSet) ?? [];
+    if (sets.length) return sets;
+  }
+  return previousSets(history, exerciseId);
+}
+
 /* ---------- Rekorder ---------- */
 
 export type RecordKind = 'heaviest' | '1rm' | 'reps' | 'hold' | 'distance' | 'pace';
@@ -909,6 +919,7 @@ const WORKOUT_CHANGES = new Set<string>([
 export type Action =
   | (WorkoutChange & { edit?: boolean })
   | { type: 'START_WORKOUT'; templateId?: string; now: number }
+  | { type: 'REPEAT_WORKOUT'; workoutId: string; now: number; replace?: boolean }
   | { type: 'CANCEL_WORKOUT' }
   | { type: 'FINISH_WORKOUT'; now: number; includeUnchecked?: boolean }
   | { type: 'PAUSE_WORKOUT'; now: number }
@@ -1065,6 +1076,22 @@ export function reducer(state: AppState, action: Action): AppState {
         startedAt: action.now,
         ...(tpl ? { templateId: tpl.id } : {}),
         exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
+      };
+      return { ...state, active, rest: null, lastFinishedId: null };
+    }
+    case 'REPEAT_WORKOUT': {
+      // Start en ny træning med samme øvelser, antal arbejdssæt og supersæt som en afsluttet træning (#149)
+      if (state.active && !action.replace) return state;
+      const src = state.history.find((h) => h.id === action.workoutId);
+      if (!src) return state;
+      const active: Workout = {
+        id: uid(),
+        name: src.name,
+        startedAt: action.now,
+        repeatOf: src.id,
+        exercises: withFreshSupersetIds(src.exercises, (e) =>
+          newWorkoutExercise(e.exerciseId, e.sets.filter((x) => !x.warmup).length),
+        ),
       };
       return { ...state, active, rest: null, lastFinishedId: null };
     }
@@ -1228,7 +1255,7 @@ export function reducer(state: AppState, action: Action): AppState {
       if (nowDone) {
         // Udfyld tomme felter med sidste gangs tal, ligesom placeholderen viser
         const workIdx = workIdxOf(we, idx);
-        const prev = set.warmup ? undefined : previousSets(state.history, we.exerciseId)[workIdx];
+        const prev = set.warmup ? undefined : previousSetsFor(state.history, state.active, we.exerciseId)[workIdx];
         const kind = exerciseKind(state, we.exerciseId);
         if (kind === 'reps') {
           const weight = set.weight || prev?.weight || '';

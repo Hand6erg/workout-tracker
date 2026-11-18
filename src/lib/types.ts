@@ -63,6 +63,8 @@ export interface Workout {
   note?: string;
   /** Skabelonen træningen blev startet fra (til programmet, #106) */
   templateId?: string;
+  /** Den afsluttede træning, denne gentager (#149). "Forrige" hentes derfra. Mangler = seneste gang. */
+  repeatOf?: string;
   /** Hvornår træningen sidst blev rettet efter den var afsluttet (til fletning mellem enheder, #91) */
   updatedAt?: number;
 }
