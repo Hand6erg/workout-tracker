@@ -8,7 +8,10 @@ import {
   doneSetCount,
   exerciseKind,
   isSetFilled,
+  formatClock,
   formatDuration,
+  parseClock,
+  stopwatchSeconds,
   lastExerciseNote,
   NOTE_MAX,
   num,
@@ -27,7 +30,7 @@ import {
   type WorkoutChange,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
-import type { AppState, Workout, WorkoutExercise } from '../lib/types';
+import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
 
 /**
  * Den træning, der vises i editoren: enten den aktive træning eller en kladde af en afsluttet træning (#92).
@@ -291,6 +294,43 @@ function WorkoutBody({ children, top }: { children?: ReactNode; top?: ReactNode 
   );
 }
 
+/** "Forrige"-kolonnen i samme format som sættet */
+function prevText(p: SetEntry, kind: ExerciseKind): string {
+  if (kind === 'time') return p.seconds ? `${num(p.seconds)} sek.` : '–';
+  if (kind === 'distance') return p.meters ? `${p.meters.replace('.', ',')} m${p.seconds ? ` · ${formatClock(num(p.seconds))}` : ''}` : '–';
+  return `${p.weight || 0}×${p.reps}`;
+}
+
+/** Felt til en tid som m:ss. Mens man skriver, vises teksten som skrevet; sættet gemmer sekunder. */
+function ClockInput({
+  label,
+  seconds,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  seconds: string;
+  placeholder: string;
+  onChange: (seconds: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (seconds.trim() ? formatClock(num(seconds)) : '');
+  return (
+    <input
+      inputMode="text"
+      aria-label={label}
+      placeholder={placeholder}
+      value={shown}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const sec = parseClock(e.target.value);
+        onChange(sec === null ? '' : String(sec));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
 function recordText(kinds: RecordKind[], weight: string): string {
   const names = kinds.map((k) =>
     k === 'heaviest' ? 'tungeste vægt' : k === '1rm' ? 'estimeret 1RM' : `flest reps på ${num(weight) || 0} kg`,
@@ -323,6 +363,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { w, base: state, edit, send: dispatch } = useWorkout();
   const ex = exerciseById(we.exerciseId);
   const prev = previousSets(state.history, we.exerciseId);
+  const kind = exerciseKind(state, we.exerciseId);
+  const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
   const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
   const [warmupMsg, setWarmupMsg] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
@@ -429,9 +471,20 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           <tr>
             <th>Sæt</th>
             <th>Forrige</th>
-            <th>kg</th>
-            <th>Reps</th>
-            <th>RPE</th>
+            {kind === 'reps' && (
+              <>
+                <th>kg</th>
+                <th>Reps</th>
+                <th>RPE</th>
+              </>
+            )}
+            {kind === 'time' && <th colSpan={2}>Sek.</th>}
+            {kind === 'distance' && (
+              <>
+                <th>Meter</th>
+                <th>Tid</th>
+              </>
+            )}
             <th aria-label="Udført">✓</th>
           </tr>
         </thead>
@@ -456,7 +509,62 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                     {s.warmup ? 'O' : i + 1}
                   </button>
                 </td>
-                <td className="prev">{p ? `${p.weight || 0}×${p.reps}` : '–'}</td>
+                <td className="prev">{p ? prevText(p, kind) : '–'}</td>
+                {kind === 'time' && (
+                  <>
+                    <td>
+                      <input
+                        inputMode="numeric"
+                        aria-label={`Sekunder ${what} ${i + 1}`}
+                        placeholder={p?.seconds || ''}
+                        value={s.timerStartedAt ? String(stopwatchSeconds(s, now)) : (s.seconds ?? '')}
+                        readOnly={!!s.timerStartedAt}
+                        onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { seconds: e.target.value } })}
+                      />
+                    </td>
+                    <td>
+                      {!edit && !s.done && (
+                        <button
+                          className={`stopwatch ${s.timerStartedAt ? 'running' : ''}`}
+                          aria-label={`${s.timerStartedAt ? 'Stop' : 'Start'} stopur ${what} ${i + 1}`}
+                          onClick={() =>
+                            dispatch({
+                              type: s.timerStartedAt ? 'STOP_SET_TIMER' : 'START_SET_TIMER',
+                              weId: we.id,
+                              setId: s.id,
+                              now: Date.now(),
+                            })
+                          }
+                        >
+                          {s.timerStartedAt ? '■ Stop' : '▶ Start'}
+                        </button>
+                      )}
+                    </td>
+                  </>
+                )}
+                {kind === 'distance' && (
+                  <>
+                    <td>
+                      <input
+                        inputMode="decimal"
+                        aria-label={`Meter ${what} ${i + 1}`}
+                        placeholder={p?.meters || ''}
+                        value={s.meters ?? ''}
+                        onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { meters: e.target.value } })}
+                      />
+                    </td>
+                    <td>
+                      <ClockInput
+                        label={`Tid ${what} ${i + 1}`}
+                        seconds={s.seconds ?? ''}
+                        placeholder={p?.seconds ? formatClock(num(p.seconds)) : 'm:ss'}
+                        onChange={(sec) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { seconds: sec } })}
+                      />
+                    </td>
+                  </>
+                )}
+                {kind === 'reps' && (
+                <>
                 <td>
                   <input
                     inputMode="decimal"
@@ -484,6 +592,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe: e.target.value } })}
                   />
                 </td>
+                </>
+                )}
                 <td>
                   <button
                     className={`tick ${s.done ? 'on' : ''}`}

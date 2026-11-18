@@ -135,6 +135,25 @@ export function formatClock(seconds: number): string {
   return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
 }
 
+/** Læser en tid skrevet som "2:05" (m:ss) eller "125" (sekunder). Tom/ugyldig = null. */
+export function parseClock(text: string): number | null {
+  const m = /^\s*(\d+)\s*(?:[:.,]\s*(\d{0,2}))?\s*$/.exec(text);
+  if (!m) return null;
+  return m[2] === undefined ? Number(m[1]) : Number(m[1]) * 60 + Number(m[2] || 0);
+}
+
+/** Sekunder et kørende stopur har talt (0 hvis det ikke kører) */
+export function stopwatchSeconds(s: SetEntry, now: number): number {
+  return s.timerStartedAt ? Math.max(0, Math.round((now - s.timerStartedAt) / 1000)) : 0;
+}
+
+/** Stopper et kørende stopur: sekunderne skrives i sættet */
+function stopTimer(s: SetEntry, now: number): SetEntry {
+  if (!s.timerStartedAt) return s;
+  const { timerStartedAt: _t, ...rest } = s;
+  return { ...rest, seconds: String(stopwatchSeconds(s, now)) };
+}
+
 /** Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før. */
 export function formatSet(s: SetEntry): string {
   if ((s.meters ?? '').trim()) {
@@ -689,7 +708,9 @@ export type WorkoutChange =
   | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
-  | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number };
+  | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
+  | { type: 'START_SET_TIMER'; weId: string; setId: string; now: number }
+  | { type: 'STOP_SET_TIMER'; weId: string; setId: string; now: number };
 
 const WORKOUT_CHANGES = new Set<string>([
   'RENAME_WORKOUT',
@@ -706,6 +727,8 @@ const WORKOUT_CHANGES = new Set<string>([
   'REMOVE_SET',
   'UPDATE_SET',
   'TOGGLE_SET',
+  'START_SET_TIMER',
+  'STOP_SET_TIMER',
 ] satisfies WorkoutChange['type'][]);
 
 export type Action =
@@ -873,7 +896,9 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, active: null, rest: null };
     case 'FINISH_WORKOUT': {
       if (!state.active) return state;
+      // Kørende stopure stoppes, så tiden kommer med
       const exercises = state.active.exercises
+        .map((e) => ({ ...e, sets: e.sets.map((s) => stopTimer(s, action.now)) }))
         .map((e) => {
           const kind = exerciseKind(state, e.exerciseId);
           return {
@@ -984,6 +1009,26 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'REMOVE_SET':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => ({ ...e, sets: e.sets.filter((s) => s.id !== action.setId) })),
+      );
+    case 'START_SET_TIMER':
+      // Kun ét stopur ad gangen: et andet kørende stopur i træningen stoppes først
+      return mapActive(state, (w) => ({
+        ...w,
+        exercises: w.exercises.map((e) => ({
+          ...e,
+          sets: e.sets.map((s) =>
+            e.id === action.weId && s.id === action.setId
+              ? { ...s, timerStartedAt: action.now }
+              : stopTimer(s, action.now),
+          ),
+        })),
+      }));
+    case 'STOP_SET_TIMER':
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) => (s.id === action.setId ? stopTimer(s, action.now) : s)),
+        })),
       );
     case 'UPDATE_SET':
       return mapActive(state, (w) =>
