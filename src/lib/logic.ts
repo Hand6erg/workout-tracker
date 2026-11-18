@@ -30,6 +30,7 @@ export function initialState(): AppState {
     history: [],
     active: null,
     editing: null,
+    lastFinishedId: null,
     rest: null,
     restSeconds: 90,
     barWeight: DEFAULT_BAR,
@@ -310,6 +311,61 @@ export function workoutRecords(state: AppState, workoutId: string): Record<strin
 /** Antal rekorder i en træning (hver type tæller én gang pr. øvelse) */
 export function recordCount(records: Record<string, RecordKind[]>): number {
   return Object.values(records).reduce((n, k) => n + k.length, 0);
+}
+
+/* ---------- Opsummering af en træning (#142) ---------- */
+
+export interface WorkoutSummary {
+  workoutId: string;
+  name: string;
+  startedAt: number;
+  /** Varighed i ms (pauser tæller ikke med) */
+  durationMs: number;
+  /** Løftet vægt i kg (udførte arbejdssæt) */
+  volume: number;
+  /** Udførte sæt */
+  sets: number;
+  /** Nye rekorder pr. øvelse i denne træning */
+  records: { exerciseId: string; name: string; kinds: RecordKind[] }[];
+  recordCount: number;
+  /** Ændring i volumen i hele procent siden sidste træning fra samme skabelon (null = intet at sammenligne med) */
+  volumeChangePct: number | null;
+  previousVolume: number | null;
+}
+
+/** Den seneste afsluttede træning fra samme skabelon før `w` */
+function previousFromTemplate(history: Workout[], w: Workout): Workout | null {
+  if (!w.templateId) return null;
+  return (
+    history
+      .filter((x) => x.id !== w.id && x.templateId === w.templateId && x.finishedAt && x.startedAt < w.startedAt)
+      .sort((a, b) => b.startedAt - a.startedAt)[0] ?? null
+  );
+}
+
+/** Opsummering af en afsluttet træning: varighed, volumen, sæt, nye rekorder og sammenligning med sidst */
+export function workoutSummary(state: AppState, workoutId: string): WorkoutSummary | null {
+  const w = state.history.find((x) => x.id === workoutId);
+  if (!w) return null;
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const recs = workoutRecords(state, w.id);
+  const records = Object.entries(recs).map(([exerciseId, kinds]) => ({ exerciseId, name: names.get(exerciseId) ?? exerciseId, kinds }));
+  const volume = workoutVolume(w);
+  const prev = previousFromTemplate(state.history, w);
+  const previousVolume = prev ? workoutVolume(prev) : null;
+  const volumeChangePct = previousVolume ? Math.round(((volume - previousVolume) / previousVolume) * 100) : null;
+  return {
+    workoutId: w.id,
+    name: w.name,
+    startedAt: w.startedAt,
+    durationMs: workoutDuration(w, w.finishedAt ?? w.startedAt),
+    volume,
+    sets: doneSetCount(w),
+    records,
+    recordCount: recordCount(recs),
+    volumeChangePct,
+    previousVolume: previousVolume || null,
+  };
 }
 
 /* ---------- Statistik til grafer ---------- */
@@ -833,6 +889,7 @@ export type Action =
   | { type: 'SWAP_IN_TEMPLATE'; templateId: string; fromExerciseId: string; toExerciseId: string }
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
+  | { type: 'CLOSE_SUMMARY' }
   | { type: 'MERGE_REMOTE'; remote: AppState };
 
 function emptySet(): SetEntry {
@@ -961,10 +1018,12 @@ export function reducer(state: AppState, action: Action): AppState {
         ...(tpl ? { templateId: tpl.id } : {}),
         exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
       };
-      return { ...state, active, rest: null };
+      return { ...state, active, rest: null, lastFinishedId: null };
     }
     case 'CANCEL_WORKOUT':
       return { ...state, active: null, rest: null };
+    case 'CLOSE_SUMMARY':
+      return state.lastFinishedId ? { ...state, lastFinishedId: null } : state;
     case 'FINISH_WORKOUT': {
       if (!state.active) return state;
       // Kørende stopure stoppes, så tiden kommer med
@@ -980,10 +1039,10 @@ export function reducer(state: AppState, action: Action): AppState {
           };
         })
         .filter((e) => e.sets.length > 0);
-      if (!exercises.length) return { ...state, active: null, rest: null };
+      if (!exercises.length) return { ...state, active: null, rest: null, lastFinishedId: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
       const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
-      return { ...state, active: null, rest: null, history: [done, ...state.history] };
+      return { ...state, active: null, rest: null, history: [done, ...state.history], lastFinishedId: done.id };
     }
     case 'PAUSE_WORKOUT':
       return mapActive(state, (w) => (w.pausedAt ? w : { ...w, pausedAt: action.now }));
@@ -1409,8 +1468,8 @@ export function trackedReducer(state: AppState, action: Action & { at?: number }
 }
 
 /** Det, der sendes til serveren (pausetimeren og en kladde under redigering hører kun til denne enhed). */
-export function syncPayload(state: AppState): Omit<AppState, 'rest' | 'editing'> {
-  const { rest: _rest, editing: _editing, ...rest } = state;
+export function syncPayload(state: AppState): Omit<AppState, 'rest' | 'editing' | 'lastFinishedId'> {
+  const { rest: _rest, editing: _editing, lastFinishedId: _last, ...rest } = state;
   return rest;
 }
 
@@ -1445,6 +1504,8 @@ export function loadState(raw: string | null): AppState {
       ...base,
       ...parsed,
       exercises: [...own, ...base.exercises.filter((e) => !known.has(e.id))],
+      // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
+      lastFinishedId: null,
     } as AppState;
   } catch {
     return base;

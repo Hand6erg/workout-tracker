@@ -32,6 +32,7 @@ import {
   STORAGE_KEY,
   bodyToCsv,
   toCsv,
+  workoutSummary,
   trainingDays,
   uncheckedFilledCount,
   exerciseKind,
@@ -1772,5 +1773,81 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
     s = reducer(s, { type: 'START_WORKOUT', templateId: tpl.id, now: T0 + 3_600_000 });
     expect(s.active!.exercises.map((e) => e.exerciseId)).toEqual(['plank']);
     expect(exerciseKind(s, s.active!.exercises[0].exerciseId)).toBe('time');
+  });
+});
+
+describe('opsummering af en træning (#142)', () => {
+  const H = 3_600_000;
+  function doWorkout(state: AppState, at: number, sets: { ex: string; weight: string; reps: string; done?: boolean }[], templateId?: string) {
+    let s = reducer(state, { type: 'START_WORKOUT', templateId, now: at });
+    if (!templateId) s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [...new Set(sets.map((x) => x.ex))] });
+    for (const x of sets) {
+      let we = s.active!.exercises.find((e) => e.exerciseId === x.ex)!;
+      let set = we.sets.find((y) => !y.weight && !y.reps);
+      if (!set) {
+        s = reducer(s, { type: 'ADD_SET', weId: we.id });
+        we = s.active!.exercises.find((e) => e.exerciseId === x.ex)!;
+        set = we.sets.at(-1)!;
+      }
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set.id, patch: { weight: x.weight, reps: x.reps } });
+      if (x.done !== false) s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: set.id, now: at });
+    }
+    return reducer(s, { type: 'FINISH_WORKOUT', now: at + 45 * 60_000 });
+  }
+
+  it('varighed, volumen og antal sæt – ikke-udførte sæt tæller ikke', () => {
+    const s = doWorkout(initialState(), T0, [
+      { ex: 'bench', weight: '80', reps: '5' },
+      { ex: 'bench', weight: '80', reps: '5' },
+      { ex: 'bench', weight: '100', reps: '5', done: false },
+    ]);
+    expect(s.lastFinishedId).toBe(s.history[0].id);
+    const sum = workoutSummary(s, s.lastFinishedId!)!;
+    expect(sum.durationMs).toBe(45 * 60_000);
+    expect(sum.volume).toBe(800);
+    expect(sum.sets).toBe(2);
+    expect(sum.volumeChangePct).toBeNull();
+    expect(sum.records).toEqual([]);
+  });
+
+  it('en ny tungeste vægt er en rekord, den samme vægt er ikke', () => {
+    let s = doWorkout(initialState(), T0, [{ ex: 'squat', weight: '100', reps: '5' }]);
+    s = doWorkout(s, T0 + 24 * H, [{ ex: 'squat', weight: '100', reps: '5' }]);
+    expect(workoutSummary(s, s.lastFinishedId!)!.recordCount).toBe(0);
+    s = doWorkout(s, T0 + 48 * H, [{ ex: 'squat', weight: '105', reps: '5' }]);
+    const sum = workoutSummary(s, s.lastFinishedId!)!;
+    expect(sum.records).toEqual([{ exerciseId: 'squat', name: 'Squat', kinds: expect.arrayContaining(['heaviest']) }]);
+    expect(sum.recordCount).toBeGreaterThan(0);
+  });
+
+  it('sammenligner volumen med sidste træning fra samme skabelon', () => {
+    const tpl = initialState().templates[0];
+    const ex = tpl.exercises[0].exerciseId;
+    let s = doWorkout(initialState(), T0, [{ ex, weight: '100', reps: '5' }], tpl.id);
+    expect(workoutSummary(s, s.lastFinishedId!)!.volumeChangePct).toBeNull();
+    // En træning uden skabelon imellem tæller ikke med
+    s = doWorkout(s, T0 + 24 * H, [{ ex, weight: '200', reps: '5' }]);
+    s = doWorkout(s, T0 + 48 * H, [{ ex, weight: '105', reps: '5' }], tpl.id);
+    const sum = workoutSummary(s, s.lastFinishedId!)!;
+    expect(sum.previousVolume).toBe(500);
+    expect(sum.volumeChangePct).toBe(5);
+  });
+
+  it('opsummeringen lukkes, når en ny træning startes eller med CLOSE_SUMMARY', () => {
+    let s = doWorkout(initialState(), T0, [{ ex: 'bench', weight: '60', reps: '8' }]);
+    expect(reducer(s, { type: 'CLOSE_SUMMARY' }).lastFinishedId).toBeNull();
+    s = reducer(s, { type: 'START_WORKOUT', now: T0 + H });
+    expect(s.lastFinishedId).toBeNull();
+    expect(workoutSummary(s, 'findes-ikke')).toBeNull();
+  });
+
+  it('gammel gemt data uden feltet indlæses, og genindlæsning lukker opsummeringen', () => {
+    const { lastFinishedId: _l, ...old } = initialState();
+    expect(loadState(JSON.stringify(old)).lastFinishedId).toBeNull();
+    const s = doWorkout(initialState(), T0, [{ ex: 'bench', weight: '60', reps: '8' }]);
+    const reloaded = loadState(JSON.stringify(s));
+    expect(reloaded.lastFinishedId).toBeNull();
+    expect(reloaded.history).toEqual(s.history);
+    expect('lastFinishedId' in syncPayload(s)).toBe(false);
   });
 });
