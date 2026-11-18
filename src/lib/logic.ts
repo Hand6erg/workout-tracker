@@ -65,7 +65,14 @@ export function isWorkSet(s: SetEntry): boolean {
   return s.done && !s.warmup;
 }
 
+/** Tids- eller distancesæt (#133): har sekunder eller meter, men ingen reps */
+export function isTimedSet(s: SetEntry): boolean {
+  return !s.reps.trim() && ((s.seconds ?? '').trim() !== '' || (s.meters ?? '').trim() !== '');
+}
+
+/** Løftet vægt i et sæt. Tids- og distancesæt tæller ikke med (#136). */
 export function setVolume(s: SetEntry): number {
+  if (isTimedSet(s)) return 0;
   return num(s.weight) * num(s.reps);
 }
 
@@ -106,7 +113,7 @@ export function bestSet(sets: SetEntry[]): SetEntry | null {
   let bestScore = -1;
   for (const s of sets) {
     if (!isWorkSet(s)) continue;
-    const score = estimate1RM(num(s.weight), num(s.reps)) || num(s.reps);
+    const score = estimate1RM(num(s.weight), num(s.reps)) || num(s.reps) || num(s.meters ?? '') || num(s.seconds ?? '');
     if (score > bestScore) {
       best = s;
       bestScore = score;
@@ -179,7 +186,7 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
 
 /* ---------- Rekorder ---------- */
 
-export type RecordKind = 'heaviest' | '1rm' | 'reps';
+export type RecordKind = 'heaviest' | '1rm' | 'reps' | 'hold' | 'distance' | 'pace';
 
 export interface PersonalRecords {
   /** Tungeste vægt løftet (med reps og dato) */
@@ -188,23 +195,50 @@ export interface PersonalRecords {
   best1RM?: { value: number; weight: number; reps: number; date: number };
   /** Flest reps pr. vægt, nøgle = vægt i kg */
   repsAtWeight: Record<string, { reps: number; date: number }>;
+  /** Længste hold for tidsøvelser (#136) */
+  longestHold?: { seconds: number; date: number };
+  /** Længste distance for distanceøvelser (#136) */
+  longestDistance?: { meters: number; seconds: number; date: number };
+  /** Hurtigste tempo (sekunder pr. meter) for distanceøvelser med tid (#136) */
+  fastest?: { meters: number; seconds: number; pace: number; date: number };
 }
 
 interface ScoredSet {
   weight: number;
   reps: number;
+  seconds: number;
+  meters: number;
   date: number;
 }
 
-function validSets(sets: SetEntry[], date: number): ScoredSet[] {
+/** Arbejdssæt der kan give rekorder. Typen afgør hvilke felter der tæller, så et tidssæt aldrig giver en vægtrekord. */
+function validSets(sets: SetEntry[], date: number, kind: ExerciseKind = 'reps'): ScoredSet[] {
   return sets
-    .filter((s) => isWorkSet(s) && num(s.reps) > 0)
-    .map((s) => ({ weight: num(s.weight), reps: num(s.reps), date }));
+    .filter(isWorkSet)
+    .map((s) =>
+      kind === 'reps'
+        ? { weight: num(s.weight), reps: isTimedSet(s) ? 0 : num(s.reps), seconds: 0, meters: 0, date }
+        : kind === 'time'
+          ? { weight: 0, reps: 0, seconds: num(s.seconds ?? ''), meters: 0, date }
+          : { weight: 0, reps: 0, seconds: num(s.seconds ?? ''), meters: num(s.meters ?? ''), date },
+    )
+    .filter((s) => s.reps > 0 || (kind === 'time' && s.seconds > 0) || (kind === 'distance' && s.meters > 0));
 }
 
 function recordsFrom(sets: ScoredSet[]): PersonalRecords {
   const r: PersonalRecords = { repsAtWeight: {} };
   for (const s of sets) {
+    if (s.meters > 0) {
+      if (!r.longestDistance || s.meters > r.longestDistance.meters) r.longestDistance = { meters: s.meters, seconds: s.seconds, date: s.date };
+      const pace = s.seconds / s.meters;
+      if (s.seconds > 0 && (!r.fastest || pace < r.fastest.pace)) r.fastest = { meters: s.meters, seconds: s.seconds, pace, date: s.date };
+      continue;
+    }
+    if (s.seconds > 0) {
+      if (!r.longestHold || s.seconds > r.longestHold.seconds) r.longestHold = { seconds: s.seconds, date: s.date };
+      continue;
+    }
+    if (s.reps <= 0) continue;
     if (s.weight > 0 && (!r.heaviest || s.weight > r.heaviest.weight)) r.heaviest = { ...s };
     const e = estimate1RM(s.weight, s.reps);
     if (e > 0 && (!r.best1RM || e > r.best1RM.value)) r.best1RM = { value: e, ...s };
@@ -214,15 +248,15 @@ function recordsFrom(sets: ScoredSet[]): PersonalRecords {
   return r;
 }
 
-function historySets(history: Workout[], exerciseId: string): ScoredSet[] {
+function historySets(history: Workout[], exerciseId: string, kind: ExerciseKind): ScoredSet[] {
   return history.flatMap((w) =>
-    w.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => validSets(e.sets, w.startedAt)),
+    w.exercises.filter((e) => e.exerciseId === exerciseId).flatMap((e) => validSets(e.sets, w.startedAt, kind)),
   );
 }
 
 /** Rekorder for en øvelse ud fra afsluttede træninger */
 export function personalRecords(state: AppState, exerciseId: string): PersonalRecords {
-  return recordsFrom(historySets(state.history, exerciseId));
+  return recordsFrom(historySets(state.history, exerciseId, exerciseKind(state, exerciseId)));
 }
 
 /**
@@ -230,19 +264,27 @@ export function personalRecords(state: AppState, exerciseId: string): PersonalRe
  * de udførte sæt før det i den aktive træning. Første gang en øvelse laves er ingen rekord.
  */
 export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEntry): RecordKind[] {
-  const [candidate] = validSets([set], 0);
+  const kind = exerciseKind(state, exerciseId);
+  const [candidate] = validSets([set], 0, kind);
   if (!candidate) return [];
-  const earlier: ScoredSet[] = historySets(state.history, exerciseId);
+  const earlier: ScoredSet[] = historySets(state.history, exerciseId, kind);
   outer: for (const we of state.active?.exercises ?? []) {
     if (we.exerciseId !== exerciseId) continue;
     for (const s of we.sets) {
       if (s.id === set.id) break outer;
-      earlier.push(...validSets([s], 0));
+      earlier.push(...validSets([s], 0, kind));
     }
   }
   if (!earlier.length) return [];
   const prev = recordsFrom(earlier);
   const broken: RecordKind[] = [];
+  if (kind !== 'reps') {
+    const { seconds, meters } = candidate;
+    if (kind === 'time' && prev.longestHold && seconds > prev.longestHold.seconds) broken.push('hold');
+    if (kind === 'distance' && prev.longestDistance && meters > prev.longestDistance.meters) broken.push('distance');
+    if (kind === 'distance' && seconds > 0 && prev.fastest && seconds / meters < prev.fastest.pace) broken.push('pace');
+    return broken;
+  }
   if (candidate.weight > 0 && prev.heaviest && candidate.weight > prev.heaviest.weight) broken.push('heaviest');
   const e = estimate1RM(candidate.weight, candidate.reps);
   if (e > 0 && prev.best1RM && e > prev.best1RM.value) broken.push('1rm');
@@ -552,6 +594,33 @@ export interface ProgressionHint {
   next: { weight: number; reps: number };
   /** true hvis forslaget er et skridt op */
   increase: boolean;
+  /** Tids- og distanceøvelser (#136): sidste og foreslåede sekunder/meter */
+  timed?: { kind: 'time' | 'distance'; last: { seconds: number; meters: number }; next: { seconds: number; meters: number } };
+}
+
+/** Forslag for tids- og distanceøvelser: +5 sek. på holdet, eller samme distance lidt hurtigere. Hellere intet forslag end et forkert. */
+function timedHint(state: AppState, exerciseId: string, kind: 'time' | 'distance'): ProgressionHint | null {
+  const sets = previousSets(state.history, exerciseId);
+  const empty = { sets: 0, reps: 0, weight: 0, repsList: [] };
+  if (kind === 'time') {
+    const best = Math.max(0, ...sets.map((s) => num(s.seconds ?? '')));
+    if (!best) return null;
+    const last = { seconds: best, meters: 0 };
+    return { last: empty, next: { weight: 0, reps: 0 }, increase: true, timed: { kind, last, next: { seconds: best + 5, meters: 0 } } };
+  }
+  const timed = sets.filter((s) => num(s.meters ?? '') > 0 && num(s.seconds ?? '') > 0);
+  if (!timed.length) return null;
+  const longest = timed.reduce((a, b) => (num(b.meters!) > num(a.meters!) ? b : a));
+  const meters = num(longest.meters!);
+  const seconds = num(longest.seconds!);
+  const faster = Math.max(1, Math.round(seconds * 0.02));
+  if (seconds - faster < 1) return null;
+  return {
+    last: empty,
+    next: { weight: 0, reps: 0 },
+    increase: true,
+    timed: { kind, last: { seconds, meters }, next: { seconds: seconds - faster, meters } },
+  };
 }
 
 /**
@@ -559,6 +628,8 @@ export interface ProgressionHint {
  * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt, +1 rep for kropsvægt). Ellers samme igen.
  */
 export function progressionHint(state: AppState, exerciseId: string): ProgressionHint | null {
+  const kind = exerciseKind(state, exerciseId);
+  if (kind !== 'reps') return timedHint(state, exerciseId, kind);
   const sets = previousSets(state.history, exerciseId).filter((s) => num(s.reps) > 0);
   if (!sets.length) return null;
   const reps = num(sets[0].reps);
@@ -705,7 +776,7 @@ export type WorkoutChange =
   | { type: 'UNLINK_SUPERSET'; weId: string }
   | { type: 'ADD_SET'; weId: string }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
-  | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number }
+  | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number; seconds?: number; meters?: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
   | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
@@ -989,7 +1060,9 @@ export function reducer(state: AppState, action: Action): AppState {
               : {
                   ...s,
                   weight: s.weight || (action.weight > 0 ? String(action.weight).replace('.', ',') : ''),
-                  reps: s.reps || String(action.reps),
+                  reps: s.reps || (action.reps > 0 ? String(action.reps) : ''),
+                  ...(action.seconds ? { seconds: s.seconds || String(action.seconds) } : {}),
+                  ...(action.meters ? { meters: s.meters || String(action.meters).replace('.', ',') } : {}),
                 },
           ),
         })),

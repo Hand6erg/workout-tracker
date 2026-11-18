@@ -48,7 +48,7 @@ import {
   swapSuggestions,
   canSwapInTemplate,
 } from './logic';
-import type { AppState } from './types';
+import type { AppState, SetEntry, Workout } from './types';
 
 const T0 = new Date('2026-11-15T10:00:00').getTime();
 
@@ -1617,5 +1617,97 @@ describe('type på egne øvelser (#135)', () => {
   it('typen overlever gem og indlæsning', () => {
     const s = loadState(JSON.stringify(add('distance')));
     expect(exerciseKind(s, 'wall-sit')).toBe('distance');
+  });
+});
+
+describe('rekorder, forslag og statistik for tids- og distancesæt (#136)', () => {
+  const set = (patch: Partial<SetEntry>, id = 's'): SetEntry => ({ id, weight: '', reps: '', rpe: '', done: true, ...patch });
+  const workout = (id: string, day: number, exerciseId: string, sets: SetEntry[]): Workout => ({
+    id,
+    name: id,
+    startedAt: T0 + day * 86_400_000,
+    finishedAt: T0 + day * 86_400_000 + 1000,
+    exercises: [{ id: `${id}-e`, exerciseId, sets }],
+  });
+  // historikken er nyeste først
+  const withHistory = (...ws: Workout[]): AppState => ({ ...initialState(), history: [...ws].sort((a, b) => b.startedAt - a.startedAt) });
+
+  it('tidsøvelser får længste hold og ingen vægtrekorder', () => {
+    const s = withHistory(workout('a', 0, 'plank', [set({ seconds: '30' })]), workout('b', 1, 'plank', [set({ seconds: '40' })]));
+    const r = personalRecords(s, 'plank');
+    expect(r.longestHold).toEqual({ seconds: 40, date: T0 + 86_400_000 });
+    expect(r.heaviest).toBeUndefined();
+    expect(r.best1RM).toBeUndefined();
+    expect(r.repsAtWeight).toEqual({});
+    expect(workoutRecords(s, 'b')).toEqual({ plank: ['hold'] });
+    expect(workoutRecords(s, 'a')).toEqual({});
+  });
+
+  it('distanceøvelser får længste distance og hurtigste tid (tempo)', () => {
+    const s = withHistory(
+      workout('a', 0, 'rower', [set({ meters: '500', seconds: '120' })]),
+      workout('b', 1, 'rower', [set({ meters: '1000', seconds: '250' })]),
+      workout('c', 2, 'rower', [set({ meters: '500', seconds: '115' })]),
+    );
+    const r = personalRecords(s, 'rower');
+    expect(r.longestDistance).toMatchObject({ meters: 1000, seconds: 250 });
+    expect(r.fastest).toMatchObject({ meters: 500, seconds: 115 });
+    expect(workoutRecords(s, 'b')).toEqual({ rower: ['distance'] }); // længere, men langsommere tempo
+    expect(workoutRecords(s, 'c')).toEqual({ rower: ['pace'] });
+  });
+
+  it('et tidssæt sætter aldrig en vægt × reps-rekord', () => {
+    // Fx efter "Byt øvelse" kan et sæt med sekunder ende på en vægtøvelse
+    const s = withHistory(
+      workout('a', 0, 'bench', [set({ weight: '60', reps: '5' })]),
+      workout('b', 1, 'bench', [set({ weight: '200', seconds: '40' })]),
+    );
+    const r = personalRecords(s, 'bench');
+    expect(r.heaviest?.weight).toBe(60);
+    expect(r.longestHold).toBeUndefined();
+    expect(workoutRecords(s, 'b')).toEqual({});
+  });
+
+  it('progressionsforslag: +5 sek. for tid, samme distance lidt hurtigere for distance', () => {
+    const t = withHistory(workout('a', 0, 'plank', [set({ seconds: '30' }, '1'), set({ seconds: '45' }, '2')]));
+    expect(progressionHint(t, 'plank')?.timed).toEqual({ kind: 'time', last: { seconds: 45, meters: 0 }, next: { seconds: 50, meters: 0 } });
+    const d = withHistory(workout('a', 0, 'rower', [set({ meters: '500', seconds: '125' })]));
+    expect(progressionHint(d, 'rower')?.timed).toEqual({
+      kind: 'distance',
+      last: { seconds: 125, meters: 500 },
+      next: { seconds: 122, meters: 500 },
+    });
+  });
+
+  it('intet forslag hellere end et forkert', () => {
+    // Distance uden tid, og gamle "reps" på planke (før tidssæt fandtes)
+    expect(progressionHint(withHistory(workout('a', 0, 'farmers-walk', [set({ meters: '40' })])), 'farmers-walk')).toBeNull();
+    expect(progressionHint(withHistory(workout('a', 0, 'plank', [set({ reps: '30' })])), 'plank')).toBeNull();
+  });
+
+  it('forslaget udfyldes i sekund- og meterfelterne, ikke i reps', () => {
+    let s = withHistory(workout('a', 0, 'rower', [set({ meters: '500', seconds: '125' })]));
+    s = startWith(s);
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['rower'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'APPLY_HINT', weId: we.id, weight: 0, reps: 0, seconds: 122, meters: 500 });
+    expect(s.active!.exercises[0].sets[0]).toMatchObject({ meters: '500', seconds: '122', reps: '', weight: '' });
+  });
+
+  it('volumen ændres ikke af tids- og distancesæt', () => {
+    const lift = workout('a', 0, 'bench', [set({ weight: '100', reps: '5' })]);
+    const mixed: Workout = {
+      ...lift,
+      exercises: [
+        ...lift.exercises,
+        { id: 'p', exerciseId: 'plank', sets: [set({ seconds: '60', weight: '20' })] },
+        { id: 'r', exerciseId: 'farmers-walk', sets: [set({ meters: '40', weight: '32' })] },
+      ],
+    };
+    expect(workoutVolume(mixed)).toBe(workoutVolume(lift));
+    expect(weeklyVolume(withHistory(mixed), 1, mixed.startedAt)[0].volume).toBe(500);
+    const dist = muscleDistribution(withHistory(mixed), 0);
+    expect(dist.find((m) => m.muscle === 'Mave')!.volume).toBe(0);
+    expect(dist.find((m) => m.muscle === 'Bryst')!.volume).toBe(500);
   });
 });
