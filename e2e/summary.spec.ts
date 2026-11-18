@@ -63,3 +63,20 @@ test('opsummeringen er væk efter genindlæsning (#143)', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Opsummering' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Start Push' })).toBeVisible();
 });
+
+test('"Del" downloader opsummeringen som PNG, når telefonen ikke kan dele filer (#144)', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+    Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+  });
+  await page.reload();
+  await pushWorkout(page, '80');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  await page.screenshot({ path: 'test-results/summary-share.png' });
+
+  const [download] = await Promise.all([page.waitForEvent('download'), summary.getByRole('button', { name: 'Del' }).click()]);
+  expect(download.suggestedFilename()).toMatch(/^loeft-\d{4}-\d{2}-\d{2}\.png$/);
+  const data = Buffer.concat(await (await download.createReadStream()).toArray());
+  expect(data.subarray(1, 4).toString('ascii')).toBe('PNG');
+  await download.saveAs('test-results/share-card.png');
+});
