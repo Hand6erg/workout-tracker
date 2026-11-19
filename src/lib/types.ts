@@ -126,6 +126,8 @@ export interface AppState {
   restSound: boolean;
   /** Vibration, når pausen er ved at være / er slut */
   restVibrate: boolean;
+  /** Hold skærmen tændt, mens en træning er i gang (#154) */
+  keepAwake: boolean;
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
   program: string[];
   /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */

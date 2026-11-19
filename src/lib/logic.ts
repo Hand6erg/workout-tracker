@@ -40,6 +40,7 @@ export function initialState(): AppState {
     showHints: true,
     restSound: true,
     restVibrate: true,
+    keepAwake: true,
     program: [],
     programSkip: { after: null, n: 0 },
     settingsAt: 0,
@@ -937,6 +938,7 @@ export type Action =
   | { type: 'SET_SHOW_HINTS'; on: boolean }
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
+  | { type: 'SET_KEEP_AWAKE'; on: boolean }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
   | { type: 'SKIP_PROGRAM' }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
@@ -1315,6 +1317,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restSound: action.on };
     case 'SET_REST_VIBRATE':
       return { ...state, restVibrate: action.on };
+    case 'SET_KEEP_AWAKE':
+      return { ...state, keepAwake: action.on };
     case 'SET_PROGRAM': {
       const known = new Set(state.templates.map((t) => t.id));
       const program = [...new Set(action.templateIds)].filter((id) => known.has(id));
@@ -1433,6 +1437,14 @@ export function restAlertDue(
   return { alert: null, fired: f };
 }
 
+/**
+ * Skal skærmen holdes tændt (#154)? Kun når indstillingen er slået til, en træning er i gang
+ * (ikke når en afsluttet træning rettes), den ikke er sat på pause, og appen er synlig.
+ */
+export function wantsWakeLock(state: Pick<AppState, 'keepAwake' | 'active'>, visible: boolean): boolean {
+  return state.keepAwake !== false && !!state.active && !state.active.pausedAt && visible;
+}
+
 /* ---------- Online-gemning: flet to versioner ---------- */
 
 const SETTINGS = [
@@ -1443,6 +1455,7 @@ const SETTINGS = [
   'showHints',
   'restSound',
   'restVibrate',
+  'keepAwake',
   'program',
   'programSkip',
 ] as const;
