@@ -57,3 +57,31 @@ test('kortet vises ikke den 10. i måneden (#169)', async ({ page }) => {
   await expect(page.getByRole('button', { name: /Træning Push/ }).first()).toBeVisible();
   await expect(page.getByRole('region', { name: 'Din oktober' })).toHaveCount(0);
 });
+
+test('"Se månedens opsummering" åbner opsummeringen for måneden i kalenderen (#170)', async ({ page }) => {
+  await logOctober(page);
+  await page.clock.setFixedTime(new Date(2026, 10, 20, 9));
+  await page.reload();
+  await history(page);
+  const calendar = page.getByRole('region', { name: /Kalender/ });
+  await calendar.getByRole('button', { name: 'Forrige måned' }).click();
+  await expect(calendar.getByRole('heading', { name: 'oktober 2026' })).toBeVisible();
+  await calendar.getByRole('button', { name: 'Se månedens opsummering' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Opsummering Oktober 2026' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('definition').first()).toHaveText('2');
+  await expect(dialog).toContainText('Bænkpres');
+  await page.screenshot({ path: 'test-results/monthly-recap-dialog.png', animations: 'disabled' });
+  await dialog.getByRole('button', { name: 'Luk' }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
+test('en måned uden træninger viser "Ingen træninger i denne måned" (#170)', async ({ page }) => {
+  await logOctober(page);
+  await page.clock.setFixedTime(new Date(2026, 10, 20, 9));
+  await page.reload();
+  await history(page);
+  await page.getByRole('button', { name: 'Se månedens opsummering' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Opsummering November 2026' });
+  await expect(dialog).toContainText('Ingen træninger i denne måned');
+});
