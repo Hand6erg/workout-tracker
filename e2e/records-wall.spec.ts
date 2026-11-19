@@ -49,7 +49,7 @@ test('"N nye rekorder denne måned" og tryk åbner øvelsen (#164)', async ({ pa
   await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
   const wall = page.getByRole('region', { name: 'Rekorder' });
   const line = wall.getByTestId('records-this-month');
-  // Én 🏆 pr. træning: 80 kg (første gang) og 100 kg (ny rekord)
+  // 100 kg slår 80 kg: tungeste vægt + estimeret 1RM
   await expect(line).toHaveText('🏆 2 nye rekorder denne måned');
   await line.evaluate((el) => el.scrollIntoView({ block: 'start' }));
   await page.screenshot({ path: 'test-results/records-month.png' });
