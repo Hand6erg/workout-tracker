@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
 import { playRestAlert } from '../lib/alerts';
+import { wakeLockSupported } from '../lib/wakeLock';
 import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
@@ -104,6 +105,7 @@ export function ProfileView() {
         />
         Hold skærmen tændt under træning
       </label>
+      {!wakeLockSupported() && <p className="muted rest-global-note">Understøttes ikke i denne browser</p>}
 
       <label className="field">
         Mål: træninger pr. uge
