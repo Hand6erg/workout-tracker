@@ -96,6 +96,15 @@ export function ProfileView() {
         </button>
       </div>
 
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.keepAwake}
+          onChange={(e) => dispatch({ type: 'SET_KEEP_AWAKE', on: e.target.checked })}
+        />
+        Hold skærmen tændt under træning
+      </label>
+
       <label className="field">
         Mål: træninger pr. uge
         <input

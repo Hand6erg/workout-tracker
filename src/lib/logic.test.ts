@@ -19,6 +19,7 @@ import {
   IS_STAGING,
   loadState,
   mergeStates,
+  stampChanges,
   personalRecords,
   platesPerSide,
   previousSets,
@@ -30,6 +31,7 @@ import {
   workoutRecords,
   reducer,
   restAlertDue,
+  wantsWakeLock,
   STORAGE_KEY,
   bodyToCsv,
   toCsv,
@@ -1963,5 +1965,30 @@ describe('gentag en træning (#149)', () => {
     expect(loaded.history).toEqual([tuesday]);
     expect(loaded.active!.repeatOf).toBeUndefined();
     expect(previousSetsFor(loaded.history, loaded.active, 'bench').map((x) => x.weight)).toEqual(['80', '80']);
+  });
+});
+
+describe('hold skærmen tændt (#154)', () => {
+  it('vil kun have skærmlås under en kørende, synlig træning med indstillingen slået til', () => {
+    const idle = initialState();
+    const running = startWith(idle);
+    expect(wantsWakeLock(running, true)).toBe(true);
+    expect(wantsWakeLock(idle, true)).toBe(false);
+    expect(wantsWakeLock(running, false)).toBe(false);
+    const paused = reducer(running, { type: 'PAUSE_WORKOUT', now: T0 + 1000 });
+    expect(wantsWakeLock(paused, true)).toBe(false);
+    expect(wantsWakeLock(reducer(paused, { type: 'RESUME_WORKOUT', now: T0 + 2000 }), true)).toBe(true);
+    expect(wantsWakeLock(reducer(running, { type: 'SET_KEEP_AWAKE', on: false }), true)).toBe(false);
+  });
+
+  it('er slået til for gamle data og flettes mellem enheder som en indstilling', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.keepAwake;
+    expect(loadState(JSON.stringify(old)).keepAwake).toBe(true);
+    const prev = initialState();
+    const off = stampChanges(prev, reducer(prev, { type: 'SET_KEEP_AWAKE', on: false }), 500);
+    expect(off.settingsAt).toBe(500);
+    expect(mergeStates({ ...initialState(), settingsAt: 100 }, off).keepAwake).toBe(false);
+    expect(mergeStates(off, { ...initialState(), settingsAt: 100 }).keepAwake).toBe(false);
   });
 });
