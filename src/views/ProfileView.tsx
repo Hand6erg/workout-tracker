@@ -5,6 +5,7 @@ import { wakeLockSupported } from '../lib/wakeLock';
 import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
+import { RecordsWall } from '../components/RecordsWall';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -52,6 +53,7 @@ export function ProfileView() {
       <StreakCard />
       <WeeklyVolume />
       <MuscleSplit />
+      <RecordsWall />
       <BodySection />
       <ProgramSection />
 

@@ -72,14 +72,17 @@ export function Chips<T extends string>({
   value,
   onChange,
   allLabel = 'Alle',
+  label,
 }: {
   options: T[];
   value: T | null;
   onChange: (v: T | null) => void;
   allLabel?: string;
+  /** Tilgængeligt navn til gruppen af knapper */
+  label?: string;
 }) {
   return (
-    <div className="chips" role="group">
+    <div className="chips" role="group" aria-label={label}>
       <button className={`chip ${value === null ? 'on' : ''}`} onClick={() => onChange(null)}>
         {allLabel}
       </button>
