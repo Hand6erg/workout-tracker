@@ -29,6 +29,9 @@ import {
   recordsBrokenBy,
   supersetGroups,
   workoutRecords,
+  uid,
+  recordsWall,
+  newRecordsInMonth,
   reducer,
   restAlertDue,
   wantsWakeLock,
@@ -1990,5 +1993,62 @@ describe('hold skærmen tændt (#154)', () => {
     expect(off.settingsAt).toBe(500);
     expect(mergeStates({ ...initialState(), settingsAt: 100 }, off).keepAwake).toBe(false);
     expect(mergeStates(off, { ...initialState(), settingsAt: 100 }).keepAwake).toBe(false);
+  });
+});
+
+describe('rekordvæg (#162)', () => {
+  const DAY = 86_400_000;
+  const BASE = new Date(2026, 10, 3, 12).getTime(); // 3. nov. 2026
+  const ws = (weight: string, reps: string, warmup = false): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup });
+  const w = (id: string, at: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + 1000,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const withHistory = (...list: Workout[]): AppState => ({ ...initialState(), history: [...list].sort((a, b) => b.startedAt - a.startedAt) });
+
+  it('samler tungeste, 1RM og mest volumen pr. øvelse med datoer, nyeste først', () => {
+    const s = withHistory(
+      w('a', BASE, [['bench', [ws('80', '5'), ws('120', '1', true)]], ['squat', [ws('100', '5')]]]),
+      w('b', BASE + DAY, [['bench', [ws('90', '1'), ws('60', '12')]]]),
+      w('c', BASE + 2 * DAY, [['squat', [ws('110', '3')]]]),
+    );
+    const rows = recordsWall(s);
+    expect(rows.map((r) => r.exerciseId)).toEqual(['squat', 'bench']);
+    const [squat, bench] = rows;
+    expect(bench.heaviest).toEqual({ weight: 90, reps: 1, date: BASE + DAY }); // opvarmning på 120 tæller ikke
+    expect(bench.best1RM).toMatchObject({ value: estimate1RM(80, 5), weight: 80, reps: 5, date: BASE }); // 80 × 5 (≈93) slår 90 × 1
+    expect(bench.bestVolume).toEqual({ volume: 720, weight: 60, reps: 12, date: BASE + DAY });
+    expect(bench.latest).toBe(BASE + DAY);
+    expect(squat.heaviest).toMatchObject({ weight: 110, date: BASE + 2 * DAY });
+    expect(squat.bestVolume).toMatchObject({ volume: 500, date: BASE });
+    expect(squat.latest).toBe(BASE + 2 * DAY);
+    expect(squat.name).toBe('Squat');
+  });
+
+  it('kan filtrere på muskelgruppe og springer øvelser med kun opvarmning over', () => {
+    const s = withHistory(w('a', BASE, [['bench', [ws('80', '5')]], ['squat', [ws('60', '5', true)]], ['plank', [{ ...ws('', ''), seconds: '45' }]]]));
+    expect(recordsWall(s, 'Bryst').map((r) => r.exerciseId)).toEqual(['bench']);
+    expect(recordsWall(s, 'Ben')).toEqual([]);
+    const plank = recordsWall(s, 'Mave')[0];
+    expect(plank.longestHold).toEqual({ seconds: 45, date: BASE });
+    expect(plank.heaviest).toBeUndefined();
+    expect(recordsWall(initialState())).toEqual([]);
+  });
+
+  it('tæller kun rekorder fra denne måned', () => {
+    const october = new Date(2026, 9, 20, 12).getTime();
+    const s = withHistory(
+      w('a', october, [['bench', [ws('80', '5')]]]),
+      w('b', october + DAY, [['bench', [ws('85', '5')]]]), // oktober: heaviest + 1rm
+      w('c', BASE, [['bench', [ws('85', '7')]]]), // november: 1rm + reps
+      w('d', BASE + DAY, [['bench', [ws('70', '5')]]]),
+    );
+    expect(newRecordsInMonth(s, BASE + 5 * DAY)).toBe(2);
+    expect(newRecordsInMonth(s, october + 5 * DAY)).toBe(2);
+    expect(newRecordsInMonth(s, new Date(2026, 11, 2).getTime())).toBe(0);
+    expect(newRecordsInMonth(initialState(), BASE)).toBe(0);
   });
 });

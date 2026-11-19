@@ -324,6 +324,71 @@ export function recordCount(records: Record<string, RecordKind[]>): number {
   return Object.values(records).reduce((n, k) => n + k.length, 0);
 }
 
+/* ---------- Rekordvæg (#162) ---------- */
+
+/** Én række på rekordvæggen: de bedste resultater for én øvelse */
+export interface RecordsWallRow {
+  exerciseId: string;
+  name: string;
+  muscle: Muscle;
+  kind: ExerciseKind;
+  /** Tungeste vægt løftet */
+  heaviest?: { weight: number; reps: number; date: number };
+  /** Højeste estimerede 1RM */
+  best1RM?: { value: number; weight: number; reps: number; date: number };
+  /** Mest volumen i ét sæt (vægt × reps) */
+  bestVolume?: { volume: number; weight: number; reps: number; date: number };
+  /** Flest reps i ét sæt (fx kropsvægtsøvelser uden ekstra vægt) */
+  mostReps?: { reps: number; weight: number; date: number };
+  /** Længste hold (tidsøvelser) */
+  longestHold?: { seconds: number; date: number };
+  /** Længste distance (distanceøvelser) */
+  longestDistance?: { meters: number; seconds: number; date: number };
+  /** Datoen for den nyeste af rækkens rekorder */
+  latest: number;
+}
+
+/**
+ * Alle dine rekorder samlet (#162): én række pr. øvelse med udførte arbejdssæt
+ * (opvarmning tæller aldrig), nyeste rekord først. Valgfrit filter på muskelgruppe.
+ */
+export function recordsWall(state: AppState, muscle?: Muscle): RecordsWallRow[] {
+  const rows: RecordsWallRow[] = [];
+  for (const ex of state.exercises) {
+    if (muscle && ex.muscle !== muscle) continue;
+    const kind = exerciseKind(state, ex.id);
+    const sets = historySets(state.history, ex.id, kind);
+    if (!sets.length) continue;
+    const r = recordsFrom(sets);
+    const row: RecordsWallRow = { exerciseId: ex.id, name: ex.name, muscle: ex.muscle, kind, latest: 0 };
+    if (kind === 'reps') {
+      if (r.heaviest) row.heaviest = { weight: r.heaviest.weight, reps: r.heaviest.reps, date: r.heaviest.date };
+      if (r.best1RM) row.best1RM = { value: r.best1RM.value, weight: r.best1RM.weight, reps: r.best1RM.reps, date: r.best1RM.date };
+      for (const s of sets) {
+        const volume = s.weight * s.reps;
+        if (volume > 0 && (!row.bestVolume || volume > row.bestVolume.volume)) row.bestVolume = { volume, weight: s.weight, reps: s.reps, date: s.date };
+        if (s.reps > 0 && (!row.mostReps || s.reps > row.mostReps.reps)) row.mostReps = { reps: s.reps, weight: s.weight, date: s.date };
+      }
+    }
+    if (r.longestHold) row.longestHold = r.longestHold;
+    if (r.longestDistance) row.longestDistance = r.longestDistance;
+    const dates = [row.heaviest, row.best1RM, row.bestVolume, row.mostReps, row.longestHold, row.longestDistance].map((x) => x?.date ?? 0);
+    row.latest = Math.max(...dates);
+    rows.push(row);
+  }
+  return rows.sort((a, b) => b.latest - a.latest || a.name.localeCompare(b.name, 'da'));
+}
+
+/** Antal rekorder sat i indeværende kalendermåned (#162) – samme optælling som 🏆 under træningen */
+export function newRecordsInMonth(state: AppState, now: number): number {
+  const d = new Date(now);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
+  return state.history
+    .filter((w) => w.startedAt >= start && w.startedAt < end)
+    .reduce((n, w) => n + recordCount(workoutRecords(state, w.id)), 0);
+}
+
 /* ---------- Opsummering af en træning (#142) ---------- */
 
 export interface WorkoutSummary {
