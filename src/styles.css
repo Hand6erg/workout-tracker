@@ -137,6 +137,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ex-block header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .ex-block header h3 { flex: 1; }
 .ex-block h3 { color: var(--accent); }
+.ex-block h3 .vs-mark { margin-left: 8px; font-size: 0.8em; vertical-align: 1px; }
+.vs-mark.up { color: var(--ok); }
+.vs-mark.same, .vs-mark.down { color: var(--muted); }
+.vs-bar { margin: 4px 0 8px; padding: 6px 12px; border-radius: 999px; display: inline-block; font-size: 0.9rem; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+.vs-bar.up { background: var(--ok-soft); color: var(--ok); }
 .sets { width: 100%; border-collapse: separate; border-spacing: 0 4px; font-size: 0.92rem; }
 .sets th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; padding: 2px; }
 .sets td { text-align: center; padding: 0 3px; }
