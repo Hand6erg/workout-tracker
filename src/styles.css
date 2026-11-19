@@ -298,3 +298,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .summary-change.down { color: var(--danger); }
 .summary-records { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .summary .card { margin-bottom: 16px; }
+
+/* Rekordvæg i Profil (#163) */
+.records-wall { list-style: none; margin: 0 0 8px; padding: 4px 14px; }
+.records-wall li { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.records-wall li:last-child { border-bottom: 0; }
+.rw-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rw-head strong { overflow-wrap: anywhere; }
+.rw-head small { white-space: nowrap; }
+.rw-lines { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.9rem; color: var(--muted); }
