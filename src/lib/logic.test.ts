@@ -32,6 +32,8 @@ import {
   uid,
   recordsWall,
   newRecordsInMonth,
+  monthRecap,
+  monthKey,
   reducer,
   restAlertDue,
   wantsWakeLock,
@@ -2050,5 +2052,79 @@ describe('rekordvæg (#162)', () => {
     expect(newRecordsInMonth(s, october + 5 * DAY)).toBe(2);
     expect(newRecordsInMonth(s, new Date(2026, 11, 2).getTime())).toBe(0);
     expect(newRecordsInMonth(initialState(), BASE)).toBe(0);
+  });
+});
+
+describe('månedens opsummering (#168)', () => {
+  const MIN = 60_000;
+  const ws = (weight: string, reps: string, warmup = false): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup });
+  const w = (id: string, at: number, mins: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + mins * MIN,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const withHistory = (...list: Workout[]): AppState => ({ ...initialState(), history: [...list].sort((a, b) => b.startedAt - a.startedAt) });
+  const oct = (day: number) => new Date(2026, 9, day, 12).getTime();
+  const sep = (day: number) => new Date(2026, 8, day, 12).getTime();
+
+  it('tæller træninger, tid, volumen, rekorder, muskelgruppe, favorit og stime – uden opvarmning', () => {
+    const s = withHistory(
+      w('s1', sep(28), 40, [['bench', [ws('80', '5')]]]),
+      w('o1', oct(1), 60, [['bench', [ws('85', '5'), ws('100', '5', true)]], ['squat', [ws('100', '5')]]]),
+      w('o2', oct(2), 45, [['squat', [ws('100', '5'), ws('100', '5'), ws('100', '5')]]]),
+      w('o3', oct(3), 30, [['bench', [ws('80', '5')]]]),
+      w('o4', oct(10), 50, [['squat', [ws('110', '3')]]]),
+      w('n1', new Date(2026, 10, 1, 12).getTime(), 30, [['squat', [ws('200', '5')]]]),
+    );
+    const r = monthRecap(s, 2026, 9);
+    expect(r.key).toBe('2026-10');
+    expect(r.workouts).toBe(4);
+    expect(r.durationMs).toBe((60 + 45 + 30 + 50) * MIN);
+    expect(r.volume).toBe(425 + 500 + 1500 + 400 + 330);
+    // o1: bænk 85 slår 80 (tungeste + 1RM); o4: squat 110 slår 100 (tungeste + 1RM) – opvarmningen på 100 tæller ikke
+    expect(r.records).toBe(4);
+    expect(r.topMuscle).toBe('Ben');
+    expect(r.favourite).toEqual({ exerciseId: 'squat', name: 'Squat', sets: 5 });
+    expect(r.longestStreak).toBe(3);
+  });
+
+  it('sammenligner med måneden før – også når den var tom', () => {
+    const s = withHistory(
+      w('s1', sep(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o1', oct(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o2', oct(6), 40, [['bench', [ws('100', '6')]]]),
+      w('o3', oct(9), 40, [['bench', [ws('100', '4')]]]),
+    );
+    const r = monthRecap(s, 2026, 9);
+    expect(r.previous.workouts).toBe(1);
+    expect(r.workoutsDiff).toBe(2);
+    expect(r.volumeChangePct).toBe(200); // 1500 mod 500
+    const sepRecap = monthRecap(s, 2026, 8);
+    expect(sepRecap.previous.workouts).toBe(0);
+    expect(sepRecap.workoutsDiff).toBe(1);
+    expect(sepRecap.volumeChangePct).toBeNull();
+    const empty = monthRecap(initialState(), 2026, 9);
+    expect(empty).toMatchObject({ workouts: 0, volume: 0, records: 0, topMuscle: null, favourite: null, longestStreak: 0, volumeChangePct: null });
+  });
+
+  it('januar sammenlignes med december året før', () => {
+    const s = withHistory(w('d', new Date(2025, 11, 20, 12).getTime(), 30, [['bench', [ws('50', '10')]]]));
+    const r = monthRecap(s, 2026, 0);
+    expect(r.key).toBe('2026-01');
+    expect(r.previous.workouts).toBe(1);
+    expect(monthKey(2025, 11)).toBe('2025-12');
+  });
+
+  it('DISMISS_RECAP gemmer måneden, og gamle data indlæses uændret', () => {
+    const s = reducer(initialState(), { type: 'DISMISS_RECAP', key: '2026-10' });
+    expect(s.recapDismissed).toBe('2026-10');
+    expect(loadState(JSON.stringify(s)).recapDismissed).toBe('2026-10');
+    const old: Partial<AppState> = { ...initialState(), history: [w('a', oct(1), 30, [['bench', [ws('80', '5')]]])] };
+    delete old.recapDismissed;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.recapDismissed).toBeNull();
+    expect(loaded.history).toHaveLength(1);
   });
 });

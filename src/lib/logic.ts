@@ -41,6 +41,7 @@ export function initialState(): AppState {
     restSound: true,
     restVibrate: true,
     keepAwake: true,
+    recapDismissed: null,
     program: [],
     programSkip: { after: null, n: 0 },
     settingsAt: 0,
@@ -379,14 +380,117 @@ export function recordsWall(state: AppState, muscle?: Muscle): RecordsWallRow[] 
   return rows.sort((a, b) => b.latest - a.latest || a.name.localeCompare(b.name, 'da'));
 }
 
+/** Træninger i en kalendermåned (0 = januar) */
+function workoutsInMonth(state: AppState, year: number, month: number): Workout[] {
+  const start = new Date(year, month, 1).getTime();
+  const end = new Date(year, month + 1, 1).getTime();
+  return state.history.filter((w) => w.startedAt >= start && w.startedAt < end);
+}
+
 /** Antal rekorder sat i indeværende kalendermåned (#162) – samme optælling som 🏆 under træningen */
 export function newRecordsInMonth(state: AppState, now: number): number {
   const d = new Date(now);
-  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
-  const end = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime();
-  return state.history
-    .filter((w) => w.startedAt >= start && w.startedAt < end)
-    .reduce((n, w) => n + recordCount(workoutRecords(state, w.id)), 0);
+  return recordsInMonth(state, d.getFullYear(), d.getMonth());
+}
+
+function recordsInMonth(state: AppState, year: number, month: number): number {
+  return workoutsInMonth(state, year, month).reduce((n, w) => n + recordCount(workoutRecords(state, w.id)), 0);
+}
+
+/* ---------- Månedens opsummering (#168) ---------- */
+
+export interface MonthStats {
+  workouts: number;
+  /** Samlet træningstid i ms (pauser tæller ikke med) */
+  durationMs: number;
+  /** Løftet vægt i kg (udførte arbejdssæt) */
+  volume: number;
+  /** Rekorder 🏆 sat i måneden */
+  records: number;
+  /** Muskelgruppen med flest arbejdssæt (null = ingen sæt) */
+  topMuscle: Muscle | null;
+  /** Øvelsen med flest arbejdssæt */
+  favourite: { exerciseId: string; name: string; sets: number } | null;
+  /** Flest træningsdage i træk */
+  longestStreak: number;
+}
+
+export interface MonthRecap extends MonthStats {
+  year: number;
+  /** 0 = januar */
+  month: number;
+  /** "2026-10" */
+  key: string;
+  /** Samme tal for måneden før */
+  previous: MonthStats;
+  /** Træninger i forhold til måneden før (+3 / -1) */
+  workoutsDiff: number;
+  /** Ændring i volumen i hele procent (null når måneden før var tom) */
+  volumeChangePct: number | null;
+}
+
+/** "2026-10" for oktober 2026 (month: 0 = januar) */
+export function monthKey(year: number, month: number): string {
+  const d = new Date(year, month, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function monthStats(state: AppState, year: number, month: number): MonthStats {
+  const list = workoutsInMonth(state, year, month);
+  const ex = new Map(state.exercises.map((e) => [e.id, e]));
+  const muscleSets = new Map<Muscle, number>();
+  const exSets = new Map<string, number>();
+  const days = new Set<number>();
+  let durationMs = 0;
+  let volume = 0;
+  for (const w of list) {
+    durationMs += workoutDuration(w, w.finishedAt ?? w.startedAt);
+    volume += workoutVolume(w);
+    days.add(new Date(w.startedAt).getDate());
+    for (const we of w.exercises) {
+      const n = we.sets.filter(isWorkSet).length;
+      if (!n) continue;
+      exSets.set(we.exerciseId, (exSets.get(we.exerciseId) ?? 0) + n);
+      const m = ex.get(we.exerciseId)?.muscle;
+      if (m) muscleSets.set(m, (muscleSets.get(m) ?? 0) + n);
+    }
+  }
+  const top = <K>(m: Map<K, number>): [K, number] | null =>
+    [...m.entries()].reduce<[K, number] | null>((best, e) => (!best || e[1] > best[1] ? e : best), null);
+  const topMuscle = top(muscleSets);
+  const fav = top(exSets);
+  let longestStreak = 0;
+  let run = 0;
+  for (let day = 1; day <= 31; day++) {
+    run = days.has(day) ? run + 1 : 0;
+    longestStreak = Math.max(longestStreak, run);
+  }
+  return {
+    workouts: list.length,
+    durationMs,
+    volume,
+    records: recordsInMonth(state, year, month),
+    topMuscle: topMuscle?.[0] ?? null,
+    favourite: fav ? { exerciseId: fav[0], name: ex.get(fav[0])?.name ?? fav[0], sets: fav[1] } : null,
+    longestStreak,
+  };
+}
+
+/** Månedens opsummering (#168): tal for måneden (0 = januar) og sammenligning med måneden før */
+export function monthRecap(state: AppState, year: number, month: number): MonthRecap {
+  const d = new Date(year, month, 1);
+  const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  const stats = monthStats(state, d.getFullYear(), d.getMonth());
+  const previous = monthStats(state, prev.getFullYear(), prev.getMonth());
+  return {
+    ...stats,
+    year: d.getFullYear(),
+    month: d.getMonth(),
+    key: monthKey(d.getFullYear(), d.getMonth()),
+    previous,
+    workoutsDiff: stats.workouts - previous.workouts,
+    volumeChangePct: previous.volume > 0 ? Math.round(((stats.volume - previous.volume) / previous.volume) * 100) : null,
+  };
 }
 
 /* ---------- Opsummering af en træning (#142) ---------- */
@@ -1016,6 +1120,7 @@ export type Action =
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
   | { type: 'CLOSE_SUMMARY' }
+  | { type: 'DISMISS_RECAP'; key: string }
   | { type: 'MERGE_REMOTE'; remote: AppState };
 
 function emptySet(): SetEntry {
@@ -1384,6 +1489,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restVibrate: action.on };
     case 'SET_KEEP_AWAKE':
       return { ...state, keepAwake: action.on };
+    case 'DISMISS_RECAP':
+      return { ...state, recapDismissed: action.key };
     case 'SET_PROGRAM': {
       const known = new Set(state.templates.map((t) => t.id));
       const program = [...new Set(action.templateIds)].filter((id) => known.has(id));
@@ -1521,6 +1628,7 @@ const SETTINGS = [
   'restSound',
   'restVibrate',
   'keepAwake',
+  'recapDismissed',
   'program',
   'programSkip',
 ] as const;

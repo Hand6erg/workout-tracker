@@ -128,6 +128,8 @@ export interface AppState {
   restVibrate: boolean;
   /** Hold skærmen tændt, mens en træning er i gang (#154) */
   keepAwake: boolean;
+  /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
+  recapDismissed: string | null;
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
   program: string[];
   /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */
