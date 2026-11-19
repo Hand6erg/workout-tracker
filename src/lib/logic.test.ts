@@ -34,6 +34,10 @@ import {
   newRecordsInMonth,
   monthRecap,
   monthKey,
+  recapToShow,
+  recapChangeTexts,
+  formatTotalTime,
+  monthNameDa,
   reducer,
   restAlertDue,
   wantsWakeLock,
@@ -2115,6 +2119,43 @@ describe('månedens opsummering (#168)', () => {
     expect(r.key).toBe('2026-01');
     expect(r.previous.workouts).toBe(1);
     expect(monthKey(2025, 11)).toBe('2025-12');
+  });
+
+  it('viser sidste måneds opsummering de første 7 dage af en ny måned (#169)', () => {
+    const s = withHistory(
+      w('s1', sep(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o1', oct(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o2', oct(6), 40, [['bench', [ws('100', '6')]]]),
+    );
+    const nov = (day: number) => new Date(2026, 10, day, 9).getTime();
+    expect(recapToShow(s, nov(3))?.key).toBe('2026-10');
+    expect(recapToShow(s, nov(7))?.workouts).toBe(2);
+    expect(recapToShow(s, nov(8))).toBeNull();
+    expect(recapToShow(s, nov(10))).toBeNull();
+    // lukket for oktober → skjult, men november-opsummeringen i december vises igen
+    const closed = reducer(s, { type: 'DISMISS_RECAP', key: '2026-10' });
+    expect(recapToShow(closed, nov(3))).toBeNull();
+    // ingen træninger i måneden før → intet kort
+    expect(recapToShow(s, new Date(2026, 11, 2).getTime())).toBeNull();
+    // januar viser december året før
+    const dec = withHistory(w('d', new Date(2025, 11, 20, 12).getTime(), 30, [['bench', [ws('50', '10')]]]));
+    expect(recapToShow(dec, new Date(2026, 0, 1, 8).getTime())?.key).toBe('2025-12');
+    expect(monthNameDa(9)).toBe('oktober');
+    expect(monthNameDa(-1)).toBe('december');
+  });
+
+  it('formaterer tid og ændringer for opsummeringen (#169)', () => {
+    expect(formatTotalTime(45 * MIN)).toBe('45 min');
+    expect(formatTotalTime(320 * MIN)).toBe('5 t 20 min');
+    expect(formatTotalTime(120 * MIN)).toBe('2 t');
+    const s = withHistory(
+      w('s1', sep(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o1', oct(5), 40, [['bench', [ws('100', '5')]]]),
+      w('o2', oct(6), 40, [['bench', [ws('100', '6')]]]),
+    );
+    expect(recapChangeTexts(monthRecap(s, 2026, 9))).toEqual(['+1 træning', '+120 % volumen']);
+    expect(recapChangeTexts(monthRecap(s, 2026, 10))).toEqual(['−2 træninger', '−100 % volumen']);
+    expect(recapChangeTexts(monthRecap(s, 2026, 8))).toEqual([]);
   });
 
   it('DISMISS_RECAP gemmer måneden, og gamle data indlæses uændret', () => {
