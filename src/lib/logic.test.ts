@@ -45,6 +45,7 @@ import {
   bodyToCsv,
   toCsv,
   workoutSummary,
+  vsLastTime,
   shareCardLines,
   trainingDays,
   uncheckedFilledCount,
@@ -2167,5 +2168,86 @@ describe('månedens opsummering (#168)', () => {
     const loaded = loadState(JSON.stringify(old));
     expect(loaded.recapDismissed).toBeNull();
     expect(loaded.history).toHaveLength(1);
+  });
+});
+
+describe('mod sidst under træningen (#175)', () => {
+  const DAY = 24 * 3_600_000;
+  const set = (weight: string, reps: string, extra: Partial<SetEntry> = {}): SetEntry => ({
+    id: Math.random().toString(36).slice(2), weight, reps, rpe: '', done: true, ...extra,
+  });
+  const we = (exerciseId: string, sets: SetEntry[]) => ({ id: `we-${exerciseId}-${Math.random()}`, exerciseId, sets });
+  function stateWith(prev: Workout[]): AppState {
+    return { ...initialState(), history: prev };
+  }
+  const last: Workout = {
+    id: 'last', name: 'Push', startedAt: T0 - 3 * DAY, finishedAt: T0 - 3 * DAY + 3_600_000, templateId: 'tpl-push',
+    exercises: [
+      we('bench', [set('40', '10', { warmup: true }), set('80', '5'), set('80', '5'), set('80', '5')]),
+      we('ohp', [set('50', '5'), set('50', '5')]),
+      we('plank', [set('', '', { seconds: '60' }), set('', '', { seconds: '60' })]),
+    ],
+  };
+  const active = (exercises: Workout['exercises'], templateId: string | null = 'tpl-push'): Workout => ({
+    id: 'now', name: 'Push', startedAt: T0, templateId: templateId ?? undefined, exercises,
+  });
+
+  it('ingen skabelon eller ikke lavet før → null', () => {
+    const s = stateWith([last]);
+    expect(vsLastTime(s, active([we('bench', [set('80', '5')])], null))).toBeNull();
+    expect(vsLastTime(s, active([we('bench', [set('80', '5')])], 'tpl-pull'))).toBeNull();
+    expect(vsLastTime(stateWith([]), active([we('bench', [set('80', '5')])]))).toBeNull();
+    expect(vsLastTime(s, null)).toBeNull();
+  });
+
+  it('efter 2 af 3 sæt sammenlignes kun med de første 2 sæt fra sidst; opvarmning tæller ikke', () => {
+    const s = stateWith([last]);
+    const w = active([
+      we('bench', [set('20', '10', { warmup: true }), set('85', '5'), set('85', '5'), set('85', '5', { done: false })]),
+    ]);
+    const r = vsLastTime(s, w)!;
+    expect(r.previousId).toBe('last');
+    expect(r.previousDate).toBe(last.startedAt);
+    expect(r.started).toBe(true);
+    expect(r.rows[0]).toMatchObject({ exerciseId: 'bench', name: 'Bænkpres', unit: 'kg', doneSets: 2, complete: false, now: 850, last: 800, status: null });
+    expect(r.diffKg).toBe(50);
+  });
+
+  it('▲/●/▼ pr. øvelse, når alle sæt er krydset af; byttede øvelser uden historik har ingen sammenligning', () => {
+    const s = stateWith([last]);
+    const r = vsLastTime(s, active([
+      we('bench', [set('85', '5'), set('80', '5'), set('80', '5')]),
+      we('ohp', [set('50', '5'), set('50', '4')]),
+      we('lateral', [set('10', '12')]),
+      we('curl', [set('10', '12', { done: false })]),
+    ]))!;
+    expect(r.rows.map((x) => x.status)).toEqual(['up', 'down', null, null]);
+    expect(r.rows[2]).toMatchObject({ exerciseId: 'lateral', last: null, complete: true });
+    expect(r.diffKg).toBe(25 - 50);
+    const same = vsLastTime(s, active([we('ohp', [set('50', '5'), set('50', '5')])]))!;
+    expect(same.rows[0].status).toBe('same');
+    expect(same.diffKg).toBe(0);
+  });
+
+  it('intet afkrydset endnu → ikke startet', () => {
+    const r = vsLastTime(stateWith([last]), active([we('bench', [set('80', '5', { done: false })])]))!;
+    expect(r.started).toBe(false);
+    expect(r.diffKg).toBe(0);
+    expect(r.rows[0].last).toBe(0);
+  });
+
+  it('et plankesæt sammenlignes i sekunder og ændrer ikke kg-forskellen', () => {
+    const r = vsLastTime(stateWith([last]), active([
+      we('plank', [set('', '', { seconds: '90' }), set('', '', { seconds: '45', done: false })]),
+    ]))!;
+    expect(r.rows[0]).toMatchObject({ unit: 'sek', now: 90, last: 60, status: null });
+    expect(r.diffKg).toBe(0);
+    expect(r.started).toBe(true);
+  });
+
+  it('sammenligner med den seneste afsluttede gang fra skabelonen', () => {
+    const older: Workout = { ...last, id: 'older', startedAt: T0 - 10 * DAY, finishedAt: T0 - 10 * DAY + 1 };
+    const r = vsLastTime(stateWith([older, last]), active([we('ohp', [set('50', '5')])]))!;
+    expect(r.previousId).toBe('last');
   });
 });

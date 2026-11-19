@@ -585,6 +585,100 @@ export function workoutSummary(state: AppState, workoutId: string): WorkoutSumma
   };
 }
 
+
+/* ---------- Mod sidst (#175) ---------- */
+
+export type VsStatus = 'up' | 'same' | 'down';
+
+export interface VsLastRow {
+  /** Øvelsen i den igangværende træning */
+  weId: string;
+  exerciseId: string;
+  name: string;
+  /** Hvad der sammenlignes: kg (vægt × reps), sekunder (tid) eller meter (distance) */
+  unit: 'kg' | 'sek' | 'm';
+  /** Udførte arbejdssæt indtil nu */
+  doneSets: number;
+  /** Alle arbejdssæt i øvelsen er krydset af (og der er mindst ét) */
+  complete: boolean;
+  /** Værdien denne gang (udførte arbejdssæt) */
+  now: number;
+  /** Værdien sidst for det samme antal sæt. null = øvelsen blev ikke lavet sidst (ingen sammenligning). */
+  last: number | null;
+  /** Kun når alle sæt er krydset af og der er noget at sammenligne med */
+  status: VsStatus | null;
+}
+
+export interface VsLastTime {
+  /** Træningen, der sammenlignes med */
+  previousId: string;
+  previousDate: number;
+  /** Samlet forskel i kg "på samme sted" (kun vægt × reps-øvelser med en sammenligning) */
+  diffKg: number;
+  /** Mindst ét arbejdssæt med en sammenligning er krydset af */
+  started: boolean;
+  rows: VsLastRow[];
+}
+
+function setValue(s: SetEntry, kind: ExerciseKind): number {
+  if (kind === 'time') return num(s.seconds ?? '');
+  if (kind === 'distance') return num(s.meters ?? '');
+  return setVolume(s);
+}
+
+function compareValues(now: number, last: number): VsStatus {
+  const d = Math.round((now - last) * 100) / 100;
+  return d > 0 ? 'up' : d < 0 ? 'down' : 'same';
+}
+
+/**
+ * Den igangværende træning mod sidste gang samme skabelon blev lavet (#175).
+ * Pr. øvelse sammenlignes de udførte arbejdssæt med lige så mange arbejdssæt fra sidst ("på samme sted").
+ * Opvarmningssæt tæller aldrig. Tids- og distanceøvelser sammenlignes i sekunder/meter og tæller ikke i kg.
+ * null = ingen skabelon eller skabelonen er ikke lavet før.
+ */
+export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime | null {
+  if (!workout) return null;
+  const prev = previousFromTemplate(state.history, workout);
+  if (!prev) return null;
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const seen = new Map<string, number>();
+  let diffKg = 0;
+  let started = false;
+  const rows: VsLastRow[] = workout.exercises.map((we) => {
+    // Samme øvelse flere gange: n'te forekomst sammenlignes med n'te forekomst sidst
+    const occurrence = seen.get(we.exerciseId) ?? 0;
+    seen.set(we.exerciseId, occurrence + 1);
+    const kind = exerciseKind(state, we.exerciseId);
+    const unit = kind === 'time' ? 'sek' : kind === 'distance' ? 'm' : 'kg';
+    const work = we.sets.filter((s) => !s.warmup);
+    const done = work.filter((s) => s.done);
+    const complete = work.length > 0 && done.length === work.length;
+    const now = done.reduce((a, s) => a + setValue(s, kind), 0);
+    const lastWe = prev.exercises.filter((e) => e.exerciseId === we.exerciseId)[occurrence];
+    const lastSets = lastWe ? lastWe.sets.filter(isWorkSet) : [];
+    let last: number | null = null;
+    let status: VsStatus | null = null;
+    if (lastSets.length) {
+      // Når øvelsen er færdig, sammenlignes med hele sidste gang – ellers med de første sæt
+      const compared = complete ? lastSets : lastSets.slice(0, done.length);
+      last = compared.reduce((a, s) => a + setValue(s, kind), 0);
+      if (done.length) {
+        started = true;
+        if (kind === 'reps') diffKg += now - last;
+      }
+      if (complete) {
+        // Ren kropsvægt (0 kg begge gange): sammenlign reps i stedet
+        const repsOnly = kind === 'reps' && now === 0 && last === 0;
+        status = repsOnly
+          ? compareValues(done.reduce((a, s) => a + num(s.reps), 0), lastSets.reduce((a, s) => a + num(s.reps), 0))
+          : compareValues(now, last);
+      }
+    }
+    return { weId: we.id, exerciseId: we.exerciseId, name: names.get(we.exerciseId) ?? we.exerciseId, unit, doneSets: done.length, complete, now, last, status };
+  });
+  return { previousId: prev.id, previousDate: prev.startedAt, diffKg: Math.round(diffKg * 100) / 100, started, rows };
+}
 const MONTHS_DA = ['januar', 'februar', 'marts', 'april', 'maj', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'december'];
 
 /** Navne på rekordtyper, som de vises for brugeren */
