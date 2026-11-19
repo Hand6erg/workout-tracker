@@ -301,7 +301,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Rekordvæg i Profil (#163) */
 .records-wall { list-style: none; margin: 0 0 8px; padding: 4px 14px; }
-.records-wall li { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.records-wall li { border-bottom: 1px solid var(--line); min-width: 0; }
+.rw-row { display: grid; gap: 4px; width: 100%; padding: 10px 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.rw-month { margin: 0 0 8px; font-weight: 600; color: var(--accent); }
 .records-wall li:last-child { border-bottom: 0; }
 .rw-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .rw-head strong { overflow-wrap: anywhere; }

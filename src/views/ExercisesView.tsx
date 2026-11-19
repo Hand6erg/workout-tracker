@@ -126,7 +126,8 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
+/** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
+export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
   const { state } = useStore();
   const hist = exerciseHistory(state.history, ex.id);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
