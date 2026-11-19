@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatDuration, IS_STAGING, workoutDuration } from './lib/logic';
 import { useRestAlerts } from './lib/alerts';
+import { useWakeLock } from './lib/wakeLock';
 import { useNow, useStore } from './lib/store';
 import { ActiveWorkout, WorkoutEditor } from './views/ActiveWorkout';
 import { ExercisesView } from './views/ExercisesView';
@@ -25,6 +26,7 @@ export default function App() {
   const showWorkout = !!state.active && workoutOpen;
   const summaryOpen = !!state.lastFinishedId && !state.active;
   useRestAlerts();
+  useWakeLock();
 
   return (
     <div className="app">
