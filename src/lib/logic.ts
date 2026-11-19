@@ -493,6 +493,43 @@ export function monthRecap(state: AppState, year: number, month: number): MonthR
   };
 }
 
+/** Antal dage ind i en ny måned, hvor sidste måneds opsummering vises i Historik (#169) */
+export const RECAP_DAYS = 7;
+
+/**
+ * Sidste måneds opsummering, hvis den skal vises øverst i Historik (#169):
+ * kun de første 7 dage af en ny måned, kun hvis måneden havde træninger, og ikke hvis brugeren har lukket den.
+ */
+export function recapToShow(state: AppState, now: number): MonthRecap | null {
+  const d = new Date(now);
+  if (d.getDate() > RECAP_DAYS) return null;
+  const r = monthRecap(state, d.getFullYear(), d.getMonth() - 1);
+  if (!r.workouts || state.recapDismissed === r.key) return null;
+  return r;
+}
+
+/** Navnet på en måned på dansk (0 = januar) */
+export function monthNameDa(month: number): string {
+  return MONTHS_DA[((month % 12) + 12) % 12];
+}
+
+/** Samlet træningstid som "5 t 20 min" / "45 min" */
+export function formatTotalTime(ms: number): string {
+  const mins = Math.round(ms / 60000);
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return h ? (m ? `${h} t ${m} min` : `${h} t`) : `${m} min`;
+}
+
+/** "+3 træninger" og "+12 % volumen" i forhold til måneden før (tom liste når måneden før var tom) */
+export function recapChangeTexts(r: MonthRecap): string[] {
+  if (!r.previous.workouts) return [];
+  const sign = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '±');
+  const out = [`${sign(r.workoutsDiff)}${Math.abs(r.workoutsDiff)} ${Math.abs(r.workoutsDiff) === 1 ? 'træning' : 'træninger'}`];
+  if (r.volumeChangePct !== null) out.push(`${sign(r.volumeChangePct)}${Math.abs(r.volumeChangePct)} % volumen`);
+  return out;
+}
+
 /* ---------- Opsummering af en træning (#142) ---------- */
 
 export interface WorkoutSummary {

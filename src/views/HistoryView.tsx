@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
 import { MonthCalendar } from '../components/MonthCalendar';
+import { MonthRecapCard } from '../components/MonthRecap';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   bestSet,
   formatDuration,
   formatKg,
   formatSet,
+  recapToShow,
   recordCount,
   supersetGroups,
   workoutRecords,
@@ -18,7 +20,7 @@ import type { Workout } from '../lib/types';
 const dateFmt = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
-  const { state, exerciseById } = useStore();
+  const { state, dispatch, exerciseById } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = state.history.find((w) => w.id === openId);
   // Rekorder kræver et kig på hele historikken, så de beregnes kun når historikken ændres
@@ -26,10 +28,13 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
     () => new Map(state.history.map((w) => [w.id, workoutRecords(state, w.id)])),
     [state.history],
   );
+  // Sidste måneds opsummering de første dage af en ny måned (#169)
+  const recap = useMemo(() => recapToShow(state, Date.now()), [state.history, state.recapDismissed, state.exercises]);
 
   return (
     <div className="page">
       <h1>Historik</h1>
+      {recap && <MonthRecapCard r={recap} onDismiss={() => dispatch({ type: 'DISMISS_RECAP', key: recap.key })} />}
       {state.history.length > 0 && <MonthCalendar onOpen={setOpenId} />}
       {!state.history.length && <Empty>Ingen træninger endnu. Afslut en træning, så dukker den op her.</Empty>}
       <div className="cards">

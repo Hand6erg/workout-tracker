@@ -309,3 +309,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .rw-head strong { overflow-wrap: anywhere; }
 .rw-head small { white-space: nowrap; }
 .rw-lines { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.9rem; color: var(--muted); }
+
+/* Månedens opsummering (#169) */
+.recap-card { margin-bottom: 14px; border: 1px solid var(--accent-soft); }
+.recap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.recap-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.recap-stat { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.recap-stat dt { font-size: 0.75rem; }
+.recap-stat dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.recap-fav { margin: 10px 0 0; }
+.recap-change { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0 0; font-weight: 600; }
+.recap-change .up { color: var(--ok); }
+.recap-change .down { color: var(--danger); }
