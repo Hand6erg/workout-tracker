@@ -2354,3 +2354,12 @@ describe('milestoneTileLabel (#183)', () => {
     expect(milestoneTileLabel(bw)).toBe('Løftet din kropsvægt – låst, kræver en kropsvægt');
   });
 });
+
+describe('milestonesUnlockedBy (#184)', () => {
+  it('kun den træning, der krydser grænsen, fejrer milepælen', () => {
+    const mk = (id: string, t: number) => ({ id, name: 'X', startedAt: t, finishedAt: t + 1, exercises: [] });
+    const st = { ...initialState(), history: [mk('b', 2000), mk('a', 1000)] };
+    expect(milestonesUnlockedBy(st, 'a').map((m) => m.id)).toEqual(['workouts-1']);
+    expect(milestonesUnlockedBy(st, 'b')).toEqual([]);
+  });
+});

@@ -1,15 +1,16 @@
 import { useState } from 'react';
-import { formatDuration, formatKg, RECORD_NAMES, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
+import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
 import { shareSummaryImage } from '../lib/shareImage';
 import { useStore } from '../lib/store';
 
 /** Opsummering lige efter "Afslut" (#143) */
-export function SummaryView({ onClose }: { onClose: () => void }) {
+export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
   const { state } = useStore();
   const [sharing, setSharing] = useState(false);
   const s = state.lastFinishedId ? workoutSummary(state, state.lastFinishedId) : null;
   if (!s) return null;
   const pct = s.volumeChangePct;
+  const newBadges = milestonesUnlockedBy(state, s.workoutId);
 
   return (
     <section className="page summary" aria-label="Opsummering">
@@ -39,6 +40,22 @@ export function SummaryView({ onClose }: { onClose: () => void }) {
         <p className={`summary-change ${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}`} role="status">
           {volumeChangeText(pct)}
         </p>
+      )}
+
+      {newBadges.length > 0 && (
+        <section className="card summary-badges" aria-label="Nye milepæle">
+          {newBadges.map((m) => (
+            <button key={m.id} className="summary-badge" onClick={onOpenMilestones} aria-label={`Ny milepæl: ${m.label} – se alle milepæle`}>
+              <span className="ms-icon" aria-hidden>
+                {m.icon}
+              </span>
+              <span>
+                <strong>Ny milepæl: {m.label} 🎉</strong>
+                <small className="muted">Se alle milepæle ›</small>
+              </span>
+            </button>
+          ))}
+        </section>
       )}
 
       {s.records.length > 0 && (
