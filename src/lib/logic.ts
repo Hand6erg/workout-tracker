@@ -1352,6 +1352,59 @@ export function markGoalsReached(goals: LiftGoal[], w: Workout): LiftGoal[] {
   return changed ? out : goals;
 }
 
+
+/** "I dette tempo" (#198): lineær trend gennem bedste e1RM pr. træning de sidste 8 uger → dato for målets e1RM.
+ * null ved under 3 træninger, flad/faldende trend eller mere end et år ude. Nåede mål giver null. */
+export function goalEta(state: Pick<AppState, 'history' | 'goals'>, goalId: string, now: number): number | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal || goal.achievedAt) return null;
+  const target = estimate1RM(goal.weight, goal.reps);
+  const since = now - 56 * DAY_MS;
+  const pts: { x: number; y: number }[] = [];
+  for (const w of state.history) {
+    if (w.startedAt < since || w.startedAt > now) continue;
+    let best = 0;
+    for (const we of w.exercises)
+      if (we.exerciseId === goal.exerciseId)
+        for (const s of we.sets) if (isWorkSet(s)) best = Math.max(best, estimate1RM(num(s.weight), num(s.reps)));
+    if (best > 0) pts.push({ x: (w.startedAt - now) / DAY_MS, y: best });
+  }
+  if (pts.length < 3) return null;
+  const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+  const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+  let sxy = 0;
+  let sxx = 0;
+  for (const p of pts) {
+    sxy += (p.x - mx) * (p.y - my);
+    sxx += (p.x - mx) ** 2;
+  }
+  if (sxx === 0) return null;
+  const slope = sxy / sxx; // kg pr. dag
+  if (slope <= 1e-6) return null;
+  const nowValue = my - slope * mx; // linjens værdi i dag (x = 0)
+  const days = Math.max(0, (target - nowValue) / slope);
+  if (days > 365) return null;
+  return now + Math.round(days * DAY_MS);
+}
+
+/** "ca. marts" / "ca. marts 2027" / "inden for en uge" */
+export function etaText(date: number, now: number): string {
+  if (date - now <= 7 * DAY_MS) return 'inden for en uge';
+  const d = new Date(date);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return `ca. ${MONTHS_DA[d.getMonth()]}${sameYear ? '' : ` ${d.getFullYear()}`}`;
+}
+
+/** Med måldato: er estimatet før datoen? null uden måldato eller estimat. Nåede mål er altid på sporet. */
+export function goalOnTrack(state: Pick<AppState, 'history' | 'goals'>, goalId: string, now: number): boolean | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal || !goal.targetDate) return null;
+  if (goal.achievedAt) return true;
+  const eta = goalEta(state, goalId, now);
+  if (eta === null) return goalProgress(state, goalId)!.pct >= 100 ? true : null;
+  return eta <= goal.targetDate;
+}
+
 /* ---------- Program (#106) ---------- */
 
 /** Programmets skabeloner i rækkefølge – slettede skabeloner springes over */
