@@ -6,6 +6,7 @@ import type {
   Equipment,
   Exercise,
   ExerciseKind,
+  LiftGoal,
   Muscle,
   SetEntry,
   Template,
@@ -44,6 +45,7 @@ export function initialState(): AppState {
     keepAwake: true,
     recapDismissed: null,
     favorites: [],
+    goals: [],
     program: [],
     programSkip: { after: null, n: 0 },
     settingsAt: 0,
@@ -1308,6 +1310,48 @@ export function lastExerciseNote(history: Workout[], exerciseId: string): { note
   return best;
 }
 
+/* ---------- Løftemål (#197) ---------- */
+
+/** Bedste estimerede 1RM for en øvelse ud fra arbejdssæt i afsluttede træninger (0 = ingen) */
+export function bestE1RM(history: Workout[], exerciseId: string): number {
+  let best = 0;
+  for (const w of history)
+    for (const we of w.exercises)
+      if (we.exerciseId === exerciseId)
+        for (const s of we.sets) if (isWorkSet(s)) best = Math.max(best, estimate1RM(num(s.weight), num(s.reps)));
+  return best;
+}
+
+/** Målets fremskridt: din bedste e1RM mod målets e1RM, `pct` 0–100 */
+export function goalProgress(
+  state: Pick<AppState, 'history' | 'goals'>,
+  goalId: string,
+): { current: number; target: number; pct: number } | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal) return null;
+  const target = estimate1RM(goal.weight, goal.reps);
+  const current = bestE1RM(state.history, goal.exerciseId);
+  const pct = goal.achievedAt ? 100 : target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+  return { current, target, pct };
+}
+
+/** Når en træning afsluttes: åbne mål, hvor et arbejdssæt har vægt ≥ mål og reps ≥ mål, er nået */
+export function markGoalsReached(goals: LiftGoal[], w: Workout): LiftGoal[] {
+  if (!goals.length) return goals;
+  let changed = false;
+  const out = goals.map((g) => {
+    if (g.achievedAt) return g;
+    const hit = w.exercises.some(
+      (we) =>
+        we.exerciseId === g.exerciseId && we.sets.some((s) => isWorkSet(s) && num(s.weight) >= g.weight && num(s.reps) >= g.reps),
+    );
+    if (!hit) return g;
+    changed = true;
+    return { ...g, achievedAt: w.finishedAt ?? w.startedAt };
+  });
+  return changed ? out : goals;
+}
+
 /* ---------- Program (#106) ---------- */
 
 /** Programmets skabeloner i rækkefølge – slettede skabeloner springes over */
@@ -1445,6 +1489,8 @@ export type Action =
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
   | { type: 'CLOSE_SUMMARY' }
+  | { type: 'ADD_GOAL'; id: string; exerciseId: string; weight: number; reps: number; targetDate?: number; now: number }
+  | { type: 'DELETE_GOAL'; goalId: string }
   | { type: 'DISMISS_RECAP'; key: string }
   | { type: 'MERGE_REMOTE'; remote: AppState };
 
@@ -1614,7 +1660,14 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!exercises.length) return { ...state, active: null, rest: null, lastFinishedId: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
       const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
-      return { ...state, active: null, rest: null, history: [done, ...state.history], lastFinishedId: done.id };
+      return {
+        ...state,
+        active: null,
+        rest: null,
+        history: [done, ...state.history],
+        lastFinishedId: done.id,
+        goals: markGoalsReached(state.goals ?? [], done),
+      };
     }
     case 'PAUSE_WORKOUT':
       return mapActive(state, (w) => (w.pausedAt ? w : { ...w, pausedAt: action.now }));
@@ -1822,6 +1875,16 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'DISMISS_RECAP':
       return { ...state, recapDismissed: action.key };
+    case 'ADD_GOAL': {
+      const weight = Math.round(action.weight * 100) / 100;
+      const reps = Math.round(action.reps);
+      if (!(weight > 0) || !(reps >= 1) || !state.exercises.some((e) => e.id === action.exerciseId)) return state;
+      const goal: LiftGoal = { id: action.id, exerciseId: action.exerciseId, weight, reps, createdAt: action.now };
+      if (action.targetDate && action.targetDate > 0) goal.targetDate = action.targetDate;
+      return { ...state, goals: [...(state.goals ?? []), goal] };
+    }
+    case 'DELETE_GOAL':
+      return { ...state, goals: (state.goals ?? []).filter((g) => g.id !== action.goalId) };
     case 'SET_PROGRAM': {
       const known = new Set(state.templates.map((t) => t.id));
       const program = [...new Set(action.templateIds)].filter((id) => known.has(id));
@@ -1983,6 +2046,7 @@ export function stampChanges(prev: AppState, next: AppState, now: number): AppSt
   if (prev.templates !== next.templates) gone(prev.templates, next.templates);
   if (prev.exercises !== next.exercises) gone(prev.exercises, next.exercises);
   if (prev.bodyLog !== next.bodyLog) gone(prev.bodyLog, next.bodyLog);
+  if (prev.goals !== next.goals) gone(prev.goals ?? [], next.goals ?? []);
   if (Object.keys(deleted).length) out = { ...out, deleted: { ...out.deleted, ...deleted } };
 
   const touch = <T extends Stamped>(before: T[], after: T[]): T[] => {
@@ -2003,6 +2067,7 @@ export function stampChanges(prev: AppState, next: AppState, now: number): AppSt
     if (out.history.some(edited)) out = { ...out, history: out.history.map((w) => (edited(w) ? { ...w, updatedAt: now } : w)) };
   }
   if (prev.exercises !== next.exercises) out = { ...out, exercises: touch(prev.exercises, out.exercises) };
+  if (prev.goals !== next.goals) out = { ...out, goals: touch(prev.goals ?? [], out.goals ?? []) };
   if (SETTINGS.some((k) => prev[k] !== next[k])) out = { ...out, settingsAt: now };
   return out;
 }
@@ -2042,6 +2107,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     deleted,
     exercises: mergeById(local.exercises, remote.exercises ?? [], deleted),
     templates: mergeById(local.templates, remote.templates ?? [], deleted),
+    goals: mergeById(local.goals ?? [], remote.goals ?? [], deleted),
     history: mergeById(local.history, remote.history ?? [], deleted).sort((a, b) => b.startedAt - a.startedAt),
     active: active && active.id in deleted ? null : active,
     editing: local.editing && local.editing.id in deleted ? null : (local.editing ?? null),
@@ -2103,6 +2169,8 @@ export function loadState(raw: string | null): AppState {
       exercises,
       // Favoritter fra før #190 findes ikke; ukendte øvelser fjernes
       favorites: Array.isArray(parsed.favorites) ? [...new Set(parsed.favorites)].filter((id) => ids.has(id)) : [],
+      // Løftemål fra før #197 findes ikke
+      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
       lastFinishedId: null,
     } as AppState;
