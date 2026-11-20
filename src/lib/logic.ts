@@ -2,6 +2,7 @@ import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
 import { MUSCLES } from './types';
 import type {
   AppState,
+  BodyMeasurement,
   Equipment,
   Exercise,
   ExerciseKind,
@@ -820,6 +821,136 @@ export function weekStreak(state: AppState, perWeek: number, now: number): Strea
     ws = startOfWeek(ws - DAY_MS);
   }
   return { weeks, thisWeek };
+}
+
+/* ---------- Milepæle (#182) ---------- */
+
+export type MilestoneGroup = 'workouts' | 'volume' | 'streak' | 'lift';
+
+export interface Milestone {
+  id: string;
+  group: MilestoneGroup;
+  /** Dansk navn, fx "10 træninger" */
+  label: string;
+  icon: string;
+  /** Målet (antal træninger, kg i alt, uger i træk eller kg i ét sæt). null = ukendt (ingen kropsvægt). */
+  target: number | null;
+  /** Hvor langt man er nu (samme enhed som target) */
+  current: number;
+  /** Tidspunkt for træningen, der låste den op (null = låst) */
+  unlockedAt: number | null;
+  unlockedBy: string | null;
+}
+
+const MILESTONE_DEFS: { id: string; group: MilestoneGroup; label: string; icon: string; target?: number }[] = [
+  { id: 'workouts-1', group: 'workouts', label: 'Første træning', icon: '🎯', target: 1 },
+  { id: 'workouts-10', group: 'workouts', label: '10 træninger', icon: '💪', target: 10 },
+  { id: 'workouts-25', group: 'workouts', label: '25 træninger', icon: '🔥', target: 25 },
+  { id: 'workouts-50', group: 'workouts', label: '50 træninger', icon: '⭐', target: 50 },
+  { id: 'workouts-100', group: 'workouts', label: '100 træninger', icon: '🏅', target: 100 },
+  { id: 'workouts-250', group: 'workouts', label: '250 træninger', icon: '👑', target: 250 },
+  { id: 'volume-1t', group: 'volume', label: '1 ton løftet', icon: '🧱', target: 1_000 },
+  { id: 'volume-10t', group: 'volume', label: '10 tons løftet', icon: '🚚', target: 10_000 },
+  { id: 'volume-100t', group: 'volume', label: '100 tons løftet', icon: '🐋', target: 100_000 },
+  { id: 'volume-1000t', group: 'volume', label: '1000 tons løftet', icon: '🏔️', target: 1_000_000 },
+  { id: 'streak-4', group: 'streak', label: '4 uger i træk', icon: '📅', target: 4 },
+  { id: 'streak-12', group: 'streak', label: '12 uger i træk', icon: '🗓️', target: 12 },
+  { id: 'streak-26', group: 'streak', label: '26 uger i træk', icon: '⚡', target: 26 },
+  { id: 'streak-52', group: 'streak', label: '52 uger i træk', icon: '🏆', target: 52 },
+  { id: 'lift-bodyweight', group: 'lift', label: 'Løftet din kropsvægt', icon: '🦍' },
+  { id: 'lift-100', group: 'lift', label: '100 kg i ét løft', icon: '🏋️', target: 100 },
+];
+
+/** Kropsvægten på en dato: seneste måling før/på datoen, ellers den tidligste måling. null = ingen målinger. */
+export function bodyWeightAt(bodyLog: BodyMeasurement[], at: number): number | null {
+  const withWeight = bodyLog.filter((m) => (m.weight ?? 0) > 0).sort((a, b) => a.date - b.date);
+  if (!withWeight.length) return null;
+  let found = withWeight[0];
+  for (const m of withWeight) if (m.date <= at) found = m;
+  return found.weight!;
+}
+
+/** Tungeste udførte arbejdssæt (vægt × reps, mindst 1 rep) i en træning */
+function heaviestSet(w: Workout): number {
+  let best = 0;
+  for (const we of w.exercises)
+    for (const s of we.sets) if (isWorkSet(s) && !isTimedSet(s) && num(s.reps) > 0) best = Math.max(best, num(s.weight));
+  return best;
+}
+
+/**
+ * Alle milepæle med status og fremskridt (#182). Beregnes fra historikken og kropsmål – intet gemmes.
+ * Træningerne gennemgås i tidsorden; en milepæl låses op af den træning, der krydser grænsen.
+ * Opvarmning tæller aldrig. "Uger i træk" bruger det nuværende ugemål.
+ */
+export function milestones(state: AppState): Milestone[] {
+  const out: Milestone[] = MILESTONE_DEFS.map((d) => ({
+    id: d.id, group: d.group, label: d.label, icon: d.icon, target: d.target ?? null, current: 0, unlockedAt: null, unlockedBy: null,
+  }));
+  const goal = Math.max(1, state.weeklyGoal || 1);
+  const weekCount = new Map<number, number>();
+  const weekRun = new Map<number, number>();
+  let count = 0;
+  let volume = 0;
+  let longest = 0;
+  let heaviest = 0;
+  const unlock = (m: Milestone, w: Workout) => {
+    if (m.unlockedAt === null) { m.unlockedAt = w.startedAt; m.unlockedBy = w.id; }
+  };
+  for (const w of [...state.history].sort((a, b) => a.startedAt - b.startedAt)) {
+    count++;
+    volume += workoutVolume(w);
+    const ws = startOfWeek(w.startedAt);
+    const n = (weekCount.get(ws) ?? 0) + 1;
+    weekCount.set(ws, n);
+    if (n === goal) {
+      const run = (weekRun.get(startOfWeek(ws - DAY_MS)) ?? 0) + 1;
+      weekRun.set(ws, run);
+      longest = Math.max(longest, run);
+    }
+    const top = heaviestSet(w);
+    heaviest = Math.max(heaviest, top);
+    const bw = bodyWeightAt(state.bodyLog, w.startedAt);
+    const bodyWeightLift = bw !== null && top >= bw;
+    for (const m of out) {
+      const reached =
+        m.group === 'workouts' ? count >= m.target! :
+        m.group === 'volume' ? volume >= m.target! :
+        m.group === 'streak' ? longest >= m.target! :
+        m.id === 'lift-100' ? heaviest >= 100 :
+        bodyWeightLift;
+      if (reached) unlock(m, w);
+    }
+  }
+  const bwNow = bodyWeightAt(state.bodyLog, Date.now());
+  for (const m of out) {
+    if (m.group === 'workouts') m.current = count;
+    else if (m.group === 'volume') m.current = Math.round(volume);
+    else if (m.group === 'streak') m.current = longest;
+    else if (m.id === 'lift-100') m.current = heaviest;
+    else {
+      m.target = bwNow;
+      m.current = heaviest;
+    }
+  }
+  return out;
+}
+
+/** Milepælene, som en bestemt (afsluttet) træning låste op (#182) – til fejringen på opsummeringen */
+export function milestonesUnlockedBy(state: AppState, workoutId: string): Milestone[] {
+  return milestones(state).filter((m) => m.unlockedBy === workoutId);
+}
+
+/** Fremskridt som tekst, fx "38 / 50 træninger", "4,2 / 10 t" (#182) */
+export function milestoneProgressText(m: Milestone): string {
+  const n = (v: number) => v.toLocaleString('da-DK', { maximumFractionDigits: 1 });
+  if (m.target === null) return 'Kræver en kropsvægt';
+  switch (m.group) {
+    case 'workouts': return `${n(Math.min(m.current, m.target))} / ${n(m.target)} træninger`;
+    case 'volume': return `${n(Math.floor(Math.min(m.current, m.target) / 100) / 10)} / ${n(m.target / 1000)} t`;
+    case 'streak': return `${n(Math.min(m.current, m.target))} / ${n(m.target)} uger`;
+    case 'lift': return `${n(Math.min(m.current, m.target))} / ${n(m.target)} kg`;
+  }
 }
 
 export interface MuscleShare {

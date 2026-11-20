@@ -46,6 +46,10 @@ import {
   toCsv,
   workoutSummary,
   vsLastTime,
+  milestones,
+  milestonesUnlockedBy,
+  milestoneProgressText,
+  bodyWeightAt,
   vsRowCells,
   shareCardLines,
   trainingDays,
@@ -2267,5 +2271,72 @@ describe('mod sidst under træningen (#175)', () => {
     const older: Workout = { ...last, id: 'older', startedAt: T0 - 10 * DAY, finishedAt: T0 - 10 * DAY + 1 };
     const r = vsLastTime(stateWith([older, last]), active([we('ohp', [set('50', '5')])]))!;
     expect(r.previousId).toBe('last');
+  });
+});
+
+describe('milepæle (#182)', () => {
+  const DAY = 24 * 3_600_000;
+  const set = (weight: string, reps: string, extra: Partial<SetEntry> = {}): SetEntry => ({
+    id: Math.random().toString(36).slice(2), weight, reps, rpe: '', done: true, ...extra,
+  });
+  const wk = (id: string, startedAt: number, sets: SetEntry[]): Workout => ({
+    id, name: 'Træning', startedAt, finishedAt: startedAt + 3_600_000, exercises: [{ id: `we-${id}`, exerciseId: 'bench', sets }],
+  });
+  const get = (ms: ReturnType<typeof milestones>, id: string) => ms.find((m) => m.id === id)!;
+
+  it('10 afsluttede træninger låser "10 træninger" op med datoen for den 10.; 25 viser 10 / 25', () => {
+    const history = Array.from({ length: 10 }, (_, i) => wk(`w${i}`, T0 - (20 - i) * DAY, [set('10', '5')]));
+    const s: AppState = { ...initialState(), history: [...history].reverse() };
+    const ms = milestones(s);
+    expect(get(ms, 'workouts-1')).toMatchObject({ unlockedBy: 'w0', label: 'Første træning' });
+    expect(get(ms, 'workouts-10')).toMatchObject({ unlockedBy: 'w9', unlockedAt: history[9].startedAt });
+    const m25 = get(ms, 'workouts-25');
+    expect(m25).toMatchObject({ unlockedAt: null, current: 10, target: 25 });
+    expect(milestoneProgressText(m25)).toBe('10 / 25 træninger');
+  });
+
+  it('samlet volumen over 1000 kg låser "1 ton" op; opvarmning tæller ikke', () => {
+    const a = wk('a', T0 - 2 * DAY, [set('100', '5'), set('100', '4'), set('200', '10', { warmup: true })]); // 900 kg
+    const b = wk('b', T0 - DAY, [set('50', '1'), set('40', '10', { done: false })]); // 950 kg
+    const c = wk('c', T0, [set('50', '1')]); // 1000 kg
+    const ms2 = milestones({ ...initialState(), history: [a, b] });
+    expect(get(ms2, 'volume-1t').unlockedAt).toBeNull();
+    expect(milestoneProgressText(get(ms2, 'volume-1t'))).toBe('0,9 / 1 t');
+    const ms3 = milestones({ ...initialState(), history: [c, a, b] });
+    expect(get(ms3, 'volume-1t').unlockedBy).toBe('c');
+    expect(milestonesUnlockedBy({ ...initialState(), history: [c, a, b] }, 'c').map((m) => m.id)).toEqual(['volume-1t']);
+  });
+
+  it('kropsvægt-milepælen kræver en kropsmåling; 100 kg i ét løft', () => {
+    const history = [wk('a', T0, [set('80', '3'), set('100', '0')])];
+    const none = milestones({ ...initialState(), history, bodyLog: [] });
+    expect(get(none, 'lift-bodyweight')).toMatchObject({ unlockedAt: null, target: null });
+    expect(milestoneProgressText(get(none, 'lift-bodyweight'))).toBe('Kræver en kropsvægt');
+    expect(get(none, 'lift-100').unlockedAt).toBeNull(); // 0 reps tæller ikke
+    const withBw = milestones({ ...initialState(), history, bodyLog: [{ id: 'm', date: T0 - DAY, weight: 78 }] });
+    expect(get(withBw, 'lift-bodyweight').unlockedBy).toBe('a');
+    const heavier = milestones({ ...initialState(), history, bodyLog: [{ id: 'm', date: T0 - DAY, weight: 85 }] });
+    expect(get(heavier, 'lift-bodyweight')).toMatchObject({ unlockedAt: null, current: 80, target: 85 });
+    expect(bodyWeightAt([{ id: 'x', date: T0 + DAY, weight: 90 }, { id: 'y', date: T0 - DAY, weight: 80 }], T0)).toBe(80);
+    expect(bodyWeightAt([{ id: 'x', date: T0 + DAY, weight: 90 }], T0)).toBe(90);
+  });
+
+  it('"uger i træk" bruger ugemålet; 4 uger låses op af træningen der fuldender 4. uge', () => {
+    const WEEK = 7 * DAY;
+    const MON = T0 - 6 * DAY; // T0 er en søndag
+    const history = [0, 1, 2, 3].flatMap((i) => [wk(`a${i}`, MON + i * WEEK, [set('20', '5')]), wk(`b${i}`, MON + i * WEEK + DAY, [set('20', '5')])]);
+    const s: AppState = { ...initialState(), weeklyGoal: 2, history };
+    expect(get(milestones(s), 'streak-4').unlockedBy).toBe('b3');
+    const gap = { ...s, history: history.filter((w) => w.id !== 'b1') };
+    expect(get(milestones(gap), 'streak-4')).toMatchObject({ unlockedAt: null, current: 2 });
+  });
+
+  it('"låst op af denne træning" giver kun milepæle krydset i netop den træning; gamle data indlæses uændret', () => {
+    const history = Array.from({ length: 10 }, (_, i) => wk(`w${i}`, T0 - (20 - i) * DAY, [set('10', '5')]));
+    const s: AppState = { ...initialState(), history };
+    expect(milestonesUnlockedBy(s, 'w9').map((m) => m.id)).toEqual(['workouts-10']);
+    expect(milestonesUnlockedBy(s, 'w0').map((m) => m.id)).toEqual(['workouts-1']);
+    expect(milestonesUnlockedBy(s, 'w5')).toEqual([]);
+    expect(milestones(loadState(JSON.stringify(s))).map((m) => m.unlockedBy)).toEqual(milestones(s).map((m) => m.unlockedBy));
   });
 });
