@@ -142,6 +142,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .vs-mark.same, .vs-mark.down { color: var(--muted); }
 .vs-bar { margin: 4px 0 8px; padding: 6px 12px; border-radius: 999px; display: inline-block; font-size: 0.9rem; font-weight: 600; background: var(--surface-2); color: var(--muted); }
 .vs-bar.up { background: var(--ok-soft); color: var(--ok); }
+.vs-bar { border: 0; cursor: pointer; font-family: inherit; }
+.vs-bar::after { content: ' ›'; }
+.vs-sheet-date { margin: 0 0 10px; }
+.vs-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.vs-table th, .vs-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.vs-table th[scope='row'], .vs-table thead th:first-child { text-align: left; white-space: normal; font-weight: 500; }
+.vs-table thead th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
+.vs-table .vs-new { color: var(--accent); }
+.vs-table .vs-mark { margin-left: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .sets { width: 100%; border-collapse: separate; border-spacing: 0 4px; font-size: 0.92rem; }
 .sets th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; padding: 2px; }
 .sets td { text-align: center; padding: 0 3px; }

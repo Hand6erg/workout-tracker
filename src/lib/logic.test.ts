@@ -46,6 +46,7 @@ import {
   toCsv,
   workoutSummary,
   vsLastTime,
+  vsRowCells,
   shareCardLines,
   trainingDays,
   uncheckedFilledCount,
@@ -2243,6 +2244,23 @@ describe('mod sidst under træningen (#175)', () => {
     expect(r.rows[0]).toMatchObject({ unit: 'sek', now: 90, last: 60, status: null });
     expect(r.diffKg).toBe(0);
     expect(r.started).toBe(true);
+  });
+
+  it('oversigtens tekster: tal begge gange, "Ny i dag" og "–" for ikke startet (#177)', () => {
+    const s = stateWith([last]);
+    const r = vsLastTime(s, active([
+      we('bench', [set('85', '5'), set('85', '5'), set('85', '5')]),
+      we('lateral', [set('10', '12')]),
+      we('ohp', [set('50', '5', { done: false }), set('50', '5', { done: false })]),
+      we('plank', [set('', '', { seconds: '90' }), set('', '', { seconds: '60' })]),
+    ]))!;
+    expect(r.rows.map(vsRowCells)).toEqual([
+      { now: '1.275 kg', last: '1.200 kg' },
+      { now: '120 kg', last: 'Ny i dag' },
+      { now: '–', last: '500 kg' },
+      { now: '150 sek.', last: '120 sek.' },
+    ]);
+    expect(r.rows[2]).toMatchObject({ last: 0, lastTotal: 500 });
   });
 
   it('sammenligner med den seneste afsluttede gang fra skabelonen', () => {
