@@ -45,6 +45,11 @@ export default function App() {
               dispatch({ type: 'CLOSE_SUMMARY' });
               setTab('start');
             }}
+            onOpenMilestones={() => {
+              dispatch({ type: 'CLOSE_SUMMARY' });
+              setTab('profile');
+              setTimeout(() => document.getElementById('milepaele')?.scrollIntoView({ block: 'start' }), 50);
+            }}
           />
         )}
         {!summaryOpen && tab === 'start' && <StartView onOpenWorkout={() => setWorkoutOpen(true)} />}

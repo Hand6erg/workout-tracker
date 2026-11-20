@@ -36,3 +36,18 @@ test('"Milepæle" i Profil viser låste og låste-op badges (#183)', async ({ pa
   const width = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(width).toBeLessThanOrEqual(0);
 });
+
+test('en ny milepæl fejres på opsummeringen og åbner Milepæle (#184)', async ({ page }) => {
+  await pushWorkout(page);
+  const badge = page.getByRole('button', { name: /^Ny milepæl: Første træning/ });
+  await expect(badge).toBeVisible();
+  await page.screenshot({ path: 'test-results/milestone-celebration.png' });
+  await badge.click();
+  await expect(page.getByRole('navigation').getByRole('button', { name: /Profil/ })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByRole('region', { name: 'Milepæle' })).toBeInViewport();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await pushWorkout(page);
+  await expect(page.getByRole('heading', { name: 'Godt gået! 💪' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Ny milepæl: Første træning/ })).toHaveCount(0);
+});
