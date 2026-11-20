@@ -605,6 +605,8 @@ export interface VsLastRow {
   now: number;
   /** Værdien sidst for det samme antal sæt. null = øvelsen blev ikke lavet sidst (ingen sammenligning). */
   last: number | null;
+  /** Hele sidste gang (alle arbejdssæt). null = øvelsen blev ikke lavet sidst. */
+  lastTotal: number | null;
   /** Kun når alle sæt er krydset af og der er noget at sammenligne med */
   status: VsStatus | null;
 }
@@ -659,6 +661,7 @@ export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime
     const lastSets = lastWe ? lastWe.sets.filter(isWorkSet) : [];
     let last: number | null = null;
     let status: VsStatus | null = null;
+    const lastTotal = lastSets.length ? lastSets.reduce((a, s) => a + setValue(s, kind), 0) : null;
     if (lastSets.length) {
       // Når øvelsen er færdig, sammenlignes med hele sidste gang – ellers med de første sæt
       const compared = complete ? lastSets : lastSets.slice(0, done.length);
@@ -675,9 +678,24 @@ export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime
           : compareValues(now, last);
       }
     }
-    return { weId: we.id, exerciseId: we.exerciseId, name: names.get(we.exerciseId) ?? we.exerciseId, unit, doneSets: done.length, complete, now, last, status };
+    return { weId: we.id, exerciseId: we.exerciseId, name: names.get(we.exerciseId) ?? we.exerciseId, unit, doneSets: done.length, complete, now, last, lastTotal, status };
   });
   return { previousId: prev.id, previousDate: prev.startedAt, diffKg: Math.round(diffKg * 100) / 100, started, rows };
+}
+
+function vsValueText(n: number, unit: VsLastRow['unit']): string {
+  const v = (Math.round(n * 10) / 10).toLocaleString('da-DK', { maximumFractionDigits: 1 });
+  return unit === 'sek' ? `${v} sek.` : `${v} ${unit}`;
+}
+
+/**
+ * Teksten i "Mod sidst"-oversigten for én øvelse (#177): denne gang / sidst.
+ * Ikke lavet sidst → "Ny i dag". Ikke startet endnu → "–" denne gang og hele sidste gang.
+ */
+export function vsRowCells(row: VsLastRow): { now: string; last: string } {
+  const now = row.doneSets ? vsValueText(row.now, row.unit) : '–';
+  if (row.last === null || row.lastTotal === null) return { now, last: 'Ny i dag' };
+  return { now, last: vsValueText(row.doneSets ? row.last : row.lastTotal, row.unit) };
 }
 const MONTHS_DA = ['januar', 'februar', 'marts', 'april', 'maj', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'december'];
 

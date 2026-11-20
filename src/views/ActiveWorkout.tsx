@@ -22,6 +22,7 @@ import {
   supersetGroups,
   uncheckedFilledCount,
   vsLastTime,
+  vsRowCells,
   warmupBaseWeight,
   workoutDuration,
   workoutTimingError,
@@ -324,11 +325,55 @@ function vsBarText(diffKg: number): string {
 }
 
 function VsLastBar({ vs }: { vs: VsLastTime }) {
+  const [open, setOpen] = useState(false);
   const tone = vs.diffKg > 0 ? 'up' : vs.diffKg < 0 ? 'down' : 'same';
   return (
-    <p className={`vs-bar ${tone}`} role="status" aria-label="Mod sidst" data-testid="vs-bar">
-      {vsBarText(vs.diffKg)}
-    </p>
+    <>
+      <button
+        type="button"
+        className={`vs-bar ${tone}`}
+        aria-label={`Mod sidst: ${vsBarText(vs.diffKg)}. Vis pr. øvelse`}
+        aria-haspopup="dialog"
+        data-testid="vs-bar"
+        onClick={() => setOpen(true)}
+      >
+        {vsBarText(vs.diffKg)}
+      </button>
+      {open && <VsLastSheet vs={vs} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Oversigt pr. øvelse: denne gang / sidst (#177) */
+function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
+  const date = new Date(vs.previousDate).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long' });
+  return (
+    <Modal title="Mod sidst" onClose={onClose}>
+      <p className="muted vs-sheet-date">Sammenlignet med {date}</p>
+      <table className="vs-table">
+        <thead>
+          <tr>
+            <th scope="col">Øvelse</th>
+            <th scope="col">I dag</th>
+            <th scope="col">Sidst</th>
+            <th scope="col"><span className="sr-only">Status</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {vs.rows.map((r) => {
+            const c = vsRowCells(r);
+            return (
+              <tr key={r.weId} aria-label={r.name}>
+                <th scope="row">{r.name}</th>
+                <td>{c.now}</td>
+                <td className={r.last === null ? 'vs-new' : undefined}>{c.last}</td>
+                <td>{r.status && <VsMark status={r.status} />}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Modal>
   );
 }
 
