@@ -43,6 +43,7 @@ export function initialState(): AppState {
     restVibrate: true,
     keepAwake: true,
     recapDismissed: null,
+    favorites: [],
     program: [],
     programSkip: { after: null, n: 0 },
     settingsAt: 0,
@@ -1263,6 +1264,23 @@ function withNote<T extends { note?: string }>(item: T, note: string): T {
 }
 
 /** Den seneste note til en øvelse fra afsluttede træninger (historikken er nyeste først) */
+/**
+ * De senest brugte øvelser (#190): de sidste `n` forskellige øvelser fra afsluttede træninger, nyeste først.
+ * Den igangværende træning tæller ikke med.
+ */
+export function recentExercises(state: Pick<AppState, 'history' | 'exercises'>, n = 5): string[] {
+  const known = new Set(state.exercises.map((e) => e.id));
+  const out: string[] = [];
+  const workouts = [...state.history].sort((a, b) => (b.finishedAt ?? b.startedAt) - (a.finishedAt ?? a.startedAt));
+  for (const w of workouts) {
+    for (const we of w.exercises) {
+      if (out.length >= n) return out;
+      if (known.has(we.exerciseId) && !out.includes(we.exerciseId)) out.push(we.exerciseId);
+    }
+  }
+  return out;
+}
+
 export function lastExerciseNote(history: Workout[], exerciseId: string): { note: string; date: number } | null {
   let best: { note: string; date: number } | null = null;
   for (const w of history) {
@@ -1398,6 +1416,7 @@ export type Action =
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
+  | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
   | { type: 'SKIP_PROGRAM' }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
@@ -1779,6 +1798,12 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restVibrate: action.on };
     case 'SET_KEEP_AWAKE':
       return { ...state, keepAwake: action.on };
+    case 'TOGGLE_FAVORITE': {
+      const favs = state.favorites ?? [];
+      if (favs.includes(action.exerciseId)) return { ...state, favorites: favs.filter((id) => id !== action.exerciseId) };
+      if (!state.exercises.some((e) => e.id === action.exerciseId)) return state;
+      return { ...state, favorites: [...favs, action.exerciseId] };
+    }
     case 'DISMISS_RECAP':
       return { ...state, recapDismissed: action.key };
     case 'SET_PROGRAM': {
@@ -1919,6 +1944,7 @@ const SETTINGS = [
   'restVibrate',
   'keepAwake',
   'recapDismissed',
+  'favorites',
   'program',
   'programSkip',
 ] as const;
@@ -1992,9 +2018,11 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] ?? local[k]]), ['settingsAt', remote.settingsAt]])
     : {};
   const active = local.active ?? remote.active ?? null;
+  const favorites = ((settings as Partial<AppState>).favorites ?? local.favorites ?? []).filter((id) => !(id in deleted));
   return {
     ...local,
     ...settings,
+    favorites,
     deleted,
     exercises: mergeById(local.exercises, remote.exercises ?? [], deleted),
     templates: mergeById(local.templates, remote.templates ?? [], deleted),
@@ -2051,10 +2079,14 @@ export function loadState(raw: string | null): AppState {
     const own = (parsed.exercises ?? []).map((e) =>
       !e.custom && !e.kind && seedKind.has(e.id) ? { ...e, kind: seedKind.get(e.id) } : e,
     );
+    const exercises = [...own, ...base.exercises.filter((e) => !known.has(e.id))];
+    const ids = new Set(exercises.map((e) => e.id));
     return {
       ...base,
       ...parsed,
-      exercises: [...own, ...base.exercises.filter((e) => !known.has(e.id))],
+      exercises,
+      // Favoritter fra før #190 findes ikke; ukendte øvelser fjernes
+      favorites: Array.isArray(parsed.favorites) ? [...new Set(parsed.favorites)].filter((id) => ids.has(id)) : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
       lastFinishedId: null,
     } as AppState;

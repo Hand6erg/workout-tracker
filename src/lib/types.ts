@@ -130,6 +130,8 @@ export interface AppState {
   keepAwake: boolean;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
+  /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
+  favorites: string[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
   program: string[];
   /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */

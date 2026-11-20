@@ -19,6 +19,7 @@ import {
   IS_STAGING,
   loadState,
   mergeStates,
+  recentExercises,
   stampChanges,
   personalRecords,
   platesPerSide,
@@ -2361,5 +2362,57 @@ describe('milestonesUnlockedBy (#184)', () => {
     const st = { ...initialState(), history: [mk('b', 2000), mk('a', 1000)] };
     expect(milestonesUnlockedBy(st, 'a').map((m) => m.id)).toEqual(['workouts-1']);
     expect(milestonesUnlockedBy(st, 'b')).toEqual([]);
+  });
+});
+
+describe('favoritøvelser og senest brugt (#190)', () => {
+  const we = (exerciseId: string) => ({ id: uid(), exerciseId, sets: [] });
+  const mk = (id: string, t: number, ids: string[], finished = true): Workout => ({
+    id,
+    name: 'X',
+    startedAt: t,
+    finishedAt: finished ? t + 1 : undefined,
+    exercises: ids.map(we),
+  });
+
+  it('stjerne to gange tilføjer og fjerner favoritten', () => {
+    const one = reducer(initialState(), { type: 'TOGGLE_FAVORITE', exerciseId: 'squat' });
+    expect(one.favorites).toEqual(['squat']);
+    expect(reducer(one, { type: 'TOGGLE_FAVORITE', exerciseId: 'squat' }).favorites).toEqual([]);
+    expect(reducer(initialState(), { type: 'TOGGLE_FAVORITE', exerciseId: 'findes-ikke' }).favorites).toEqual([]);
+  });
+
+  it('favoritter tæller som en indstilling (tidsstempel til synk)', () => {
+    const next = trackedReducer(initialState(), { type: 'TOGGLE_FAVORITE', exerciseId: 'bench', at: 500 });
+    expect(next.settingsAt).toBe(500);
+  });
+
+  it('recentExercises giver forskellige øvelser, nyeste først, uden den igangværende træning', () => {
+    const st: AppState = {
+      ...initialState(),
+      history: [mk('new', 3000, ['bench', 'squat']), mk('old', 1000, ['deadlift', 'bench', 'row'])],
+      active: mk('act', 5000, ['pullup'], false),
+    };
+    expect(recentExercises(st)).toEqual(['bench', 'squat', 'deadlift', 'row']);
+    expect(recentExercises(st, 2)).toEqual(['bench', 'squat']);
+    expect(recentExercises(initialState())).toEqual([]);
+  });
+
+  it('gamle data uden favoritter indlæses, og en backup gendanner dem', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.favorites;
+    expect(loadState(JSON.stringify(old)).favorites).toEqual([]);
+    const backup = { ...initialState(), favorites: ['squat', 'bench', 'slettet-øvelse'] };
+    expect(loadState(JSON.stringify(backup)).favorites).toEqual(['squat', 'bench']);
+  });
+
+  it('fletning beholder favoritterne og fjerner slettede øvelser', () => {
+    const phone = { ...initialState(), favorites: ['squat', 'mine'], settingsAt: 200, deleted: { mine: 150 } };
+    const pc = { ...initialState(), settingsAt: 100 };
+    expect(mergeStates(pc, phone).favorites).toEqual(['squat']);
+    expect(mergeStates(phone, pc).favorites).toEqual(['squat']);
+    const oldRemote = JSON.parse(JSON.stringify(initialState()));
+    delete oldRemote.favorites;
+    expect(mergeStates({ ...initialState(), favorites: ['bench'] }, { ...oldRemote, settingsAt: 999 }).favorites).toEqual(['bench']);
   });
 });
