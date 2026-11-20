@@ -20,6 +20,7 @@ import {
   loadState,
   mergeStates,
   recentExercises,
+  pickerGroups,
   stampChanges,
   personalRecords,
   platesPerSide,
@@ -2396,6 +2397,17 @@ describe('favoritøvelser og senest brugt (#190)', () => {
     expect(recentExercises(st)).toEqual(['bench', 'squat', 'deadlift', 'row']);
     expect(recentExercises(st, 2)).toEqual(['bench', 'squat']);
     expect(recentExercises(initialState())).toEqual([]);
+  });
+
+  it('pickerGroups viser favoritter og senest brugte uden dubletter (#192)', () => {
+    const st: AppState = {
+      ...initialState(),
+      favorites: ['squat', 'slettet'],
+      history: [mk('new', 3000, ['bench', 'squat']), mk('old', 1000, ['deadlift', 'row'])],
+    };
+    expect(pickerGroups(st)).toEqual({ favorites: ['squat'], recent: ['bench', 'deadlift', 'row'] });
+    expect(pickerGroups(st, 1).recent).toEqual(['bench']);
+    expect(pickerGroups(initialState())).toEqual({ favorites: [], recent: [] });
   });
 
   it('gamle data uden favoritter indlæses, og en backup gendanner dem', () => {
