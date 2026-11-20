@@ -21,6 +21,7 @@ import {
   mergeStates,
   recentExercises,
   pickerGroups,
+  goalProgress,
   stampChanges,
   personalRecords,
   platesPerSide,
@@ -2426,5 +2427,71 @@ describe('favoritøvelser og senest brugt (#190)', () => {
     const oldRemote = JSON.parse(JSON.stringify(initialState()));
     delete oldRemote.favorites;
     expect(mergeStates({ ...initialState(), favorites: ['bench'] }, { ...oldRemote, settingsAt: 999 }).favorites).toEqual(['bench']);
+  });
+});
+
+describe('løftemål (#197)', () => {
+  const D = 1_700_000_000_000;
+  const addGoal = (s: AppState, id: string, weight: number, reps: number) =>
+    trackedReducer(s, { type: 'ADD_GOAL', id, exerciseId: 'bench', weight, reps, now: D, at: D });
+  const lift = (s: AppState, weight: string, reps: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('tilføjer og sletter et mål – det slettede mål får en gravsten', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    expect(s.goals).toHaveLength(1);
+    expect(s.goals[0]).toMatchObject({ exerciseId: 'bench', weight: 100, reps: 1, createdAt: D });
+    expect(addGoal(s, 'bad', 0, 1).goals).toHaveLength(1); // ugyldig vægt
+    expect(trackedReducer(s, { type: 'ADD_GOAL', id: 'x', exerciseId: 'findes-ikke', weight: 50, reps: 1, now: D }).goals).toHaveLength(1);
+    s = trackedReducer(s, { type: 'DELETE_GOAL', goalId: 'g1', at: D + 5 });
+    expect(s.goals).toEqual([]);
+    expect(s.deleted.g1).toBe(D + 5);
+  });
+
+  it('fremskridt ud fra den bedste e1RM, højst 100 %', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    expect(goalProgress(s, 'g1')).toEqual({ current: 0, target: 100, pct: 0 });
+    s = lift(s, '80', '1', D + 1000);
+    expect(goalProgress(s, 'g1')).toEqual({ current: 80, target: 100, pct: 80 });
+    s = addGoal(s, 'g2', 60, 1);
+    expect(goalProgress(s, 'g2')!.pct).toBe(100);
+    expect(goalProgress(s, 'ukendt')).toBeNull();
+  });
+
+  it('100 kg × 1 når målet med datoen, 97,5 kg × 1 gør ikke', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    s = lift(s, '97.5', '1', D + 1000);
+    expect(s.goals[0].achievedAt).toBeUndefined();
+    s = lift(s, '100', '1', D + 9000);
+    expect(s.goals[0].achievedAt).toBe(D + 9000 + 60_000);
+    expect(goalProgress(s, 'g1')!.pct).toBe(100);
+  });
+
+  it('mål flettes mellem enheder, og et slettet mål forbliver slettet', () => {
+    const phone = addGoal(addGoal(initialState(), 'g1', 100, 1), 'g2', 140, 5);
+    const pc = addGoal(initialState(), 'g3', 60, 10);
+    const merged = mergeStates(pc, phone);
+    expect(merged.goals.map((g) => g.id).sort()).toEqual(['g1', 'g2', 'g3']);
+    const phoneDel = trackedReducer(phone, { type: 'DELETE_GOAL', goalId: 'g2', at: D + 10 });
+    expect(mergeStates(merged, phoneDel).goals.map((g) => g.id).sort()).toEqual(['g1', 'g3']);
+    // et nået mål vinder over den gamle udgave
+    const reached = { ...phone, goals: phone.goals.map((g) => (g.id === 'g1' ? { ...g, achievedAt: D + 50, updatedAt: D + 50 } : g)) };
+    expect(mergeStates(merged, reached).goals.find((g) => g.id === 'g1')!.achievedAt).toBe(D + 50);
+  });
+
+  it('gamle data uden mål indlæses uændret, og en backup gendanner målene', () => {
+    const old = JSON.parse(JSON.stringify({ ...initialState(), history: [] }));
+    delete old.goals;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.goals).toEqual([]);
+    expect(loaded.templates).toEqual(old.templates);
+    const backup = addGoal(initialState(), 'g1', 100, 1);
+    expect(loadState(JSON.stringify(backup)).goals).toEqual(backup.goals);
   });
 });
