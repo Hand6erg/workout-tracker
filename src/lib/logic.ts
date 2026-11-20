@@ -1281,6 +1281,22 @@ export function recentExercises(state: Pick<AppState, 'history' | 'exercises'>, 
   return out;
 }
 
+/**
+ * Grupperne øverst i øvelsesvælgeren (#192): favoritter (i den rækkefølge de blev stjernemarkeret)
+ * og de senest brugte øvelser uden dem, der allerede står under favoritter.
+ */
+export function pickerGroups(
+  state: Pick<AppState, 'history' | 'exercises' | 'favorites'>,
+  n = 5,
+): { favorites: string[]; recent: string[] } {
+  const known = new Set(state.exercises.map((e) => e.id));
+  const favorites = (state.favorites ?? []).filter((id) => known.has(id));
+  const recent = recentExercises(state, n + favorites.length)
+    .filter((id) => !favorites.includes(id))
+    .slice(0, n);
+  return { favorites, recent };
+}
+
 export function lastExerciseNote(history: Workout[], exerciseId: string): { note: string; date: number } | null {
   let best: { note: string; date: number } | null = null;
   for (const w of history) {
