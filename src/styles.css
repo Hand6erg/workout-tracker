@@ -197,6 +197,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .detail-ex { margin: 14px 0; }
 .detail-ex ol { margin: 6px 0; padding-left: 22px; color: var(--text); }
 .list-row.static { cursor: default; }
+.fav-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.fav-row .list-row { border-bottom: 0; flex: 1; min-width: 0; }
+.fav-btn { min-width: 40px; min-height: 40px; font-size: 1.25rem; line-height: 1; color: var(--muted); }
+.fav-btn.on { color: #f5b301; }
+.fav-btn.big { font-size: 0.95rem; padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--text); white-space: nowrap; }
+.fav-btn.big.on { background: var(--accent-soft); color: #f5b301; }
 
 /* Grafer */
 .chart-card { padding: 12px 12px 10px; }
