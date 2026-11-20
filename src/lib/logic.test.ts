@@ -22,6 +22,9 @@ import {
   recentExercises,
   pickerGroups,
   goalProgress,
+  goalEta,
+  etaText,
+  goalOnTrack,
   stampChanges,
   personalRecords,
   platesPerSide,
@@ -2493,5 +2496,53 @@ describe('løftemål (#197)', () => {
     expect(loaded.templates).toEqual(old.templates);
     const backup = addGoal(initialState(), 'g1', 100, 1);
     expect(loadState(JSON.stringify(backup)).goals).toEqual(backup.goals);
+  });
+});
+
+describe('løftemål: i dette tempo (#198)', () => {
+  const DAY = 86_400_000;
+  const NOW = new Date(2026, 2, 1, 12).getTime(); // 1. marts 2026
+  const workout = (daysAgo: number, weight: number): Workout => ({
+    id: `w${daysAgo}`,
+    name: 'Bryst',
+    startedAt: NOW - daysAgo * DAY,
+    finishedAt: NOW - daysAgo * DAY + 3_600_000,
+    exercises: [{ id: `we${daysAgo}`, exerciseId: 'bench', sets: [{ id: `s${daysAgo}`, weight: String(weight), reps: '1', rpe: '', done: true }] }],
+  });
+  const withGoal = (history: Workout[], targetDate?: number): AppState => ({
+    ...initialState(),
+    history,
+    goals: [{ id: 'g1', exerciseId: 'bench', weight: 100, reps: 1, createdAt: NOW - 60 * DAY, ...(targetDate ? { targetDate } : {}) }],
+  });
+  // +2,5 kg om ugen: 80 → 90 kg over de sidste 4 uger
+  const steady = [28, 21, 14, 7, 0].map((d, i) => workout(d, 80 + i * 2.5));
+
+  it('en jævn stigning på 2,5 kg om ugen giver den forventede måned', () => {
+    const eta = goalEta(withGoal(steady), 'g1', NOW)!;
+    // 10 kg mangler à 2,5 kg/uge = 4 uger → slutningen af marts
+    expect(Math.round((eta - NOW) / DAY)).toBe(28);
+    expect(etaText(eta, NOW)).toBe('ca. marts');
+  });
+
+  it('flad eller faldende trend og under 3 træninger giver null', () => {
+    expect(goalEta(withGoal([28, 14, 0].map((d) => workout(d, 90))), 'g1', NOW)).toBeNull();
+    expect(goalEta(withGoal([28, 14, 0].map((d, i) => workout(d, 90 - i * 2.5))), 'g1', NOW)).toBeNull();
+    expect(goalEta(withGoal(steady.slice(3)), 'g1', NOW)).toBeNull();
+    // gamle træninger (over 8 uger) tæller ikke
+    expect(goalEta(withGoal([90, 80, 0].map((d, i) => workout(d, 80 + i * 5))), 'g1', NOW)).toBeNull();
+    // over et år væk
+    expect(goalEta(withGoal([28, 14, 0].map((d, i) => workout(d, 50 + i * 0.1))), 'g1', NOW)).toBeNull();
+  });
+
+  it('etaText: samme år, næste år og inden for en uge', () => {
+    expect(etaText(new Date(2026, 4, 10).getTime(), NOW)).toBe('ca. maj');
+    expect(etaText(new Date(2027, 2, 10).getTime(), NOW)).toBe('ca. marts 2027');
+    expect(etaText(NOW + 3 * DAY, NOW)).toBe('inden for en uge');
+  });
+
+  it('goalOnTrack er sand/falsk omkring måldatoen', () => {
+    expect(goalOnTrack(withGoal(steady, NOW + 35 * DAY), 'g1', NOW)).toBe(true);
+    expect(goalOnTrack(withGoal(steady, NOW + 20 * DAY), 'g1', NOW)).toBe(false);
+    expect(goalOnTrack(withGoal(steady), 'g1', NOW)).toBeNull();
   });
 });
