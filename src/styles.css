@@ -336,3 +336,13 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .recap-change { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0 0; font-weight: 600; }
 .recap-change .up { color: var(--ok); }
 .recap-change .down { color: var(--danger); }
+
+/* Milepæle (#183) */
+.ms-count { margin: 0 0 8px; }
+.milestones { list-style: none; margin: 0 0 8px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.ms-tile { display: grid; justify-items: center; gap: 2px; padding: 10px 6px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; opacity: 0.6; }
+.ms-tile:not(.on) .ms-icon { filter: grayscale(1); }
+.ms-tile.on { opacity: 1; border-color: var(--accent); }
+.ms-icon { font-size: 1.6rem; line-height: 1.2; }
+.ms-label { font-size: 0.8rem; overflow-wrap: anywhere; }
+.ms-tile small { font-size: 0.72rem; }

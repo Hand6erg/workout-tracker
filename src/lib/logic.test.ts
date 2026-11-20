@@ -49,6 +49,7 @@ import {
   milestones,
   milestonesUnlockedBy,
   milestoneProgressText,
+  milestoneTileLabel,
   bodyWeightAt,
   vsRowCells,
   shareCardLines,
@@ -2338,5 +2339,18 @@ describe('milepæle (#182)', () => {
     expect(milestonesUnlockedBy(s, 'w0').map((m) => m.id)).toEqual(['workouts-1']);
     expect(milestonesUnlockedBy(s, 'w5')).toEqual([]);
     expect(milestones(loadState(JSON.stringify(s))).map((m) => m.unlockedBy)).toEqual(milestones(s).map((m) => m.unlockedBy));
+  });
+});
+
+describe('milestoneTileLabel (#183)', () => {
+  it('låst viser fremskridt, låst op viser datoen', () => {
+    const w = { id: 'a', name: 'X', startedAt: new Date(2026, 10, 20, 10).getTime(), finishedAt: new Date(2026, 10, 20, 11).getTime(), exercises: [] };
+    const ms = milestones({ ...initialState(), history: [w] });
+    const first = ms.find((m) => m.id === 'workouts-1')!;
+    const ten = ms.find((m) => m.id === 'workouts-10')!;
+    expect(milestoneTileLabel(ten)).toBe('10 træninger – låst, 1 af 10 træninger');
+    expect(milestoneTileLabel(first)).toMatch(/^Første træning – låst op 20\. nov\.? 2026$/);
+    const bw = ms.find((m) => m.id === 'lift-bodyweight')!;
+    expect(milestoneTileLabel(bw)).toBe('Løftet din kropsvægt – låst, kræver en kropsvægt');
   });
 });
