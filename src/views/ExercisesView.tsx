@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { GoalsSection } from '../components/GoalsSection';
 import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import {
@@ -175,6 +176,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
         <h3 className="section">⏱ Pause mellem sæt</h3>
         <RestControls exerciseId={ex.id} />
       </section>
+      {kind === 'reps' && <GoalsSection exerciseId={ex.id} />}
       {!hist.length ? (
         <>
           <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
