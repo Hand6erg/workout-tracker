@@ -17,21 +17,26 @@ import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, t
 
 const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
 
+const FAVORITES = 'Favoritter';
+type Filter = Muscle | typeof FAVORITES;
+
 const shortDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short' });
 
 export function ExercisesView() {
   const { state } = useStore();
   const [query, setQuery] = useState('');
-  const [muscle, setMuscle] = useState<Muscle | null>(null);
+  const [filter, setFilter] = useState<Filter | null>(null);
   const [creating, setCreating] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const favs = new Set(state.favorites ?? []);
+    const match = (e: Exercise) => (filter === FAVORITES ? favs.has(e.id) : !filter || e.muscle === filter);
     return state.exercises
-      .filter((e) => (!muscle || e.muscle === muscle) && (!q || e.name.toLowerCase().includes(q)))
+      .filter((e) => match(e) && (!q || e.name.toLowerCase().includes(q)))
       .sort((a, b) => a.name.localeCompare(b.name, 'da'));
-  }, [state.exercises, query, muscle]);
+  }, [state.exercises, state.favorites, query, filter]);
 
   const open = state.exercises.find((e) => e.id === openId);
 
@@ -44,10 +49,11 @@ export function ExercisesView() {
         </button>
       </div>
       <input className="search" type="search" placeholder="Søg" value={query} onChange={(e) => setQuery(e.target.value)} />
-      <Chips options={MUSCLES} value={muscle} onChange={setMuscle} />
+      <Chips<Filter> options={[FAVORITES, ...MUSCLES]} value={filter} onChange={setFilter} label="Filtrer øvelser" />
       <ul className="list">
         {list.map((e) => (
-          <li key={e.id}>
+          <li key={e.id} className="fav-row">
+            <FavoriteButton exerciseId={e.id} name={e.name} />
             <button className="list-row" onClick={() => setOpenId(e.id)}>
               <span>
                 <strong>{e.name}</strong>
@@ -62,10 +68,30 @@ export function ExercisesView() {
           </li>
         ))}
       </ul>
-      {!list.length && <Empty>Ingen øvelser matcher.</Empty>}
+      {!list.length && (
+        <Empty>{filter === FAVORITES && !query.trim() ? 'Ingen favoritter endnu – tryk ☆ ved en øvelse.' : 'Ingen øvelser matcher.'}</Empty>
+      )}
       {creating && <NewExercise onClose={() => setCreating(false)} />}
       {open && <ExerciseDetail ex={open} onClose={() => setOpenId(null)} />}
     </div>
+  );
+}
+
+/** ☆/★ – marker en øvelse som favorit (#191). `name` gives med i listen, så hver knap har sit eget navn. */
+export function FavoriteButton({ exerciseId, name, big }: { exerciseId: string; name?: string; big?: boolean }) {
+  const { state, dispatch } = useStore();
+  const on = (state.favorites ?? []).includes(exerciseId);
+  const label = (on ? 'Fjern favorit' : 'Favorit') + (name ? ` ${name}` : '');
+  return (
+    <button
+      className={`fav-btn ${on ? 'on' : ''} ${big ? 'big' : ''}`}
+      aria-label={label}
+      aria-pressed={on}
+      onClick={() => dispatch({ type: 'TOGGLE_FAVORITE', exerciseId })}
+    >
+      {on ? '★' : '☆'}
+      {big && <span>{on ? ' Favorit' : ' Gør til favorit'}</span>}
+    </button>
   );
 }
 
@@ -139,9 +165,12 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
 
   return (
     <Modal title={ex.name} onClose={onClose}>
-      <p className="muted">
-        {ex.muscle} · {ex.equipment}
-      </p>
+      <div className="row-between">
+        <p className="muted">
+          {ex.muscle} · {ex.equipment}
+        </p>
+        <FavoriteButton exerciseId={ex.id} big />
+      </div>
       <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
         <h3 className="section">⏱ Pause mellem sæt</h3>
         <RestControls exerciseId={ex.id} />
