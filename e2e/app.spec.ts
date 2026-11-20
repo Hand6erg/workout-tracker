@@ -123,6 +123,7 @@ test('viser 🏆 når et sæt slår en rekord (#16)', async ({ page }) => {
   await expect(first.bench.getByRole('img', { name: /Ny rekord/ })).toHaveCount(0); // første gang er ingen rekord
   await first.workout.getByRole('button', { name: 'Afslut' }).click();
   await first.workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
 
   const second = await benchSet('85', '5');
   await expect(second.bench.getByRole('img', { name: 'Ny rekord: tungeste vægt, estimeret 1RM' })).toBeVisible();
@@ -162,6 +163,7 @@ test('viser 🏆 på træningskortet i historikken (#28)', async ({ page }) => {
     await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
     await page.getByRole('button', { name: 'Afslut' }).click();
     await page.getByRole('button', { name: 'Bekræft' }).click();
+    await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
   }
   await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
   const cards = page.getByRole('button', { name: 'Træning Push' });
@@ -197,6 +199,7 @@ test('viser fordeling på muskelgrupper under Profil (#23)', async ({ page }) =>
   await squat.getByRole('button', { name: 'Udført sæt 1' }).click();
   await page.getByRole('button', { name: 'Afslut' }).click();
   await page.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
 
   await page.getByRole('button', { name: 'Start Push' }).click();
   const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
@@ -415,6 +418,7 @@ test('viser forslag til næste vægt og udfylder med ét tryk (#72)', async ({ p
   }
   await page.getByRole('button', { name: 'Afslut' }).click();
   await page.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
 
   await page.getByRole('button', { name: 'Start Push' }).click();
   bench = page.getByRole('article', { name: 'Bænkpres', exact: true });

@@ -63,6 +63,8 @@ export interface Workout {
   note?: string;
   /** Skabelonen træningen blev startet fra (til programmet, #106) */
   templateId?: string;
+  /** Den afsluttede træning, denne gentager (#149). "Forrige" hentes derfra. Mangler = seneste gang. */
+  repeatOf?: string;
   /** Hvornår træningen sidst blev rettet efter den var afsluttet (til fletning mellem enheder, #91) */
   updatedAt?: number;
 }
@@ -106,6 +108,8 @@ export interface AppState {
   active: Workout | null;
   /** Kladde af en afsluttet træning, der rettes i (#87). Kun på denne enhed – rører aldrig `active`. */
   editing: Workout | null;
+  /** Træningen, der lige er afsluttet – dens opsummering vises (#142). Kun på denne enhed og nulstilles ved genindlæsning. */
+  lastFinishedId?: string | null;
   rest: RestTimer | null;
   restSeconds: number;
   /** Stangvægt i kg til pladeberegner og opvarmning */
@@ -122,6 +126,12 @@ export interface AppState {
   restSound: boolean;
   /** Vibration, når pausen er ved at være / er slut */
   restVibrate: boolean;
+  /** Hold skærmen tændt, mens en træning er i gang (#154) */
+  keepAwake: boolean;
+  /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
+  recapDismissed: string | null;
+  /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
+  favorites: string[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
   program: string[];
   /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */

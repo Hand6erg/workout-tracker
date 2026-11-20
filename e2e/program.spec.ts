@@ -69,6 +69,7 @@ test('startskærmen viser næste skabelon i programmet og går videre efter en t
   await first.getByRole('button', { name: 'Udført sæt 1' }).click();
   await workout.getByRole('button', { name: 'Afslut' }).click();
   await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click(); // opsummeringen (#143)
   await expect(workout).toBeHidden();
 
   await expect(next.getByRole('heading')).toHaveText('Næste: Pull');

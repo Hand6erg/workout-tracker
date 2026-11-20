@@ -137,6 +137,21 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ex-block header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .ex-block header h3 { flex: 1; }
 .ex-block h3 { color: var(--accent); }
+.ex-block h3 .vs-mark { margin-left: 8px; font-size: 0.8em; vertical-align: 1px; }
+.vs-mark.up { color: var(--ok); }
+.vs-mark.same, .vs-mark.down { color: var(--muted); }
+.vs-bar { margin: 4px 0 8px; padding: 6px 12px; border-radius: 999px; display: inline-block; font-size: 0.9rem; font-weight: 600; background: var(--surface-2); color: var(--muted); }
+.vs-bar.up { background: var(--ok-soft); color: var(--ok); }
+.vs-bar { border: 0; cursor: pointer; font-family: inherit; }
+.vs-bar::after { content: ' ›'; }
+.vs-sheet-date { margin: 0 0 10px; }
+.vs-table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.vs-table th, .vs-table td { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+.vs-table th[scope='row'], .vs-table thead th:first-child { text-align: left; white-space: normal; font-weight: 500; }
+.vs-table thead th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; }
+.vs-table .vs-new { color: var(--accent); }
+.vs-table .vs-mark { margin-left: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .sets { width: 100%; border-collapse: separate; border-spacing: 0 4px; font-size: 0.92rem; }
 .sets th { color: var(--muted); font-weight: 500; font-size: 0.75rem; text-transform: uppercase; padding: 2px; }
 .sets td { text-align: center; padding: 0 3px; }
@@ -182,6 +197,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .detail-ex { margin: 14px 0; }
 .detail-ex ol { margin: 6px 0; padding-left: 22px; color: var(--text); }
 .list-row.static { cursor: default; }
+.fav-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }
+.fav-row .list-row { border-bottom: 0; flex: 1; min-width: 0; }
+.fav-btn { min-width: 40px; min-height: 40px; font-size: 1.25rem; line-height: 1; color: var(--muted); }
+.fav-btn.on { color: #f5b301; }
+.fav-btn.big { font-size: 0.95rem; padding: 6px 12px; border-radius: 999px; background: var(--surface-2); color: var(--text); white-space: nowrap; }
+.fav-btn.big.on { background: var(--accent-soft); color: #f5b301; }
 
 /* Grafer */
 .chart-card { padding: 12px 12px 10px; }
@@ -286,3 +307,51 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .swap-ask { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; background: var(--accent-soft); border-radius: 10px; padding: 8px 10px; margin: 4px 0 8px; font-size: 0.9rem; }
 .swap-ask span { flex: 1 1 100%; }
 .swap-saved { color: var(--muted); font-size: 0.85rem; margin: 2px 0 6px; }
+
+/* Opsummering efter træning (#143) */
+.summary h1 { margin-bottom: 4px; }
+.summary > .muted { margin: 0 0 16px; }
+.summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.summary-stat { background: var(--surface); border-radius: var(--radius); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; }
+.summary-stat strong { font-size: 1.4rem; }
+.summary-change { background: var(--surface-2); border-radius: var(--radius); padding: 12px 16px; margin: 0 0 14px; font-weight: 600; }
+.summary-change.up { color: var(--ok); background: var(--ok-soft); }
+.summary-change.down { color: var(--danger); }
+.summary-records { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+.summary .card { margin-bottom: 16px; }
+
+/* Rekordvæg i Profil (#163) */
+.records-wall { list-style: none; margin: 0 0 8px; padding: 4px 14px; }
+.records-wall li { border-bottom: 1px solid var(--line); min-width: 0; }
+.rw-row { display: grid; gap: 4px; width: 100%; padding: 10px 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.rw-month { margin: 0 0 8px; font-weight: 600; color: var(--accent); }
+.records-wall li:last-child { border-bottom: 0; }
+.rw-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.rw-head strong { overflow-wrap: anywhere; }
+.rw-head small { white-space: nowrap; }
+.rw-lines { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.9rem; color: var(--muted); }
+
+/* Månedens opsummering (#169) */
+.recap-card { margin-bottom: 14px; border: 1px solid var(--accent-soft); }
+.recap-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.recap-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.recap-stat { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+.recap-stat dt { font-size: 0.75rem; }
+.recap-stat dd { margin: 2px 0 0; font-weight: 700; overflow-wrap: anywhere; }
+.recap-fav { margin: 10px 0 0; }
+.recap-change { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 8px 0 0; font-weight: 600; }
+.recap-change .up { color: var(--ok); }
+.recap-change .down { color: var(--danger); }
+
+/* Milepæle (#183) */
+.ms-count { margin: 0 0 8px; }
+.milestones { list-style: none; margin: 0 0 8px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.ms-tile { display: grid; justify-items: center; gap: 2px; padding: 10px 6px; text-align: center; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 0; opacity: 0.6; }
+.ms-tile:not(.on) .ms-icon { filter: grayscale(1); }
+.ms-tile.on { opacity: 1; border-color: var(--accent); }
+.ms-icon { font-size: 1.6rem; line-height: 1.2; }
+.ms-label { font-size: 0.8rem; overflow-wrap: anywhere; }
+.ms-tile small { font-size: 0.72rem; }
+.summary-badges { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); background: var(--accent-soft); }
+.summary-badge { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 4px 0; }
+.summary-badge > span:last-child { display: grid; gap: 2px; min-width: 0; }

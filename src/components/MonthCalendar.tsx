@@ -1,6 +1,8 @@
 import { useState } from 'react';
-import { trainingDays } from '../lib/logic';
+import { monthRecap, trainingDays } from '../lib/logic';
 import { useStore } from '../lib/store';
+import { MonthRecapStats } from './MonthRecap';
+import { Empty, Modal } from './ui';
 
 const WEEKDAYS = ['M', 'T', 'O', 'T', 'F', 'L', 'S'];
 const monthFmt = new Intl.DateTimeFormat('da-DK', { month: 'long', year: 'numeric' });
@@ -11,6 +13,7 @@ export function MonthCalendar({ onOpen }: { onOpen: (workoutId: string) => void 
   const { state } = useStore();
   const now = new Date();
   const [offset, setOffset] = useState(0);
+  const [recapOpen, setRecapOpen] = useState(false);
   const first = new Date(now.getFullYear(), now.getMonth() + offset, 1);
   const year = first.getFullYear();
   const month = first.getMonth();
@@ -65,6 +68,22 @@ export function MonthCalendar({ onOpen }: { onOpen: (workoutId: string) => void 
       <p className="muted cal-count">
         {total === 1 ? '1 træning' : `${total} træninger`} i {title.split(' ')[0]}
       </p>
+      <button className="btn-secondary wide recap-open" onClick={() => setRecapOpen(true)}>
+        <span aria-hidden>📅</span> Se månedens opsummering
+      </button>
+      {recapOpen && <RecapDialog year={year} month={month} title={title} onClose={() => setRecapOpen(false)} />}
     </section>
+  );
+}
+
+/** Opsummeringen for den måned, kalenderen viser (#170) */
+function RecapDialog({ year, month, title, onClose }: { year: number; month: number; title: string; onClose: () => void }) {
+  const { state } = useStore();
+  const r = monthRecap(state, year, month);
+  const name = title.charAt(0).toUpperCase() + title.slice(1);
+  return (
+    <Modal title={`Opsummering ${name}`} onClose={onClose}>
+      {r.workouts ? <MonthRecapStats r={r} /> : <Empty>Ingen træninger i denne måned</Empty>}
+    </Modal>
   );
 }

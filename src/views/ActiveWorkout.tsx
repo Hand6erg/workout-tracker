@@ -15,18 +15,22 @@ import {
   lastExerciseNote,
   NOTE_MAX,
   num,
-  previousSets,
+  previousSetsFor,
   progressionHint,
   restFor,
   recordsBrokenBy,
   supersetGroups,
   uncheckedFilledCount,
+  vsLastTime,
+  vsRowCells,
   warmupBaseWeight,
   workoutDuration,
   workoutTimingError,
   type Action,
   type ProgressionHint,
   type RecordKind,
+  type VsLastTime,
+  type VsStatus,
   type WorkoutChange,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
@@ -41,6 +45,8 @@ interface WorkoutCtxValue {
   base: AppState;
   edit: boolean;
   send: (a: WorkoutChange) => void;
+  /** Sammenligning med sidst (#176). Kun i den aktive træning. */
+  vs?: VsLastTime | null;
 }
 const WorkoutCtx = createContext<WorkoutCtxValue | null>(null);
 const useWorkout = () => useContext(WorkoutCtx)!;
@@ -55,9 +61,10 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   const done = doneSetCount(w);
   const unchecked = uncheckedFilledCount(w, state);
   const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
+  const vs = vsLastTime(state, w);
 
   return (
-    <WorkoutCtx.Provider value={{ w, base: state, edit: false, send: dispatch }}>
+    <WorkoutCtx.Provider value={{ w, base: state, edit: false, send: dispatch, vs }}>
     <section className="workout" aria-label="Aktiv træning">
       <header className="workout-head">
         <button className="btn-ghost" onClick={onMinimize} aria-label="Minimér">
@@ -93,7 +100,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
           Træningen er sat på pause – uret står stille.
         </p>
       )}
-      <WorkoutBody>
+      <WorkoutBody top={vs?.started ? <VsLastBar vs={vs} /> : null}>
         <ConfirmButton className="btn-danger wide" onConfirm={() => dispatch({ type: 'CANCEL_WORKOUT' })}>
           Annullér træning
         </ConfirmButton>
@@ -294,6 +301,82 @@ function WorkoutBody({ children, top }: { children?: ReactNode; top?: ReactNode 
   );
 }
 
+const VS_MARKS: Record<VsStatus, { icon: string; label: string }> = {
+  up: { icon: '▲', label: 'Slog sidst' },
+  same: { icon: '●', label: 'Som sidst' },
+  down: { icon: '▼', label: 'Under sidst' },
+};
+
+/** ▲ ● ▼ ved øvelsens navn, når alle dens sæt er krydset af (#176) */
+function VsMark({ status }: { status: VsStatus }) {
+  const m = VS_MARKS[status];
+  return (
+    <span className={`vs-mark ${status}`} role="img" aria-label={m.label} title={m.label}>
+      {m.icon}
+    </span>
+  );
+}
+
+/** "+320 kg vs. sidst" – løbende forskel mod sidste gang samme skabelon blev lavet (#176) */
+function vsBarText(diffKg: number): string {
+  if (diffKg === 0) return 'Som sidst';
+  const sign = diffKg > 0 ? '+' : '−';
+  return `${sign}${Math.abs(diffKg).toLocaleString('da-DK', { maximumFractionDigits: 1 })} kg vs. sidst`;
+}
+
+function VsLastBar({ vs }: { vs: VsLastTime }) {
+  const [open, setOpen] = useState(false);
+  const tone = vs.diffKg > 0 ? 'up' : vs.diffKg < 0 ? 'down' : 'same';
+  return (
+    <>
+      <button
+        type="button"
+        className={`vs-bar ${tone}`}
+        aria-label={`Mod sidst: ${vsBarText(vs.diffKg)}. Vis pr. øvelse`}
+        aria-haspopup="dialog"
+        data-testid="vs-bar"
+        onClick={() => setOpen(true)}
+      >
+        {vsBarText(vs.diffKg)}
+      </button>
+      {open && <VsLastSheet vs={vs} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Oversigt pr. øvelse: denne gang / sidst (#177) */
+function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
+  const date = new Date(vs.previousDate).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long' });
+  return (
+    <Modal title="Mod sidst" onClose={onClose}>
+      <p className="muted vs-sheet-date">Sammenlignet med {date}</p>
+      <table className="vs-table">
+        <thead>
+          <tr>
+            <th scope="col">Øvelse</th>
+            <th scope="col">I dag</th>
+            <th scope="col">Sidst</th>
+            <th scope="col"><span className="sr-only">Status</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {vs.rows.map((r) => {
+            const c = vsRowCells(r);
+            return (
+              <tr key={r.weId} aria-label={r.name}>
+                <th scope="row">{r.name}</th>
+                <td>{c.now}</td>
+                <td className={r.last === null ? 'vs-new' : undefined}>{c.last}</td>
+                <td>{r.status && <VsMark status={r.status} />}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </Modal>
+  );
+}
+
 /** "Forrige"-kolonnen i samme format som sættet */
 function prevText(p: SetEntry, kind: ExerciseKind): string {
   if (kind === 'time') return p.seconds ? `${num(p.seconds)} sek.` : '–';
@@ -397,9 +480,10 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
 
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { exerciseById } = useStore();
-  const { w, base: state, edit, send: dispatch } = useWorkout();
+  const { w, base: state, edit, send: dispatch, vs } = useWorkout();
   const ex = exerciseById(we.exerciseId);
-  const prev = previousSets(state.history, we.exerciseId);
+  const vsStatus = edit ? null : (vs?.rows.find((r) => r.weId === we.id)?.status ?? null);
+  const prev = previousSetsFor(state.history, w, we.exerciseId);
   const kind = exerciseKind(state, we.exerciseId);
   const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
   const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
@@ -427,7 +511,10 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   return (
     <article className="ex-block" aria-label={ex?.name}>
       <header>
-        <h3>{name}</h3>
+        <h3>
+          {name}
+          {vsStatus && <VsMark status={vsStatus} />}
+        </h3>
         {!edit && ex && (
           <button className="btn-ghost small rest-btn" aria-label={`Pause for ${name}: ${restLabel}`} onClick={() => setRestOpen(true)}>
             ⏱ {restLabel}

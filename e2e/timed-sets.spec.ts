@@ -40,12 +40,13 @@ test('Planke: stopuret tæller op og udfylder sekunderne (#134)', async ({ page 
   await page.clock.runFor(18_000);
   await page.screenshot({ path: 'test-results/timed-set-running.png' });
   await card.getByRole('button', { name: 'Stop stopur sæt 1' }).click();
-  await expect(card.getByLabel('Sekunder sæt 1')).toHaveValue('30');
+  // Uret kører også i virkelig tid under skærmbilledet, så et sekund ekstra er ok
+  await expect(card.getByLabel('Sekunder sæt 1')).toHaveValue(/^3[01]$/);
   await card.getByRole('button', { name: 'Udført sæt 1' }).click();
   await expect(card.getByRole('button', { name: 'Udført sæt 1' })).toHaveAttribute('aria-pressed', 'true');
 
   await finishAndOpenHistory(page);
-  await expect(page.getByRole('dialog')).toContainText('30 sek.');
+  await expect(page.getByRole('dialog')).toContainText(/3[01] sek\./);
 });
 
 test('Romaskine: meter og tid vises som "500 m · 2:05" (#134)', async ({ page }) => {
@@ -125,4 +126,32 @@ test('Planke 30 sek. og så 40 sek. giver rekorden "Længste hold 40 sek." (#136
   await expect(records.getByRole('listitem').filter({ hasText: 'Længste hold' })).toContainText('40 sek.');
   await expect(page.getByRole('dialog', { name: 'Planke' })).not.toContainText('Est. 1RM');
   await page.screenshot({ path: 'test-results/136-exercise-page.png' });
+});
+
+test('Planke gemt som skabelon starter med et sekundfelt, og CSV har "Sek." (#137)', async ({ page }) => {
+  const { card } = await startWith(page, 'plank', 'Planke');
+  await card.getByLabel('Sekunder sæt 1').fill('45');
+  await card.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await finishAndOpenHistory(page);
+  await page.getByRole('button', { name: 'Gem som skabelon' }).click();
+  await expect(page.getByRole('button', { name: 'Gemt som skabelon ✓' })).toBeVisible();
+  await page.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const [download] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Eksportér CSV' }).click()]);
+  const csv = await (await download.createReadStream()).toArray();
+  const text = Buffer.concat(csv).toString('utf8');
+  expect(text.split('\n')[0]).toContain('Sek.,Meter');
+  expect(text).toMatch(/,Planke,1,,,,45,/);
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  const tpl = page.getByRole('article', { name: /^Skabelon / }).last();
+  await expect(tpl).toContainText('Planke');
+  await tpl.getByRole('button', { name: /^Start/ }).click();
+  const planke = page.getByRole('region', { name: 'Aktiv træning' }).getByRole('article', { name: 'Planke', exact: true });
+  await expect(planke.getByRole('columnheader', { name: 'Sek.' })).toBeVisible();
+  await expect(planke.getByLabel('Vægt sæt 1')).toHaveCount(0);
+  await expect(planke.locator('td.prev').first()).toHaveText('45 sek.');
+  await page.clock.runFor(1000);
+  await page.screenshot({ path: 'test-results/137-template-plank.png' });
 });

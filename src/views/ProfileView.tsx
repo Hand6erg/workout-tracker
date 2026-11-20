@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react';
 import { AccountSection } from '../components/AccountSection';
 import { playRestAlert } from '../lib/alerts';
+import { wakeLockSupported } from '../lib/wakeLock';
 import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
+import { RecordsWall } from '../components/RecordsWall';
+import { MilestonesSection } from '../components/MilestonesSection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -51,6 +54,8 @@ export function ProfileView() {
       <StreakCard />
       <WeeklyVolume />
       <MuscleSplit />
+      <RecordsWall />
+      <MilestonesSection />
       <BodySection />
       <ProgramSection />
 
@@ -95,6 +100,16 @@ export function ProfileView() {
           🔔 Test
         </button>
       </div>
+
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.keepAwake}
+          onChange={(e) => dispatch({ type: 'SET_KEEP_AWAKE', on: e.target.checked })}
+        />
+        Hold skærmen tændt under træning
+      </label>
+      {!wakeLockSupported() && <p className="muted rest-global-note">Understøttes ikke i denne browser</p>}
 
       <label className="field">
         Mål: træninger pr. uge
