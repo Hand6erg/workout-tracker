@@ -953,6 +953,16 @@ export function milestoneProgressText(m: Milestone): string {
   }
 }
 
+/** Tilgængelig etiket til en milepæl-flise (#183), fx "10 træninger – låst, 1 af 10 træninger" */
+export function milestoneTileLabel(m: Milestone): string {
+  if (m.unlockedAt !== null) {
+    const d = new Date(m.unlockedAt).toLocaleDateString('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
+    return `${m.label} – låst op ${d}`;
+  }
+  if (m.target === null) return `${m.label} – låst, kræver en kropsvægt`;
+  return `${m.label} – låst, ${milestoneProgressText(m).replace(' / ', ' af ')}`;
+}
+
 export interface MuscleShare {
   muscle: Muscle;
   sets: number;

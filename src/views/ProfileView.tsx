@@ -6,6 +6,7 @@ import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
+import { MilestonesSection } from '../components/MilestonesSection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -54,6 +55,7 @@ export function ProfileView() {
       <WeeklyVolume />
       <MuscleSplit />
       <RecordsWall />
+      <MilestonesSection />
       <BodySection />
       <ProgramSection />
 
