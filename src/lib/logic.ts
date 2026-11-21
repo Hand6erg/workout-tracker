@@ -1297,6 +1297,8 @@ export interface ProgressionHint {
   next: { weight: number; reps: number };
   /** true hvis forslaget er et skridt op */
   increase: boolean;
+  /** Kropsvægtsøvelse (#209): vægten er ekstra vægt (+) eller assistance (−) oven på kropsvægten */
+  bodyweight?: boolean;
   /** Tids- og distanceøvelser (#136): sidste og foreslåede sekunder/meter */
   timed?: { kind: 'time' | 'distance'; last: { seconds: number; meters: number }; next: { seconds: number; meters: number } };
 }
@@ -1326,9 +1328,13 @@ function timedHint(state: AppState, exerciseId: string, kind: 'time' | 'distance
   };
 }
 
+/** Kropsvægtsøvelser (#209): ved så mange reps på alle sæt foreslås +2,5 kg ekstra (eller 2,5 kg mindre assistance) */
+export const BODYWEIGHT_REPS_TARGET = 12;
+
 /**
  * Enkel progression: nåede alle sæt sidst mindst samme reps som første sæt, foreslås et skridt op
- * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt, +1 rep for kropsvægt). Ellers samme igen.
+ * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt). Kropsvægtsøvelser (#209): +1 rep, indtil alle
+ * sæt har 12+ reps – så +2,5 kg ekstra vægt (for assisterede sæt: 2,5 kg mindre assistance). Ellers samme igen.
  */
 export function progressionHint(state: AppState, exerciseId: string): ProgressionHint | null {
   const kind = exerciseKind(state, exerciseId);
@@ -1339,9 +1345,17 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   const weight = Math.max(...sets.map((s) => num(s.weight)));
   const last = { sets: sets.length, reps, weight, repsList: sets.map((s) => num(s.reps)) };
   const allHit = sets.every((s) => num(s.reps) >= reps);
-  if (!allHit) return { last, next: { weight, reps }, increase: false };
   const equipment = state.exercises.find((e) => e.id === exerciseId)?.equipment;
-  if (equipment === 'Kropsvægt' || weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
+  if (equipment !== 'Kropsvægt' && !allHit) return { last, next: { weight, reps }, increase: false };
+  if (equipment === 'Kropsvægt') {
+    const bw = { bodyweight: true as const };
+    if (!allHit) return { last, next: { weight, reps }, increase: false, ...bw };
+    if (sets.every((s) => num(s.reps) >= BODYWEIGHT_REPS_TARGET)) {
+      return { last, next: { weight: Math.round((weight + 2.5) * 10) / 10, reps }, increase: true, ...bw };
+    }
+    return { last, next: { weight, reps: reps + 1 }, increase: true, ...bw };
+  }
+  if (weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
   const step = equipment === 'Håndvægt' ? 1 : 2.5;
   return { last, next: { weight: weight + step, reps }, increase: true };
 }
@@ -1947,7 +1961,7 @@ export function reducer(state: AppState, action: Action): AppState {
               ? s
               : {
                   ...s,
-                  weight: s.weight || (action.weight > 0 ? String(action.weight).replace('.', ',') : ''),
+                  weight: s.weight || (action.weight !== 0 ? String(action.weight).replace('.', ',') : ''),
                   reps: s.reps || (action.reps > 0 ? String(action.reps) : ''),
                   ...(action.seconds ? { seconds: s.seconds || String(action.seconds) } : {}),
                   ...(action.meters ? { meters: s.meters || String(action.meters).replace('.', ',') } : {}),
@@ -2408,13 +2422,16 @@ export function bodyToCsv(state: AppState): string {
 export function toCsv(state: AppState): string {
   const name = new Map(state.exercises.map((e) => [e.id, e.name]));
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter']];
+  // "Belastning (kg)" (#209): kropsvægt + ekstra vægt for kropsvægtsøvelser, tom for andre sæt
+  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)']];
   for (const w of [...state.history].reverse()) {
     const date = new Date(w.startedAt).toISOString();
     for (const ex of w.exercises) {
-      ex.sets.forEach((s, i) =>
-        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.')]),
-      );
+      const bw = isBodyweightReps(state, ex.exerciseId);
+      ex.sets.forEach((s, i) => {
+        const load = bw && !isTimedSet(s) ? String(setLoad(state, w, ex.exerciseId, s)) : '';
+        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load]);
+      });
     }
   }
   return rows.map((r) => r.map(esc).join(',')).join('\n');

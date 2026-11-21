@@ -71,6 +71,7 @@ import {
   isSetFilled,
   formatSet,
   bodyweightText,
+  BODYWEIGHT_REPS_TARGET,
   isBodyweightReps,
   parseClock,
   warmupSets,
@@ -1762,10 +1763,10 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
   it('CSV har kolonnerne "Sek." og "Meter", tomme for vægt × reps', () => {
     const s = finishedWith({ bench: { weight: '80', reps: '5' }, plank: { seconds: '45' }, rower: { meters: '500,5', seconds: '125' } });
     const lines = toCsv(s).split('\n');
-    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter');
-    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,$/);
-    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,$/);
-    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5$/);
+    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter,Belastning (kg)');
+    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,,$/);
+    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,,$/);
+    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5,$/);
   });
 
   it('backup og gendan beholder type, sekunder og meter', () => {
@@ -1786,7 +1787,7 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
     };
     const s = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(old)) });
     expect(s.history[0].exercises[0].sets[0]).toEqual(set);
-    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,$/);
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,,$/);
   });
 
   it('fletning mellem to enheder holder tidssæt intakte', () => {
@@ -2773,5 +2774,79 @@ describe('kropsvægtsøvelser som tekst (#208)', () => {
     expect(isBodyweightReps(s, 'pullup')).toBe(true);
     expect(isBodyweightReps(s, 'plank')).toBe(false);
     expect(isBodyweightReps(s, s.exercises.find((e) => e.equipment === 'Stang')!.id)).toBe(false);
+  });
+});
+
+describe('kropsvægtsøvelser: progression, egne øvelser og eksport (#209)', () => {
+  const T = Date.UTC(2026, 0, 5, 10);
+  function logged(exerciseId: string, sets: [string, string][], extra: Partial<AppState> = {}): AppState {
+    let s: AppState = { ...initialState(), ...extra };
+    s = reducer(s, { type: 'START_WORKOUT', now: T });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T });
+    });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T + 60_000 });
+  }
+
+  it('uden ekstra vægt: +1 rep, indtil alle sæt har 12+ – så +2,5 kg', () => {
+    expect(BODYWEIGHT_REPS_TARGET).toBe(12);
+    const a = progressionHint(logged('pullup', [['', '10'], ['', '10']]), 'pullup')!;
+    expect(a).toMatchObject({ next: { weight: 0, reps: 11 }, increase: true, bodyweight: true });
+    const b = progressionHint(logged('pullup', [['', '12'], ['', '12'], ['', '12']]), 'pullup')!;
+    expect(b).toMatchObject({ next: { weight: 2.5, reps: 12 }, increase: true, bodyweight: true });
+    // Ikke alle sæt nåede målet: samme igen
+    const c = progressionHint(logged('pullup', [['', '12'], ['', '9']]), 'pullup')!;
+    expect(c).toMatchObject({ next: { weight: 0, reps: 12 }, increase: false, bodyweight: true });
+  });
+
+  it('med vægtbælte: +1 rep, ved 12+ reps +2,5 kg ekstra', () => {
+    expect(progressionHint(logged('pullup', [['10', '8'], ['10', '8']]), 'pullup')!.next).toEqual({ weight: 10, reps: 9 });
+    expect(progressionHint(logged('dips', [['10', '12'], ['10', '13']]), 'dips')!.next).toEqual({ weight: 12.5, reps: 12 });
+  });
+
+  it('assisteret: +1 rep, ved 12+ reps 2,5 kg mindre assistance', () => {
+    expect(progressionHint(logged('pullup', [['-20', '8']]), 'pullup')!.next).toEqual({ weight: -20, reps: 9 });
+    expect(progressionHint(logged('pullup', [['-20', '12'], ['-20', '12']]), 'pullup')!.next).toEqual({ weight: -17.5, reps: 12 });
+    expect(progressionHint(logged('pullup', [['-2,5', '12']]), 'pullup')!.next).toEqual({ weight: 0, reps: 12 });
+  });
+
+  it('APPLY_HINT udfylder negativ assistance', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['pullup'] });
+    const weId = s.active!.exercises[0].id;
+    s = reducer(s, { type: 'APPLY_HINT', weId, weight: -17.5, reps: 12 });
+    expect(s.active!.exercises[0].sets[0]).toMatchObject({ weight: '-17,5', reps: '12' });
+  });
+
+  it('egne øvelser med udstyret "Kropsvægt" er kropsvægtsøvelser', () => {
+    const id = 'ringrows';
+    let s = reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id, name: 'Ringrows', muscle: 'Ryg', equipment: 'Kropsvægt' });
+    expect(isBodyweightReps(s, id)).toBe(true);
+    s = logged(id, [['5', '10']], { exercises: s.exercises, bodyWeight: 80 });
+    expect(progressionHint(s, id)).toMatchObject({ bodyweight: true });
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Ringrows,1,5,10,,,,85$/);
+  });
+
+  it('CSV: "Belastning (kg)" = kropsvægt + ekstra for kropsvægtssæt, tom for andre', () => {
+    const s = logged('pullup', [['', '10'], ['10', '8'], ['-20', '6']], { bodyWeight: 80 });
+    const lines = toCsv(s).split('\n');
+    expect(lines[0].split(',').at(-1)).toBe('Belastning (kg)');
+    expect(lines[1]).toMatch(/,Pull-up,1,,10,,,,80$/);
+    expect(lines[2]).toMatch(/,Pull-up,2,10,8,,,,90$/);
+    expect(lines[3]).toMatch(/,Pull-up,3,-20,6,,,,60$/);
+    const b = logged('bench', [['100', '5']], { bodyWeight: 80 });
+    expect(toCsv(b).split('\n')[1]).toMatch(/,Bænkpres,1,100,5,,,,$/);
+  });
+
+  it('backup med kropsvægtssæt gendannes uændret', () => {
+    const s = logged('pullup', [['-20', '6']], { bodyWeight: 80 });
+    const restored = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(s)) });
+    expect(restored.history).toEqual(s.history);
+    expect(restored.bodyWeight).toBe(80);
   });
 });

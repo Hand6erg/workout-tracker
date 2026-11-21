@@ -170,6 +170,12 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
       <div className="row-between">
         <p className="muted">
           {ex.muscle} · {ex.equipment}
+          {isBodyweightReps(state, ex.id) && (
+            <>
+              <br />
+              <small>Kropsvægt + ekstra vægt</small>
+            </>
+          )}
         </p>
         <FavoriteButton exerciseId={ex.id} big />
       </div>
