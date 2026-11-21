@@ -6,6 +6,7 @@ import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
+import { ProfileGoals } from '../components/GoalsSection';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
@@ -54,6 +55,7 @@ export function ProfileView() {
       <StreakCard />
       <WeeklyVolume />
       <MuscleSplit />
+      <ProfileGoals />
       <RecordsWall />
       <MilestonesSection />
       <BodySection />

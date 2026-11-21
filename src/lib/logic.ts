@@ -1405,6 +1405,20 @@ export function goalOnTrack(state: Pick<AppState, 'history' | 'goals'>, goalId: 
   return eta <= goal.targetDate;
 }
 
+/** Alle mål til Profil (#200): åbne mål sorteret efter fremskridt (tættest på først), nåede mål nyeste først */
+export function goalsOverview(
+  state: Pick<AppState, 'history' | 'goals' | 'exercises'>,
+): { open: { goal: LiftGoal; pct: number }[]; reached: LiftGoal[] } {
+  const known = new Set(state.exercises.map((e) => e.id));
+  const goals = (state.goals ?? []).filter((g) => known.has(g.exerciseId));
+  const open = goals
+    .filter((g) => !g.achievedAt)
+    .map((goal) => ({ goal, pct: goalProgress(state, goal.id)!.pct }))
+    .sort((a, b) => b.pct - a.pct || a.goal.createdAt - b.goal.createdAt);
+  const reached = goals.filter((g) => g.achievedAt).sort((a, b) => (b.achievedAt ?? 0) - (a.achievedAt ?? 0));
+  return { open, reached };
+}
+
 /* ---------- Program (#106) ---------- */
 
 /** Programmets skabeloner i rækkefølge – slettede skabeloner springes over */

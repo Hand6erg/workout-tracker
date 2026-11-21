@@ -81,3 +81,48 @@ test('et nået mål vises under "Nået" med dato, og tidsøvelser har ingen mål
   await page.getByRole('button', { name: /^Planke/ }).first().click();
   await expect(page.getByRole('dialog', { name: 'Planke' }).getByRole('region', { name: 'Mål' })).toHaveCount(0);
 });
+
+async function setGoal(page: Page, name: string, kg: string) {
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: new RegExp(`^${name}`) }).first().click();
+  const detail = page.getByRole('dialog', { name });
+  const goals = detail.getByRole('region', { name: 'Mål' });
+  await goals.getByRole('button', { name: '+ Sæt mål' }).click();
+  await goals.getByLabel('Mål-vægt (kg)').fill(kg);
+  await goals.getByRole('button', { name: 'Gem mål' }).click();
+  await detail.getByRole('button', { name: 'Luk' }).click();
+}
+
+test('Profil viser alle mål sorteret efter fremskridt, og et tryk åbner øvelsen (#200)', async ({ page }) => {
+  await page.goto('./');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+
+  // Uden mål: en hint-tekst
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const empty = page.getByRole('region', { name: 'Mål', exact: true });
+  await expect(empty).toContainText('Sæt et mål på en øvelses side');
+
+  await setGoal(page, 'Bænkpres', '70');
+  await logBench(page, '80', '1');
+  await setGoal(page, 'Bænkpres', '100');
+  await setGoal(page, 'Squat', '120');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const goals = page.getByRole('region', { name: 'Mål', exact: true });
+  const rows = goals.getByRole('listitem');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toHaveAccessibleName('Mål Bænkpres 100 kg × 1');
+  await expect(rows.nth(1)).toHaveAccessibleName('Mål Squat 120 kg × 1');
+  await expect(goals.getByRole('progressbar', { name: 'Fremskridt mod Bænkpres 100 kg × 1' })).toHaveAttribute('aria-valuenow', '80');
+  await expect(goals.getByRole('progressbar', { name: 'Fremskridt mod Squat 120 kg × 1' })).toHaveAttribute('aria-valuenow', '0');
+
+  // Det nåede mål (70 kg) ligger sammenklappet under "Nået (1)"
+  await goals.getByRole('button', { name: /Nået \(1\)/ }).click();
+  await expect(goals.getByRole('listitem', { name: 'Nået mål Bænkpres 70 kg × 1' })).toContainText('✓ Nået');
+  await goals.getByRole('button', { name: /Nået \(1\)/ }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/profile-goals.png' });
+
+  await goals.getByRole('button', { name: 'Åbn Squat 120 kg × 1' }).click();
+  await expect(page.getByRole('dialog', { name: 'Squat' })).toBeVisible();
+});

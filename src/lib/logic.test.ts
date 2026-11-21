@@ -22,6 +22,7 @@ import {
   recentExercises,
   pickerGroups,
   goalProgress,
+  goalsOverview,
   goalEta,
   etaText,
   goalOnTrack,
@@ -2544,5 +2545,38 @@ describe('løftemål: i dette tempo (#198)', () => {
     expect(goalOnTrack(withGoal(steady, NOW + 35 * DAY), 'g1', NOW)).toBe(true);
     expect(goalOnTrack(withGoal(steady, NOW + 20 * DAY), 'g1', NOW)).toBe(false);
     expect(goalOnTrack(withGoal(steady), 'g1', NOW)).toBeNull();
+  });
+});
+
+describe('mål i Profil (#200)', () => {
+  const D = 1_700_000_000_000;
+  const add = (s: AppState, id: string, exerciseId: string, weight: number, now = D) =>
+    trackedReducer(s, { type: 'ADD_GOAL', id, exerciseId, weight, reps: 1, now, at: now });
+  const lift = (s: AppState, exerciseId: string, weight: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps: '1' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('tom uden mål', () => {
+    expect(goalsOverview(initialState())).toEqual({ open: [], reached: [] });
+  });
+
+  it('åbne mål sorteres efter fremskridt, nåede mål nyeste først', () => {
+    let s = add(initialState(), 'b', 'bench', 100);
+    s = add(s, 'q', 'squat', 100);
+    s = add(s, 'r1', 'bench', 50);
+    s = lift(s, 'bench', '50', D + 1000);
+    s = add(s, 'r2', 'squat', 40, D + 2000);
+    s = lift(s, 'squat', '90', D + 5000);
+    const o = goalsOverview(s);
+    expect(o.open.map((x) => [x.goal.id, x.pct])).toEqual([
+      ['q', 90],
+      ['b', 50],
+    ]);
+    expect(o.reached.map((g) => g.id)).toEqual(['r2', 'r1']);
   });
 });
