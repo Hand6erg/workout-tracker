@@ -126,3 +126,31 @@ test('Profil viser alle mål sorteret efter fremskridt, og et tryk åbner øvels
   await goals.getByRole('button', { name: 'Åbn Squat 120 kg × 1' }).click();
   await expect(page.getByRole('dialog', { name: 'Squat' })).toBeVisible();
 });
+
+test('et nået mål fejres på opsummeringen efter "Afslut" (#201)', async ({ page }) => {
+  await page.goto('./');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await setGoal(page, 'Bænkpres', '100');
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByPlaceholder('Søg efter øvelse').fill('bænk');
+  await picker.getByRole('button', { name: /^Bænkpres/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+  const bench = workout.getByRole('article', { name: 'Bænkpres' });
+  await bench.getByLabel('Vægt sæt 1').fill('100');
+  await bench.getByLabel('Reps sæt 1').fill('1');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+
+  const card = page.getByRole('region', { name: 'Mål nået' });
+  await expect(card).toContainText('Mål nået!');
+  await expect(card).toContainText('Bænkpres');
+  await expect(card).toContainText('100 kg × 1');
+  await page.screenshot({ path: 'test-results/summary-goal.png' });
+});

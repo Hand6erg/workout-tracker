@@ -1892,6 +1892,7 @@ describe('delebillede af opsummeringen (#144)', () => {
       recordCount: 2,
       volumeChangePct: 25,
       previousVolume: 1000,
+      goals: [{ goalId: 'g1', exerciseId: 'bench', name: 'Bænkpres', weight: 100, reps: 1 }],
     });
     expect(card.app).toBe('Løft');
     expect(card.date).toBe('15. november 2026');
@@ -1903,14 +1904,14 @@ describe('delebillede af opsummeringen (#144)', () => {
       { label: 'Rekorder', value: '2' },
     ]);
     expect(card.change).toBe('+25 % volumen siden sidst');
-    expect(card.records).toEqual(['🏆 Bænkpres – tungeste vægt, estimeret 1RM']);
+    expect(card.records).toEqual(['🎯 Mål nået: Bænkpres 100 kg × 1', '🏆 Bænkpres – tungeste vægt, estimeret 1RM']);
     expect(card.fileName).toBe('loeft-2026-11-15.png');
   });
 
   it('uden sammenligning og rekorder er de linjer tomme', () => {
     const base = {
       workoutId: 'w1', name: 'Tom træning', startedAt: T0, durationMs: 0, volume: 0, sets: 1,
-      records: [], recordCount: 0, volumeChangePct: null, previousVolume: null,
+      records: [], recordCount: 0, volumeChangePct: null, previousVolume: null, goals: [],
     };
     const card = shareCardLines(base);
     expect(card.change).toBeNull();
@@ -2578,5 +2579,30 @@ describe('mål i Profil (#200)', () => {
       ['b', 50],
     ]);
     expect(o.reached.map((g) => g.id)).toEqual(['r2', 'r1']);
+  });
+});
+
+describe('nåede mål i opsummeringen (#201)', () => {
+  const D = 1_700_000_000_000;
+  const lift = (s: AppState, weight: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps: '1' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('lister mål nået i træningen – og kun i den', () => {
+    let s = trackedReducer(initialState(), { type: 'ADD_GOAL', id: 'g1', exerciseId: 'bench', weight: 100, reps: 1, now: D, at: D });
+    s = lift(s, '90', D + 1000);
+    const miss = s.history[s.history.length - 1].id;
+    expect(workoutSummary(s, miss)!.goals).toEqual([]);
+    s = lift(s, '100', D + 9000);
+    const hit = s.history.find((w) => w.id !== miss)!.id;
+    expect(workoutSummary(s, hit)!.goals).toEqual([{ goalId: 'g1', exerciseId: 'bench', name: 'Bænkpres', weight: 100, reps: 1 }]);
+    s = lift(s, '105', D + 20000);
+    const later = s.history.find((w) => w.id !== miss && w.id !== hit)!.id;
+    expect(workoutSummary(s, later)!.goals).toEqual([]);
   });
 });

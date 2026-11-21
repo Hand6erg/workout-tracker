@@ -552,6 +552,8 @@ export interface WorkoutSummary {
   /** Ændring i volumen i hele procent siden sidste træning fra samme skabelon (null = intet at sammenligne med) */
   volumeChangePct: number | null;
   previousVolume: number | null;
+  /** Løftemål nået i denne træning (#201) */
+  goals: { goalId: string; exerciseId: string; name: string; weight: number; reps: number }[];
 }
 
 /** Den seneste afsluttede træning fra samme skabelon før `w` */
@@ -586,6 +588,9 @@ export function workoutSummary(state: AppState, workoutId: string): WorkoutSumma
     recordCount: recordCount(recs),
     volumeChangePct,
     previousVolume: previousVolume || null,
+    goals: (state.goals ?? [])
+      .filter((g) => g.achievedAt !== undefined && g.achievedAt === (w.finishedAt ?? w.startedAt) && w.exercises.some((we) => we.exerciseId === g.exerciseId))
+      .map((g) => ({ goalId: g.id, exerciseId: g.exerciseId, name: names.get(g.exerciseId) ?? g.exerciseId, weight: g.weight, reps: g.reps })),
   };
 }
 
@@ -744,7 +749,10 @@ export function shareCardLines(s: WorkoutSummary): ShareCard {
       { label: 'Rekorder', value: String(s.recordCount) },
     ],
     change: volumeChangeText(s.volumeChangePct),
-    records: s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
+    records: [
+      ...(s.goals ?? []).map((g) => `🎯 Mål nået: ${g.name} ${formatKg(g.weight)} × ${g.reps}`),
+      ...s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
+    ],
     fileName: `loeft-${iso}.png`,
   };
 }
