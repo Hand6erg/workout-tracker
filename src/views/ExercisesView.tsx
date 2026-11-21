@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { GoalsSection } from '../components/GoalsSection';
 import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import {
@@ -7,6 +8,7 @@ import {
   formatClock,
   formatKg,
   formatSet,
+  isBodyweightReps,
   num,
   personalRecords,
   uid,
@@ -155,7 +157,7 @@ function NewExercise({ onClose }: { onClose: () => void }) {
 /** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
 export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
   const { state } = useStore();
-  const hist = exerciseHistory(state.history, ex.id);
+  const hist = exerciseHistory(state.history, ex.id, state);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
   const kind = exerciseKind(state, ex.id);
   // Tids- og distanceøvelser måles i sekunder/meter i stedet for 1RM (#136)
@@ -168,6 +170,12 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
       <div className="row-between">
         <p className="muted">
           {ex.muscle} · {ex.equipment}
+          {isBodyweightReps(state, ex.id) && (
+            <>
+              <br />
+              <small>Kropsvægt + ekstra vægt</small>
+            </>
+          )}
         </p>
         <FavoriteButton exerciseId={ex.id} big />
       </div>
@@ -175,6 +183,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
         <h3 className="section">⏱ Pause mellem sæt</h3>
         <RestControls exerciseId={ex.id} />
       </section>
+      {kind === 'reps' && <GoalsSection exerciseId={ex.id} />}
       {!hist.length ? (
         <>
           <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
@@ -210,7 +219,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <li key={h.workoutId} className="list-row static">
                 <span>
                   <strong>{shortDate.format(h.date)}</strong>
-                  <small>{h.sets.map(formatSet).join(' · ')}</small>
+                  <small>{h.sets.map((s) => formatSet(s, isBodyweightReps(state, ex.id))).join(' · ')}</small>
                 </span>
                 <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
               </li>

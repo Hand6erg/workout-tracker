@@ -20,6 +20,12 @@ import {
   loadState,
   mergeStates,
   recentExercises,
+  pickerGroups,
+  goalProgress,
+  goalsOverview,
+  goalEta,
+  etaText,
+  goalOnTrack,
   stampChanges,
   personalRecords,
   platesPerSide,
@@ -52,6 +58,11 @@ import {
   milestoneProgressText,
   milestoneTileLabel,
   bodyWeightAt,
+  bodyWeightOn,
+  setLoad,
+  withLoads,
+  loadedState,
+  isBodyweight,
   vsRowCells,
   shareCardLines,
   trainingDays,
@@ -59,6 +70,9 @@ import {
   exerciseKind,
   isSetFilled,
   formatSet,
+  bodyweightText,
+  BODYWEIGHT_REPS_TARGET,
+  isBodyweightReps,
   parseClock,
   warmupSets,
   warmupBaseWeight,
@@ -1749,10 +1763,10 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
   it('CSV har kolonnerne "Sek." og "Meter", tomme for vægt × reps', () => {
     const s = finishedWith({ bench: { weight: '80', reps: '5' }, plank: { seconds: '45' }, rower: { meters: '500,5', seconds: '125' } });
     const lines = toCsv(s).split('\n');
-    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter');
-    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,$/);
-    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,$/);
-    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5$/);
+    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter,Belastning (kg)');
+    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,,$/);
+    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,,$/);
+    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5,$/);
   });
 
   it('backup og gendan beholder type, sekunder og meter', () => {
@@ -1773,7 +1787,7 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
     };
     const s = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(old)) });
     expect(s.history[0].exercises[0].sets[0]).toEqual(set);
-    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,$/);
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,,$/);
   });
 
   it('fletning mellem to enheder holder tidssæt intakte', () => {
@@ -1886,6 +1900,7 @@ describe('delebillede af opsummeringen (#144)', () => {
       recordCount: 2,
       volumeChangePct: 25,
       previousVolume: 1000,
+      goals: [{ goalId: 'g1', exerciseId: 'bench', name: 'Bænkpres', weight: 100, reps: 1 }],
     });
     expect(card.app).toBe('Løft');
     expect(card.date).toBe('15. november 2026');
@@ -1897,14 +1912,14 @@ describe('delebillede af opsummeringen (#144)', () => {
       { label: 'Rekorder', value: '2' },
     ]);
     expect(card.change).toBe('+25 % volumen siden sidst');
-    expect(card.records).toEqual(['🏆 Bænkpres – tungeste vægt, estimeret 1RM']);
+    expect(card.records).toEqual(['🎯 Mål nået: Bænkpres 100 kg × 1', '🏆 Bænkpres – tungeste vægt, estimeret 1RM']);
     expect(card.fileName).toBe('loeft-2026-11-15.png');
   });
 
   it('uden sammenligning og rekorder er de linjer tomme', () => {
     const base = {
       workoutId: 'w1', name: 'Tom træning', startedAt: T0, durationMs: 0, volume: 0, sets: 1,
-      records: [], recordCount: 0, volumeChangePct: null, previousVolume: null,
+      records: [], recordCount: 0, volumeChangePct: null, previousVolume: null, goals: [],
     };
     const card = shareCardLines(base);
     expect(card.change).toBeNull();
@@ -2398,6 +2413,17 @@ describe('favoritøvelser og senest brugt (#190)', () => {
     expect(recentExercises(initialState())).toEqual([]);
   });
 
+  it('pickerGroups viser favoritter og senest brugte uden dubletter (#192)', () => {
+    const st: AppState = {
+      ...initialState(),
+      favorites: ['squat', 'slettet'],
+      history: [mk('new', 3000, ['bench', 'squat']), mk('old', 1000, ['deadlift', 'row'])],
+    };
+    expect(pickerGroups(st)).toEqual({ favorites: ['squat'], recent: ['bench', 'deadlift', 'row'] });
+    expect(pickerGroups(st, 1).recent).toEqual(['bench']);
+    expect(pickerGroups(initialState())).toEqual({ favorites: [], recent: [] });
+  });
+
   it('gamle data uden favoritter indlæses, og en backup gendanner dem', () => {
     const old = JSON.parse(JSON.stringify(initialState()));
     delete old.favorites;
@@ -2414,5 +2440,413 @@ describe('favoritøvelser og senest brugt (#190)', () => {
     const oldRemote = JSON.parse(JSON.stringify(initialState()));
     delete oldRemote.favorites;
     expect(mergeStates({ ...initialState(), favorites: ['bench'] }, { ...oldRemote, settingsAt: 999 }).favorites).toEqual(['bench']);
+  });
+});
+
+describe('løftemål (#197)', () => {
+  const D = 1_700_000_000_000;
+  const addGoal = (s: AppState, id: string, weight: number, reps: number) =>
+    trackedReducer(s, { type: 'ADD_GOAL', id, exerciseId: 'bench', weight, reps, now: D, at: D });
+  const lift = (s: AppState, weight: string, reps: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('tilføjer og sletter et mål – det slettede mål får en gravsten', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    expect(s.goals).toHaveLength(1);
+    expect(s.goals[0]).toMatchObject({ exerciseId: 'bench', weight: 100, reps: 1, createdAt: D });
+    expect(addGoal(s, 'bad', 0, 1).goals).toHaveLength(1); // ugyldig vægt
+    expect(trackedReducer(s, { type: 'ADD_GOAL', id: 'x', exerciseId: 'findes-ikke', weight: 50, reps: 1, now: D }).goals).toHaveLength(1);
+    s = trackedReducer(s, { type: 'DELETE_GOAL', goalId: 'g1', at: D + 5 });
+    expect(s.goals).toEqual([]);
+    expect(s.deleted.g1).toBe(D + 5);
+  });
+
+  it('fremskridt ud fra den bedste e1RM, højst 100 %', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    expect(goalProgress(s, 'g1')).toEqual({ current: 0, target: 100, pct: 0 });
+    s = lift(s, '80', '1', D + 1000);
+    expect(goalProgress(s, 'g1')).toEqual({ current: 80, target: 100, pct: 80 });
+    s = addGoal(s, 'g2', 60, 1);
+    expect(goalProgress(s, 'g2')!.pct).toBe(100);
+    expect(goalProgress(s, 'ukendt')).toBeNull();
+  });
+
+  it('100 kg × 1 når målet med datoen, 97,5 kg × 1 gør ikke', () => {
+    let s = addGoal(initialState(), 'g1', 100, 1);
+    s = lift(s, '97.5', '1', D + 1000);
+    expect(s.goals[0].achievedAt).toBeUndefined();
+    s = lift(s, '100', '1', D + 9000);
+    expect(s.goals[0].achievedAt).toBe(D + 9000 + 60_000);
+    expect(goalProgress(s, 'g1')!.pct).toBe(100);
+  });
+
+  it('mål flettes mellem enheder, og et slettet mål forbliver slettet', () => {
+    const phone = addGoal(addGoal(initialState(), 'g1', 100, 1), 'g2', 140, 5);
+    const pc = addGoal(initialState(), 'g3', 60, 10);
+    const merged = mergeStates(pc, phone);
+    expect(merged.goals.map((g) => g.id).sort()).toEqual(['g1', 'g2', 'g3']);
+    const phoneDel = trackedReducer(phone, { type: 'DELETE_GOAL', goalId: 'g2', at: D + 10 });
+    expect(mergeStates(merged, phoneDel).goals.map((g) => g.id).sort()).toEqual(['g1', 'g3']);
+    // et nået mål vinder over den gamle udgave
+    const reached = { ...phone, goals: phone.goals.map((g) => (g.id === 'g1' ? { ...g, achievedAt: D + 50, updatedAt: D + 50 } : g)) };
+    expect(mergeStates(merged, reached).goals.find((g) => g.id === 'g1')!.achievedAt).toBe(D + 50);
+  });
+
+  it('gamle data uden mål indlæses uændret, og en backup gendanner målene', () => {
+    const old = JSON.parse(JSON.stringify({ ...initialState(), history: [] }));
+    delete old.goals;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.goals).toEqual([]);
+    expect(loaded.templates).toEqual(old.templates);
+    const backup = addGoal(initialState(), 'g1', 100, 1);
+    expect(loadState(JSON.stringify(backup)).goals).toEqual(backup.goals);
+  });
+});
+
+describe('løftemål: i dette tempo (#198)', () => {
+  const DAY = 86_400_000;
+  const NOW = new Date(2026, 2, 1, 12).getTime(); // 1. marts 2026
+  const workout = (daysAgo: number, weight: number): Workout => ({
+    id: `w${daysAgo}`,
+    name: 'Bryst',
+    startedAt: NOW - daysAgo * DAY,
+    finishedAt: NOW - daysAgo * DAY + 3_600_000,
+    exercises: [{ id: `we${daysAgo}`, exerciseId: 'bench', sets: [{ id: `s${daysAgo}`, weight: String(weight), reps: '1', rpe: '', done: true }] }],
+  });
+  const withGoal = (history: Workout[], targetDate?: number): AppState => ({
+    ...initialState(),
+    history,
+    goals: [{ id: 'g1', exerciseId: 'bench', weight: 100, reps: 1, createdAt: NOW - 60 * DAY, ...(targetDate ? { targetDate } : {}) }],
+  });
+  // +2,5 kg om ugen: 80 → 90 kg over de sidste 4 uger
+  const steady = [28, 21, 14, 7, 0].map((d, i) => workout(d, 80 + i * 2.5));
+
+  it('en jævn stigning på 2,5 kg om ugen giver den forventede måned', () => {
+    const eta = goalEta(withGoal(steady), 'g1', NOW)!;
+    // 10 kg mangler à 2,5 kg/uge = 4 uger → slutningen af marts
+    expect(Math.round((eta - NOW) / DAY)).toBe(28);
+    expect(etaText(eta, NOW)).toBe('ca. marts');
+  });
+
+  it('flad eller faldende trend og under 3 træninger giver null', () => {
+    expect(goalEta(withGoal([28, 14, 0].map((d) => workout(d, 90))), 'g1', NOW)).toBeNull();
+    expect(goalEta(withGoal([28, 14, 0].map((d, i) => workout(d, 90 - i * 2.5))), 'g1', NOW)).toBeNull();
+    expect(goalEta(withGoal(steady.slice(3)), 'g1', NOW)).toBeNull();
+    // gamle træninger (over 8 uger) tæller ikke
+    expect(goalEta(withGoal([90, 80, 0].map((d, i) => workout(d, 80 + i * 5))), 'g1', NOW)).toBeNull();
+    // over et år væk
+    expect(goalEta(withGoal([28, 14, 0].map((d, i) => workout(d, 50 + i * 0.1))), 'g1', NOW)).toBeNull();
+  });
+
+  it('etaText: samme år, næste år og inden for en uge', () => {
+    expect(etaText(new Date(2026, 4, 10).getTime(), NOW)).toBe('ca. maj');
+    expect(etaText(new Date(2027, 2, 10).getTime(), NOW)).toBe('ca. marts 2027');
+    expect(etaText(NOW + 3 * DAY, NOW)).toBe('inden for en uge');
+  });
+
+  it('goalOnTrack er sand/falsk omkring måldatoen', () => {
+    expect(goalOnTrack(withGoal(steady, NOW + 35 * DAY), 'g1', NOW)).toBe(true);
+    expect(goalOnTrack(withGoal(steady, NOW + 20 * DAY), 'g1', NOW)).toBe(false);
+    expect(goalOnTrack(withGoal(steady), 'g1', NOW)).toBeNull();
+  });
+});
+
+describe('mål i Profil (#200)', () => {
+  const D = 1_700_000_000_000;
+  const add = (s: AppState, id: string, exerciseId: string, weight: number, now = D) =>
+    trackedReducer(s, { type: 'ADD_GOAL', id, exerciseId, weight, reps: 1, now, at: now });
+  const lift = (s: AppState, exerciseId: string, weight: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps: '1' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('tom uden mål', () => {
+    expect(goalsOverview(initialState())).toEqual({ open: [], reached: [] });
+  });
+
+  it('åbne mål sorteres efter fremskridt, nåede mål nyeste først', () => {
+    let s = add(initialState(), 'b', 'bench', 100);
+    s = add(s, 'q', 'squat', 100);
+    s = add(s, 'r1', 'bench', 50);
+    s = lift(s, 'bench', '50', D + 1000);
+    s = add(s, 'r2', 'squat', 40, D + 2000);
+    s = lift(s, 'squat', '90', D + 5000);
+    const o = goalsOverview(s);
+    expect(o.open.map((x) => [x.goal.id, x.pct])).toEqual([
+      ['q', 90],
+      ['b', 50],
+    ]);
+    expect(o.reached.map((g) => g.id)).toEqual(['r2', 'r1']);
+  });
+});
+
+describe('nåede mål i opsummeringen (#201)', () => {
+  const D = 1_700_000_000_000;
+  const lift = (s: AppState, weight: string, now: number) => {
+    s = reducer(s, { type: 'START_WORKOUT', now });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight, reps: '1' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: now + 60_000 });
+  };
+
+  it('lister mål nået i træningen – og kun i den', () => {
+    let s = trackedReducer(initialState(), { type: 'ADD_GOAL', id: 'g1', exerciseId: 'bench', weight: 100, reps: 1, now: D, at: D });
+    s = lift(s, '90', D + 1000);
+    const miss = s.history[s.history.length - 1].id;
+    expect(workoutSummary(s, miss)!.goals).toEqual([]);
+    s = lift(s, '100', D + 9000);
+    const hit = s.history.find((w) => w.id !== miss)!.id;
+    expect(workoutSummary(s, hit)!.goals).toEqual([{ goalId: 'g1', exerciseId: 'bench', name: 'Bænkpres', weight: 100, reps: 1 }]);
+    s = lift(s, '105', D + 20000);
+    const later = s.history.find((w) => w.id !== miss && w.id !== hit)!.id;
+    expect(workoutSummary(s, later)!.goals).toEqual([]);
+  });
+});
+
+describe('kropsvægt til kropsvægtsøvelser (#206)', () => {
+  const DAY = 86_400_000;
+  const T = Date.UTC(2026, 5, 15);
+  const log = [
+    { id: 'b', date: T + 10 * DAY, weight: 82 },
+    { id: 'a', date: T, weight: 80 },
+    { id: 'c', date: T + 5 * DAY, bodyFat: 15 },
+  ];
+
+  it('finder øvelser med udstyret Kropsvægt – også egne', () => {
+    const s = initialState();
+    const pullup = s.exercises.find((e) => e.equipment === 'Kropsvægt')!;
+    const bar = s.exercises.find((e) => e.equipment === 'Stang')!;
+    expect(isBodyweight(s, pullup.id)).toBe(true);
+    expect(isBodyweight(s, bar.id)).toBe(false);
+    expect(isBodyweight(s, 'findes-ikke')).toBe(false);
+    const own = reducer(s, { type: 'ADD_CUSTOM_EXERCISE', id: 'ring', name: 'Ringrows', muscle: 'Ryg', equipment: 'Kropsvægt' });
+    expect(isBodyweight(own, 'ring')).toBe(true);
+  });
+
+  it('bruger det seneste kropsmål før datoen, ellers det første efter, ellers indstillingen', () => {
+    const s = { ...initialState(), bodyLog: log, bodyWeight: 75 };
+    expect(bodyWeightOn(s, T - DAY)).toBe(80); // før alle målinger: den første måling
+    expect(bodyWeightOn(s, T)).toBe(80);
+    expect(bodyWeightOn(s, T + 7 * DAY)).toBe(80); // mellem målinger (målingen uden vægt tæller ikke)
+    expect(bodyWeightOn(s, T + 20 * DAY)).toBe(82);
+    expect(bodyWeightOn({ ...s, bodyLog: [] }, T)).toBe(75);
+    expect(bodyWeightOn({ ...s, bodyLog: [{ id: 'x', date: T, waist: 80 }] }, T)).toBe(75);
+    expect(bodyWeightOn({ ...s, bodyLog: [], bodyWeight: null }, T)).toBeNull();
+  });
+
+  it('SET_BODY_WEIGHT gemmer kg, og tom/0 betyder ikke angivet', () => {
+    const s = initialState();
+    expect(s.bodyWeight).toBeNull();
+    const set = reducer(s, { type: 'SET_BODY_WEIGHT', kg: 81.25 });
+    expect(set.bodyWeight).toBe(81.3);
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: 0 }).bodyWeight).toBeNull();
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: NaN }).bodyWeight).toBeNull();
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: -5 }).bodyWeight).toBeNull();
+  });
+
+  it('gamle data uden kropsvægt indlæses, og indstillingen flettes efter settingsAt', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.bodyWeight;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.bodyWeight).toBeNull();
+    expect(bodyWeightOn(loaded, T)).toBeNull();
+    expect(loadState(JSON.stringify({ ...old, bodyWeight: 78 })).bodyWeight).toBe(78);
+
+    const prev = { ...initialState(), settingsAt: 100 };
+    const phone = stampChanges(prev, reducer(prev, { type: 'SET_BODY_WEIGHT', kg: 80 }), 500);
+    expect(phone.settingsAt).toBe(500);
+    expect(mergeStates(prev, phone).bodyWeight).toBe(80);
+    expect(mergeStates(phone, prev).bodyWeight).toBe(80);
+    // At rydde feltet på en nyere enhed rydder det også de andre steder
+    const cleared = stampChanges(phone, reducer(phone, { type: 'SET_BODY_WEIGHT', kg: 0 }), 900);
+    expect(mergeStates(phone, cleared).bodyWeight).toBeNull();
+    // Data fra serveren fra før #206 (uden feltet) rører ikke den lokale værdi
+    const oldRemote = JSON.parse(JSON.stringify({ ...initialState(), settingsAt: 1000 }));
+    delete oldRemote.bodyWeight;
+    expect(mergeStates(phone, oldRemote).bodyWeight).toBe(80);
+  });
+});
+
+describe('kropsvægt i volumen, rekorder og statistik (#207)', () => {
+  const DAY = 86_400_000;
+  const T = Date.UTC(2026, 5, 15, 10);
+  let n = 0;
+  const set = (weight: string, reps: string): SetEntry => ({ id: `s${++n}`, weight, reps, rpe: '', done: true });
+  const wo = (id: string, at: number, exerciseId: string, sets: SetEntry[]): Workout => ({
+    id, name: 'Træning', startedAt: at, finishedAt: at + 3_600_000, exercises: [{ id: `we-${id}`, exerciseId, sets }],
+  });
+  const base = (history: Workout[], extra: Partial<AppState> = {}): AppState => ({ ...initialState(), history, ...extra });
+
+  it('10 pull-ups med 80 kg kropsvægt: 800 kg, +10 giver 900, −20 giver 600, ukendt kropsvægt 0', () => {
+    const w = wo('a', T, 'pullup', [set('', '10')]);
+    const s = base([w], { bodyWeight: 80 });
+    expect(setLoad(s, w, 'pullup', w.exercises[0].sets[0])).toBe(80);
+    expect(workoutVolume(withLoads(s, w))).toBe(800);
+    expect(workoutVolume(withLoads(s, wo('b', T, 'pullup', [set('10', '10')])))).toBe(900);
+    expect(workoutVolume(withLoads(s, wo('c', T, 'pullup', [set('-20', '10')])))).toBe(600);
+    expect(workoutVolume(withLoads(base([w]), w))).toBe(0);
+    expect(workoutVolume(withLoads(base([]), wo('d', T, 'pullup', [set('-20', '10')])))).toBe(0); // aldrig under 0
+    expect(workoutVolume(withLoads(base([]), wo('e', T, 'pullup', [set('10', '10')])))).toBe(100); // kun ekstra vægt
+    // Tallene i opsummering, ugevolumen og muskelfordeling følger med
+    expect(workoutSummary(s, 'a')!.volume).toBe(800);
+    expect(weeklyVolume(s, 1, T).at(-1)!.volume).toBe(800);
+    expect(muscleDistribution(s, 0).find((m) => m.muscle === 'Ryg')!.volume).toBe(800);
+    expect(exerciseHistory(s.history, 'pullup', s)[0]).toMatchObject({ volume: 800, best1RM: estimate1RM(80, 10) });
+    expect(exerciseHistory(s.history, 'pullup', s)[0].sets[0].weight).toBe(''); // sættene vises som logget
+    // Gemte data ændres ikke
+    expect(s.history[0].exercises[0].sets[0].weight).toBe('');
+  });
+
+  it('et pull-up-sæt med ekstra vægt kan slå et uden som rekord', () => {
+    const first = wo('a', T, 'pullup', [set('', '8')]);
+    const second = wo('b', T + DAY, 'pullup', [set('10', '8')]);
+    const s = base([second, first], { bodyWeight: 80 });
+    expect(workoutRecords(s, 'b').pullup).toEqual(expect.arrayContaining(['heaviest', '1rm']));
+    expect(personalRecords(s, 'pullup').heaviest).toMatchObject({ weight: 90, reps: 8 });
+    expect(recordsWall(s).find((r) => r.exerciseId === 'pullup')!.best1RM!.weight).toBe(90);
+    // Under træningen: +10 slår det bedste uden ekstra vægt
+    const active = { ...wo('c', T + 2 * DAY, 'pullup', [set('12.5', '8')]), finishedAt: undefined };
+    const live = { ...base([first], { bodyWeight: 80 }), active };
+    expect(recordsBrokenBy(live, 'pullup', active.exercises[0].sets[0])).toEqual(expect.arrayContaining(['heaviest', '1rm']));
+  });
+
+  it('øvelser uden kropsvægt giver præcis de samme tal som før', () => {
+    const w = wo('a', T, 'squat', [set('100', '5'), set('110', '3')]);
+    const s = base([w], { bodyWeight: 80 });
+    expect(withLoads(s, w)).toBe(w);
+    expect(loadedState(s)).toBe(s);
+    expect(workoutSummary(s, 'a')!.volume).toBe(830);
+    expect(personalRecords(s, 'squat').heaviest!.weight).toBe(110);
+  });
+
+  it('et kropsmål logget senere ændrer ikke en ældre træning, når der findes et ældre mål', () => {
+    const w = wo('a', T, 'dips', [set('', '10')]);
+    const s = base([w], { bodyLog: [{ id: 'm1', date: T - 10 * DAY, weight: 80 }] });
+    expect(workoutSummary(s, 'a')!.volume).toBe(800);
+    const later = { ...s, bodyLog: [{ id: 'm2', date: T + 10 * DAY, weight: 90 }, ...s.bodyLog] };
+    expect(workoutSummary(later, 'a')!.volume).toBe(800);
+    // Kun det senere mål: det bruges (den første måling efter datoen)
+    expect(workoutSummary({ ...s, bodyLog: [{ id: 'm2', date: T + 10 * DAY, weight: 90 }] }, 'a')!.volume).toBe(900);
+  });
+
+  it('kropsvægten lægges aldrig til to gange og tæller med i volumenmilepæle', () => {
+    const w = wo('a', T, 'pullup', [set('', '10')]);
+    const s = base([w], { bodyWeight: 80 });
+    const once = withLoads(s, w);
+    expect(withLoads(s, once)).toBe(once);
+    expect(workoutVolume(withLoads(s, once))).toBe(800);
+    expect(monthRecap(s, 2026, 5).volume).toBe(800);
+    expect(milestones(s).find((m) => m.id === 'volume-1t')!.current).toBe(800);
+  });
+});
+
+describe('kropsvægtsøvelser som tekst (#208)', () => {
+  const base: SetEntry = { id: 'x', weight: '', reps: '10', rpe: '', done: true };
+  it('bodyweightText: KV, KV +10 og KV −20', () => {
+    expect(bodyweightText('')).toBe('KV');
+    expect(bodyweightText('0')).toBe('KV');
+    expect(bodyweightText('10')).toBe('KV +10');
+    expect(bodyweightText('+2,5')).toBe('KV +2,5');
+    expect(bodyweightText('-20')).toBe('KV −20');
+  });
+  it('formatSet med kropsvægt', () => {
+    expect(formatSet(base, true)).toBe('KV × 10');
+    expect(formatSet({ ...base, weight: '10', reps: '8' }, true)).toBe('KV +10 × 8');
+    expect(formatSet({ ...base, weight: '-20', reps: '6' }, true)).toBe('KV −20 × 6');
+    // Normale øvelser som før
+    expect(formatSet({ ...base, weight: '10', reps: '8' })).toBe('10 kg × 8');
+    expect(formatSet(base)).toBe('10 reps');
+  });
+  it('isBodyweightReps: pull-up ja, planke (tid) og bænkpres nej', () => {
+    const s = initialState();
+    expect(isBodyweightReps(s, 'pullup')).toBe(true);
+    expect(isBodyweightReps(s, 'plank')).toBe(false);
+    expect(isBodyweightReps(s, s.exercises.find((e) => e.equipment === 'Stang')!.id)).toBe(false);
+  });
+});
+
+describe('kropsvægtsøvelser: progression, egne øvelser og eksport (#209)', () => {
+  const T = Date.UTC(2026, 0, 5, 10);
+  function logged(exerciseId: string, sets: [string, string][], extra: Partial<AppState> = {}): AppState {
+    let s: AppState = { ...initialState(), ...extra };
+    s = reducer(s, { type: 'START_WORKOUT', now: T });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T });
+    });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T + 60_000 });
+  }
+
+  it('uden ekstra vægt: +1 rep, indtil alle sæt har 12+ – så +2,5 kg', () => {
+    expect(BODYWEIGHT_REPS_TARGET).toBe(12);
+    const a = progressionHint(logged('pullup', [['', '10'], ['', '10']]), 'pullup')!;
+    expect(a).toMatchObject({ next: { weight: 0, reps: 11 }, increase: true, bodyweight: true });
+    const b = progressionHint(logged('pullup', [['', '12'], ['', '12'], ['', '12']]), 'pullup')!;
+    expect(b).toMatchObject({ next: { weight: 2.5, reps: 12 }, increase: true, bodyweight: true });
+    // Ikke alle sæt nåede målet: samme igen
+    const c = progressionHint(logged('pullup', [['', '12'], ['', '9']]), 'pullup')!;
+    expect(c).toMatchObject({ next: { weight: 0, reps: 12 }, increase: false, bodyweight: true });
+  });
+
+  it('med vægtbælte: +1 rep, ved 12+ reps +2,5 kg ekstra', () => {
+    expect(progressionHint(logged('pullup', [['10', '8'], ['10', '8']]), 'pullup')!.next).toEqual({ weight: 10, reps: 9 });
+    expect(progressionHint(logged('dips', [['10', '12'], ['10', '13']]), 'dips')!.next).toEqual({ weight: 12.5, reps: 12 });
+  });
+
+  it('assisteret: +1 rep, ved 12+ reps 2,5 kg mindre assistance', () => {
+    expect(progressionHint(logged('pullup', [['-20', '8']]), 'pullup')!.next).toEqual({ weight: -20, reps: 9 });
+    expect(progressionHint(logged('pullup', [['-20', '12'], ['-20', '12']]), 'pullup')!.next).toEqual({ weight: -17.5, reps: 12 });
+    expect(progressionHint(logged('pullup', [['-2,5', '12']]), 'pullup')!.next).toEqual({ weight: 0, reps: 12 });
+  });
+
+  it('APPLY_HINT udfylder negativ assistance', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['pullup'] });
+    const weId = s.active!.exercises[0].id;
+    s = reducer(s, { type: 'APPLY_HINT', weId, weight: -17.5, reps: 12 });
+    expect(s.active!.exercises[0].sets[0]).toMatchObject({ weight: '-17,5', reps: '12' });
+  });
+
+  it('egne øvelser med udstyret "Kropsvægt" er kropsvægtsøvelser', () => {
+    const id = 'ringrows';
+    let s = reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id, name: 'Ringrows', muscle: 'Ryg', equipment: 'Kropsvægt' });
+    expect(isBodyweightReps(s, id)).toBe(true);
+    s = logged(id, [['5', '10']], { exercises: s.exercises, bodyWeight: 80 });
+    expect(progressionHint(s, id)).toMatchObject({ bodyweight: true });
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Ringrows,1,5,10,,,,85$/);
+  });
+
+  it('CSV: "Belastning (kg)" = kropsvægt + ekstra for kropsvægtssæt, tom for andre', () => {
+    const s = logged('pullup', [['', '10'], ['10', '8'], ['-20', '6']], { bodyWeight: 80 });
+    const lines = toCsv(s).split('\n');
+    expect(lines[0].split(',').at(-1)).toBe('Belastning (kg)');
+    expect(lines[1]).toMatch(/,Pull-up,1,,10,,,,80$/);
+    expect(lines[2]).toMatch(/,Pull-up,2,10,8,,,,90$/);
+    expect(lines[3]).toMatch(/,Pull-up,3,-20,6,,,,60$/);
+    const b = logged('bench', [['100', '5']], { bodyWeight: 80 });
+    expect(toCsv(b).split('\n')[1]).toMatch(/,Bænkpres,1,100,5,,,,$/);
+  });
+
+  it('backup med kropsvægtssæt gendannes uændret', () => {
+    const s = logged('pullup', [['-20', '6']], { bodyWeight: 80 });
+    const restored = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(s)) });
+    expect(restored.history).toEqual(s.history);
+    expect(restored.bodyWeight).toBe(80);
   });
 });

@@ -6,6 +6,7 @@ import type {
   Equipment,
   Exercise,
   ExerciseKind,
+  LiftGoal,
   Muscle,
   SetEntry,
   Template,
@@ -44,6 +45,8 @@ export function initialState(): AppState {
     keepAwake: true,
     recapDismissed: null,
     favorites: [],
+    bodyWeight: null,
+    goals: [],
     program: [],
     programSkip: { after: null, n: 0 },
     settingsAt: 0,
@@ -166,13 +169,28 @@ function stopTimer(s: SetEntry, now: number): SetEntry {
   return { ...rest, seconds: String(stopwatchSeconds(s, now)) };
 }
 
-/** Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før. */
-export function formatSet(s: SetEntry): string {
+/**
+ * Vægtfeltet for en kropsvægtsøvelse som tekst (#208): "KV" (ingen ekstra), "KV +10" (vægtbælte)
+ * eller "KV −20" (assistance).
+ */
+export function bodyweightText(weight: string): string {
+  const extra = num(weight);
+  if (!extra) return 'KV';
+  const abs = String(Math.abs(extra)).replace('.', ',');
+  return `KV ${extra > 0 ? '+' : '\u2212'}${abs}`;
+}
+
+/**
+ * Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før.
+ * `bodyweight` = kropsvægtsøvelse: vises som "KV +10 × 8" (#208).
+ */
+export function formatSet(s: SetEntry, bodyweight = false): string {
   if ((s.meters ?? '').trim()) {
     const sec = num(s.seconds ?? '');
     return `${s.meters!.trim().replace('.', ',')} m${sec > 0 ? ` · ${formatClock(sec)}` : ''}`;
   }
   if ((s.seconds ?? '').trim() && !s.reps.trim()) return `${num(s.seconds!)} sek.`;
+  if (bodyweight) return `${bodyweightText(s.weight)} × ${s.reps}`;
   const w = num(s.weight);
   return w ? `${s.weight.replace('.', ',')} kg × ${s.reps}` : `${s.reps} reps`;
 }
@@ -271,6 +289,7 @@ function historySets(history: Workout[], exerciseId: string, kind: ExerciseKind)
 
 /** Rekorder for en øvelse ud fra afsluttede træninger */
 export function personalRecords(state: AppState, exerciseId: string): PersonalRecords {
+  state = loadedState(state);
   return recordsFrom(historySets(state.history, exerciseId, exerciseKind(state, exerciseId)));
 }
 
@@ -279,6 +298,9 @@ export function personalRecords(state: AppState, exerciseId: string): PersonalRe
  * de udførte sæt før det i den aktive træning. Første gang en øvelse laves er ingen rekord.
  */
 export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEntry): RecordKind[] {
+  const date = state.active && state.active.exercises.some((we) => we.sets.includes(set)) ? state.active : { startedAt: Date.now() };
+  if (!LOADED_SETS.has(set) && isBodyweight(state, exerciseId)) set = { ...set, weight: String(setLoad(state, date, exerciseId, set)) };
+  state = loadedState(state);
   const kind = exerciseKind(state, exerciseId);
   const [candidate] = validSets([set], 0, kind);
   if (!candidate) return [];
@@ -310,6 +332,7 @@ export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEnt
 
 /** Rekorder slået i en afsluttet træning (pr. øvelse), sammenlignet med træninger før den */
 export function workoutRecords(state: AppState, workoutId: string): Record<string, RecordKind[]> {
+  state = loadedState(state);
   const w = state.history.find((x) => x.id === workoutId);
   if (!w) return {};
   const before: AppState = { ...state, history: state.history.filter((x) => x.startedAt < w.startedAt), active: w };
@@ -356,6 +379,7 @@ export interface RecordsWallRow {
  * (opvarmning tæller aldrig), nyeste rekord først. Valgfrit filter på muskelgruppe.
  */
 export function recordsWall(state: AppState, muscle?: Muscle): RecordsWallRow[] {
+  state = loadedState(state);
   const rows: RecordsWallRow[] = [];
   for (const ex of state.exercises) {
     if (muscle && ex.muscle !== muscle) continue;
@@ -438,6 +462,7 @@ export function monthKey(year: number, month: number): string {
 }
 
 function monthStats(state: AppState, year: number, month: number): MonthStats {
+  state = loadedState(state);
   const list = workoutsInMonth(state, year, month);
   const ex = new Map(state.exercises.map((e) => [e.id, e]));
   const muscleSets = new Map<Muscle, number>();
@@ -550,6 +575,8 @@ export interface WorkoutSummary {
   /** Ændring i volumen i hele procent siden sidste træning fra samme skabelon (null = intet at sammenligne med) */
   volumeChangePct: number | null;
   previousVolume: number | null;
+  /** Løftemål nået i denne træning (#201) */
+  goals: { goalId: string; exerciseId: string; name: string; weight: number; reps: number }[];
 }
 
 /** Den seneste afsluttede træning fra samme skabelon før `w` */
@@ -564,6 +591,7 @@ function previousFromTemplate(history: Workout[], w: Workout): Workout | null {
 
 /** Opsummering af en afsluttet træning: varighed, volumen, sæt, nye rekorder og sammenligning med sidst */
 export function workoutSummary(state: AppState, workoutId: string): WorkoutSummary | null {
+  state = loadedState(state);
   const w = state.history.find((x) => x.id === workoutId);
   if (!w) return null;
   const names = new Map(state.exercises.map((e) => [e.id, e.name]));
@@ -584,6 +612,9 @@ export function workoutSummary(state: AppState, workoutId: string): WorkoutSumma
     recordCount: recordCount(recs),
     volumeChangePct,
     previousVolume: previousVolume || null,
+    goals: (state.goals ?? [])
+      .filter((g) => g.achievedAt !== undefined && g.achievedAt === (w.finishedAt ?? w.startedAt) && w.exercises.some((we) => we.exerciseId === g.exerciseId))
+      .map((g) => ({ goalId: g.id, exerciseId: g.exerciseId, name: names.get(g.exerciseId) ?? g.exerciseId, weight: g.weight, reps: g.reps })),
   };
 }
 
@@ -643,6 +674,8 @@ function compareValues(now: number, last: number): VsStatus {
  */
 export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime | null {
   if (!workout) return null;
+  state = loadedState(state);
+  workout = withLoads(state, workout);
   const prev = previousFromTemplate(state.history, workout);
   if (!prev) return null;
   const names = new Map(state.exercises.map((e) => [e.id, e.name]));
@@ -742,7 +775,10 @@ export function shareCardLines(s: WorkoutSummary): ShareCard {
       { label: 'Rekorder', value: String(s.recordCount) },
     ],
     change: volumeChangeText(s.volumeChangePct),
-    records: s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
+    records: [
+      ...(s.goals ?? []).map((g) => `🎯 Mål nået: ${g.name} ${formatKg(g.weight)} × ${g.reps}`),
+      ...s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
+    ],
     fileName: `loeft-${iso}.png`,
   };
 }
@@ -782,6 +818,7 @@ export function weeklyVolume(state: AppState, weeks: number, now: number): WeekV
     ws = startOfWeek(ws - DAY_MS); // et døgn før mandag = forrige uge (tåler sommertid)
   }
   const out = starts.map((weekStart) => ({ weekStart, week: isoWeek(weekStart), volume: 0 }));
+  state = loadedState(state);
   for (const w of state.history) {
     const i = starts.indexOf(startOfWeek(w.startedAt));
     if (i >= 0) out[i].volume += workoutVolume(w);
@@ -871,6 +908,96 @@ export function bodyWeightAt(bodyLog: BodyMeasurement[], at: number): number | n
   return found.weight!;
 }
 
+/** Logges øvelsen som kropsvægt + ekstra vægt × reps (#208)? Kropsvægtsøvelser af typen vægt × reps (ikke fx planke). */
+export function isBodyweightReps(state: Pick<AppState, 'exercises'>, exerciseId: string): boolean {
+  return isBodyweight(state, exerciseId) && exerciseKind(state, exerciseId) === 'reps';
+}
+
+/** Er øvelsen en kropsvægtsøvelse (#206)? Det er øvelser med udstyret "Kropsvægt" – indbyggede og egne. */
+export function isBodyweight(state: Pick<AppState, 'exercises'>, exerciseId: string): boolean {
+  return state.exercises.find((e) => e.id === exerciseId)?.equipment === 'Kropsvægt';
+}
+
+/**
+ * Kropsvægten på en dato til kropsvægtsøvelser (#206): seneste kropsmål på/før datoen, ellers den første
+ * måling efter, ellers indstillingen i Profil, ellers null (ukendt).
+ */
+export function bodyWeightOn(state: Pick<AppState, 'bodyLog' | 'bodyWeight'>, date: number): number | null {
+  const measured = bodyWeightAt(state.bodyLog ?? [], date);
+  if (measured !== null) return measured;
+  const setting = state.bodyWeight;
+  return typeof setting === 'number' && setting > 0 ? setting : null;
+}
+
+/**
+ * Belastningen i et sæt i kg (#207). For kropsvægtsøvelser er vægtfeltet ekstra vægt (+10 = vægtbælte,
+ * −20 = assistance, tomt = 0), og belastningen er kropsvægten på træningens dato + ekstra (aldrig under 0).
+ * Kendes kropsvægten ikke, tæller kun den ekstra vægt – som før. Andre øvelser: bare vægten.
+ */
+export function setLoad(
+  state: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>,
+  workout: Pick<Workout, 'startedAt'>,
+  exerciseId: string,
+  set: SetEntry,
+): number {
+  const extra = num(set.weight);
+  if (LOADED_SETS.has(set) || !isBodyweight(state, exerciseId)) return extra;
+  const bw = bodyWeightOn(state, workout.startedAt) ?? 0;
+  return Math.max(0, Math.round((bw + extra) * 100) / 100);
+}
+
+/** Sæt og træninger, hvor vægtfeltet allerede er belastningen – så den aldrig lægges til to gange */
+const LOADED_SETS = new WeakSet<SetEntry>();
+const LOADED_WORKOUTS = new WeakSet<Workout>();
+const loadCache = new WeakMap<Workout, { ctx: unknown[]; out: Workout }>();
+
+/**
+ * Træningen med belastningen (#207) i vægtfeltet for kropsvægtsøvelser – til tal (volumen, rekorder, statistik).
+ * Gemte data ændres ikke; det beregnes, når det vises. Visning af sæt bruger stadig den rå træning.
+ */
+export function withLoads(state: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>, w: Workout): Workout {
+  if (LOADED_WORKOUTS.has(w)) return w;
+  const ctx = [state.exercises, state.bodyLog, state.bodyWeight];
+  const hit = loadCache.get(w);
+  if (hit && hit.ctx.every((x, i) => x === ctx[i])) return hit.out;
+  let out = w;
+  if (w.exercises.some((we) => isBodyweight(state, we.exerciseId))) {
+    out = {
+      ...w,
+      exercises: w.exercises.map((we) => {
+        if (!isBodyweight(state, we.exerciseId)) return we;
+        return {
+          ...we,
+          sets: we.sets.map((s) => {
+            if (LOADED_SETS.has(s) || isTimedSet(s)) return s;
+            const loaded = { ...s, weight: String(setLoad(state, w, we.exerciseId, s)) };
+            LOADED_SETS.add(loaded);
+            return loaded;
+          }),
+        };
+      }),
+    };
+  }
+  LOADED_WORKOUTS.add(out);
+  loadCache.set(w, { ctx, out });
+  return out;
+}
+
+const stateCache = new WeakMap<AppState, AppState>();
+
+/** Hele tilstanden med belastning i historikken og den aktive træning (#207) – til beregninger */
+export function loadedState(state: AppState): AppState {
+  const hit = stateCache.get(state);
+  if (hit) return hit;
+  const load = (w: Workout | null) => (w ? withLoads(state, w) : w);
+  const history = state.history.map((w) => withLoads(state, w));
+  const changed = history.some((w, i) => w !== state.history[i]) || load(state.active) !== state.active;
+  const out = changed ? { ...state, history, active: load(state.active) } : state;
+  stateCache.set(state, out);
+  stateCache.set(out, out);
+  return out;
+}
+
 /** Tungeste udførte arbejdssæt (vægt × reps, mindst 1 rep) i en træning */
 function heaviestSet(w: Workout): number {
   let best = 0;
@@ -900,7 +1027,7 @@ export function milestones(state: AppState): Milestone[] {
   };
   for (const w of [...state.history].sort((a, b) => a.startedAt - b.startedAt)) {
     count++;
-    volume += workoutVolume(w);
+    volume += workoutVolume(withLoads(state, w));
     const ws = startOfWeek(w.startedAt);
     const n = (weekCount.get(ws) ?? 0) + 1;
     weekCount.set(ws, n);
@@ -972,6 +1099,7 @@ export interface MuscleShare {
 
 /** Udførte sæt og volumen pr. muskelgruppe for træninger fra `sinceMs` (0 = alt) */
 export function muscleDistribution(state: AppState, sinceMs: number): MuscleShare[] {
+  state = loadedState(state);
   const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
   const out = new Map<Muscle, MuscleShare>(MUSCLES.map((m) => [m, { muscle: m, sets: 0, volume: 0 }]));
   for (const w of state.history) {
@@ -1169,6 +1297,8 @@ export interface ProgressionHint {
   next: { weight: number; reps: number };
   /** true hvis forslaget er et skridt op */
   increase: boolean;
+  /** Kropsvægtsøvelse (#209): vægten er ekstra vægt (+) eller assistance (−) oven på kropsvægten */
+  bodyweight?: boolean;
   /** Tids- og distanceøvelser (#136): sidste og foreslåede sekunder/meter */
   timed?: { kind: 'time' | 'distance'; last: { seconds: number; meters: number }; next: { seconds: number; meters: number } };
 }
@@ -1198,9 +1328,13 @@ function timedHint(state: AppState, exerciseId: string, kind: 'time' | 'distance
   };
 }
 
+/** Kropsvægtsøvelser (#209): ved så mange reps på alle sæt foreslås +2,5 kg ekstra (eller 2,5 kg mindre assistance) */
+export const BODYWEIGHT_REPS_TARGET = 12;
+
 /**
  * Enkel progression: nåede alle sæt sidst mindst samme reps som første sæt, foreslås et skridt op
- * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt, +1 rep for kropsvægt). Ellers samme igen.
+ * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt). Kropsvægtsøvelser (#209): +1 rep, indtil alle
+ * sæt har 12+ reps – så +2,5 kg ekstra vægt (for assisterede sæt: 2,5 kg mindre assistance). Ellers samme igen.
  */
 export function progressionHint(state: AppState, exerciseId: string): ProgressionHint | null {
   const kind = exerciseKind(state, exerciseId);
@@ -1211,9 +1345,17 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   const weight = Math.max(...sets.map((s) => num(s.weight)));
   const last = { sets: sets.length, reps, weight, repsList: sets.map((s) => num(s.reps)) };
   const allHit = sets.every((s) => num(s.reps) >= reps);
-  if (!allHit) return { last, next: { weight, reps }, increase: false };
   const equipment = state.exercises.find((e) => e.id === exerciseId)?.equipment;
-  if (equipment === 'Kropsvægt' || weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
+  if (equipment !== 'Kropsvægt' && !allHit) return { last, next: { weight, reps }, increase: false };
+  if (equipment === 'Kropsvægt') {
+    const bw = { bodyweight: true as const };
+    if (!allHit) return { last, next: { weight, reps }, increase: false, ...bw };
+    if (sets.every((s) => num(s.reps) >= BODYWEIGHT_REPS_TARGET)) {
+      return { last, next: { weight: Math.round((weight + 2.5) * 10) / 10, reps }, increase: true, ...bw };
+    }
+    return { last, next: { weight, reps: reps + 1 }, increase: true, ...bw };
+  }
+  if (weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
   const step = equipment === 'Håndvægt' ? 1 : 2.5;
   return { last, next: { weight: weight + step, reps }, increase: true };
 }
@@ -1226,19 +1368,28 @@ export interface ExerciseHistoryEntry {
   volume: number;
 }
 
-export function exerciseHistory(history: Workout[], exerciseId: string): ExerciseHistoryEntry[] {
+/**
+ * En øvelses historik: sættene (som de blev logget) + bedste e1RM og volumen pr. træning.
+ * Med `state` regnes kropsvægt med for kropsvægtsøvelser (#207).
+ */
+export function exerciseHistory(
+  history: Workout[],
+  exerciseId: string,
+  state?: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>,
+): ExerciseHistoryEntry[] {
   const out: ExerciseHistoryEntry[] = [];
   for (const w of history) {
     for (const ex of w.exercises) {
       if (ex.exerciseId !== exerciseId) continue;
       const sets = ex.sets.filter(isWorkSet);
       if (!sets.length) continue;
+      const load = (s: SetEntry) => (state ? setLoad(state, w, exerciseId, s) : num(s.weight));
       out.push({
         workoutId: w.id,
         date: w.startedAt,
         sets,
-        best1RM: Math.max(0, ...sets.map((s) => estimate1RM(num(s.weight), num(s.reps)))),
-        volume: sets.reduce((a, s) => a + setVolume(s), 0),
+        best1RM: Math.max(0, ...sets.map((s) => estimate1RM(load(s), num(s.reps)))),
+        volume: sets.reduce((a, s) => a + (isTimedSet(s) ? 0 : load(s) * num(s.reps)), 0),
       });
     }
   }
@@ -1281,6 +1432,22 @@ export function recentExercises(state: Pick<AppState, 'history' | 'exercises'>, 
   return out;
 }
 
+/**
+ * Grupperne øverst i øvelsesvælgeren (#192): favoritter (i den rækkefølge de blev stjernemarkeret)
+ * og de senest brugte øvelser uden dem, der allerede står under favoritter.
+ */
+export function pickerGroups(
+  state: Pick<AppState, 'history' | 'exercises' | 'favorites'>,
+  n = 5,
+): { favorites: string[]; recent: string[] } {
+  const known = new Set(state.exercises.map((e) => e.id));
+  const favorites = (state.favorites ?? []).filter((id) => known.has(id));
+  const recent = recentExercises(state, n + favorites.length)
+    .filter((id) => !favorites.includes(id))
+    .slice(0, n);
+  return { favorites, recent };
+}
+
 export function lastExerciseNote(history: Workout[], exerciseId: string): { note: string; date: number } | null {
   let best: { note: string; date: number } | null = null;
   for (const w of history) {
@@ -1290,6 +1457,115 @@ export function lastExerciseNote(history: Workout[], exerciseId: string): { note
     }
   }
   return best;
+}
+
+/* ---------- Løftemål (#197) ---------- */
+
+/** Bedste estimerede 1RM for en øvelse ud fra arbejdssæt i afsluttede træninger (0 = ingen) */
+export function bestE1RM(history: Workout[], exerciseId: string): number {
+  let best = 0;
+  for (const w of history)
+    for (const we of w.exercises)
+      if (we.exerciseId === exerciseId)
+        for (const s of we.sets) if (isWorkSet(s)) best = Math.max(best, estimate1RM(num(s.weight), num(s.reps)));
+  return best;
+}
+
+/** Målets fremskridt: din bedste e1RM mod målets e1RM, `pct` 0–100 */
+export function goalProgress(
+  state: Pick<AppState, 'history' | 'goals'>,
+  goalId: string,
+): { current: number; target: number; pct: number } | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal) return null;
+  const target = estimate1RM(goal.weight, goal.reps);
+  const current = bestE1RM(state.history, goal.exerciseId);
+  const pct = goal.achievedAt ? 100 : target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+  return { current, target, pct };
+}
+
+/** Når en træning afsluttes: åbne mål, hvor et arbejdssæt har vægt ≥ mål og reps ≥ mål, er nået */
+export function markGoalsReached(goals: LiftGoal[], w: Workout): LiftGoal[] {
+  if (!goals.length) return goals;
+  let changed = false;
+  const out = goals.map((g) => {
+    if (g.achievedAt) return g;
+    const hit = w.exercises.some(
+      (we) =>
+        we.exerciseId === g.exerciseId && we.sets.some((s) => isWorkSet(s) && num(s.weight) >= g.weight && num(s.reps) >= g.reps),
+    );
+    if (!hit) return g;
+    changed = true;
+    return { ...g, achievedAt: w.finishedAt ?? w.startedAt };
+  });
+  return changed ? out : goals;
+}
+
+
+/** "I dette tempo" (#198): lineær trend gennem bedste e1RM pr. træning de sidste 8 uger → dato for målets e1RM.
+ * null ved under 3 træninger, flad/faldende trend eller mere end et år ude. Nåede mål giver null. */
+export function goalEta(state: Pick<AppState, 'history' | 'goals'>, goalId: string, now: number): number | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal || goal.achievedAt) return null;
+  const target = estimate1RM(goal.weight, goal.reps);
+  const since = now - 56 * DAY_MS;
+  const pts: { x: number; y: number }[] = [];
+  for (const w of state.history) {
+    if (w.startedAt < since || w.startedAt > now) continue;
+    let best = 0;
+    for (const we of w.exercises)
+      if (we.exerciseId === goal.exerciseId)
+        for (const s of we.sets) if (isWorkSet(s)) best = Math.max(best, estimate1RM(num(s.weight), num(s.reps)));
+    if (best > 0) pts.push({ x: (w.startedAt - now) / DAY_MS, y: best });
+  }
+  if (pts.length < 3) return null;
+  const mx = pts.reduce((a, p) => a + p.x, 0) / pts.length;
+  const my = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+  let sxy = 0;
+  let sxx = 0;
+  for (const p of pts) {
+    sxy += (p.x - mx) * (p.y - my);
+    sxx += (p.x - mx) ** 2;
+  }
+  if (sxx === 0) return null;
+  const slope = sxy / sxx; // kg pr. dag
+  if (slope <= 1e-6) return null;
+  const nowValue = my - slope * mx; // linjens værdi i dag (x = 0)
+  const days = Math.max(0, (target - nowValue) / slope);
+  if (days > 365) return null;
+  return now + Math.round(days * DAY_MS);
+}
+
+/** "ca. marts" / "ca. marts 2027" / "inden for en uge" */
+export function etaText(date: number, now: number): string {
+  if (date - now <= 7 * DAY_MS) return 'inden for en uge';
+  const d = new Date(date);
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return `ca. ${MONTHS_DA[d.getMonth()]}${sameYear ? '' : ` ${d.getFullYear()}`}`;
+}
+
+/** Med måldato: er estimatet før datoen? null uden måldato eller estimat. Nåede mål er altid på sporet. */
+export function goalOnTrack(state: Pick<AppState, 'history' | 'goals'>, goalId: string, now: number): boolean | null {
+  const goal = (state.goals ?? []).find((g) => g.id === goalId);
+  if (!goal || !goal.targetDate) return null;
+  if (goal.achievedAt) return true;
+  const eta = goalEta(state, goalId, now);
+  if (eta === null) return goalProgress(state, goalId)!.pct >= 100 ? true : null;
+  return eta <= goal.targetDate;
+}
+
+/** Alle mål til Profil (#200): åbne mål sorteret efter fremskridt (tættest på først), nåede mål nyeste først */
+export function goalsOverview(
+  state: Pick<AppState, 'history' | 'goals' | 'exercises'>,
+): { open: { goal: LiftGoal; pct: number }[]; reached: LiftGoal[] } {
+  const known = new Set(state.exercises.map((e) => e.id));
+  const goals = (state.goals ?? []).filter((g) => known.has(g.exerciseId));
+  const open = goals
+    .filter((g) => !g.achievedAt)
+    .map((goal) => ({ goal, pct: goalProgress(state, goal.id)!.pct }))
+    .sort((a, b) => b.pct - a.pct || a.goal.createdAt - b.goal.createdAt);
+  const reached = goals.filter((g) => g.achievedAt).sort((a, b) => (b.achievedAt ?? 0) - (a.achievedAt ?? 0));
+  return { open, reached };
 }
 
 /* ---------- Program (#106) ---------- */
@@ -1416,6 +1692,8 @@ export type Action =
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
+  /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
+  | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
   | { type: 'SKIP_PROGRAM' }
@@ -1429,6 +1707,8 @@ export type Action =
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
   | { type: 'CLOSE_SUMMARY' }
+  | { type: 'ADD_GOAL'; id: string; exerciseId: string; weight: number; reps: number; targetDate?: number; now: number }
+  | { type: 'DELETE_GOAL'; goalId: string }
   | { type: 'DISMISS_RECAP'; key: string }
   | { type: 'MERGE_REMOTE'; remote: AppState };
 
@@ -1598,7 +1878,14 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!exercises.length) return { ...state, active: null, rest: null, lastFinishedId: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
       const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
-      return { ...state, active: null, rest: null, history: [done, ...state.history], lastFinishedId: done.id };
+      return {
+        ...state,
+        active: null,
+        rest: null,
+        history: [done, ...state.history],
+        lastFinishedId: done.id,
+        goals: markGoalsReached(state.goals ?? [], done),
+      };
     }
     case 'PAUSE_WORKOUT':
       return mapActive(state, (w) => (w.pausedAt ? w : { ...w, pausedAt: action.now }));
@@ -1674,7 +1961,7 @@ export function reducer(state: AppState, action: Action): AppState {
               ? s
               : {
                   ...s,
-                  weight: s.weight || (action.weight > 0 ? String(action.weight).replace('.', ',') : ''),
+                  weight: s.weight || (action.weight !== 0 ? String(action.weight).replace('.', ',') : ''),
                   reps: s.reps || (action.reps > 0 ? String(action.reps) : ''),
                   ...(action.seconds ? { seconds: s.seconds || String(action.seconds) } : {}),
                   ...(action.meters ? { meters: s.meters || String(action.meters).replace('.', ',') } : {}),
@@ -1798,6 +2085,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restVibrate: action.on };
     case 'SET_KEEP_AWAKE':
       return { ...state, keepAwake: action.on };
+    case 'SET_BODY_WEIGHT': {
+      const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
+      return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
+    }
     case 'TOGGLE_FAVORITE': {
       const favs = state.favorites ?? [];
       if (favs.includes(action.exerciseId)) return { ...state, favorites: favs.filter((id) => id !== action.exerciseId) };
@@ -1806,6 +2097,16 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'DISMISS_RECAP':
       return { ...state, recapDismissed: action.key };
+    case 'ADD_GOAL': {
+      const weight = Math.round(action.weight * 100) / 100;
+      const reps = Math.round(action.reps);
+      if (!(weight > 0) || !(reps >= 1) || !state.exercises.some((e) => e.id === action.exerciseId)) return state;
+      const goal: LiftGoal = { id: action.id, exerciseId: action.exerciseId, weight, reps, createdAt: action.now };
+      if (action.targetDate && action.targetDate > 0) goal.targetDate = action.targetDate;
+      return { ...state, goals: [...(state.goals ?? []), goal] };
+    }
+    case 'DELETE_GOAL':
+      return { ...state, goals: (state.goals ?? []).filter((g) => g.id !== action.goalId) };
     case 'SET_PROGRAM': {
       const known = new Set(state.templates.map((t) => t.id));
       const program = [...new Set(action.templateIds)].filter((id) => known.has(id));
@@ -1947,6 +2248,7 @@ const SETTINGS = [
   'favorites',
   'program',
   'programSkip',
+  'bodyWeight',
 ] as const;
 
 type Stamped = { id: string; updatedAt?: number };
@@ -1967,6 +2269,7 @@ export function stampChanges(prev: AppState, next: AppState, now: number): AppSt
   if (prev.templates !== next.templates) gone(prev.templates, next.templates);
   if (prev.exercises !== next.exercises) gone(prev.exercises, next.exercises);
   if (prev.bodyLog !== next.bodyLog) gone(prev.bodyLog, next.bodyLog);
+  if (prev.goals !== next.goals) gone(prev.goals ?? [], next.goals ?? []);
   if (Object.keys(deleted).length) out = { ...out, deleted: { ...out.deleted, ...deleted } };
 
   const touch = <T extends Stamped>(before: T[], after: T[]): T[] => {
@@ -1987,6 +2290,7 @@ export function stampChanges(prev: AppState, next: AppState, now: number): AppSt
     if (out.history.some(edited)) out = { ...out, history: out.history.map((w) => (edited(w) ? { ...w, updatedAt: now } : w)) };
   }
   if (prev.exercises !== next.exercises) out = { ...out, exercises: touch(prev.exercises, out.exercises) };
+  if (prev.goals !== next.goals) out = { ...out, goals: touch(prev.goals ?? [], out.goals ?? []) };
   if (SETTINGS.some((k) => prev[k] !== next[k])) out = { ...out, settingsAt: now };
   return out;
 }
@@ -2015,7 +2319,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   for (const [id, at] of Object.entries(local.deleted ?? {})) deleted[id] = Math.max(at, deleted[id] ?? 0);
   const remoteSettingsNewer = (remote.settingsAt ?? 0) > (local.settingsAt ?? 0);
   const settings = remoteSettingsNewer
-    ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] ?? local[k]]), ['settingsAt', remote.settingsAt]])
+    ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] === undefined ? local[k] : remote[k]]), ['settingsAt', remote.settingsAt]])
     : {};
   const active = local.active ?? remote.active ?? null;
   const favorites = ((settings as Partial<AppState>).favorites ?? local.favorites ?? []).filter((id) => !(id in deleted));
@@ -2026,6 +2330,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
     deleted,
     exercises: mergeById(local.exercises, remote.exercises ?? [], deleted),
     templates: mergeById(local.templates, remote.templates ?? [], deleted),
+    goals: mergeById(local.goals ?? [], remote.goals ?? [], deleted),
     history: mergeById(local.history, remote.history ?? [], deleted).sort((a, b) => b.startedAt - a.startedAt),
     active: active && active.id in deleted ? null : active,
     editing: local.editing && local.editing.id in deleted ? null : (local.editing ?? null),
@@ -2087,6 +2392,10 @@ export function loadState(raw: string | null): AppState {
       exercises,
       // Favoritter fra før #190 findes ikke; ukendte øvelser fjernes
       favorites: Array.isArray(parsed.favorites) ? [...new Set(parsed.favorites)].filter((id) => ids.has(id)) : [],
+      // Kropsvægt-indstillingen fra før #206 findes ikke
+      bodyWeight: typeof parsed.bodyWeight === 'number' && parsed.bodyWeight > 0 ? parsed.bodyWeight : null,
+      // Løftemål fra før #197 findes ikke
+      goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
       lastFinishedId: null,
     } as AppState;
@@ -2113,13 +2422,16 @@ export function bodyToCsv(state: AppState): string {
 export function toCsv(state: AppState): string {
   const name = new Map(state.exercises.map((e) => [e.id, e.name]));
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter']];
+  // "Belastning (kg)" (#209): kropsvægt + ekstra vægt for kropsvægtsøvelser, tom for andre sæt
+  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)']];
   for (const w of [...state.history].reverse()) {
     const date = new Date(w.startedAt).toISOString();
     for (const ex of w.exercises) {
-      ex.sets.forEach((s, i) =>
-        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.')]),
-      );
+      const bw = isBodyweightReps(state, ex.exerciseId);
+      ex.sets.forEach((s, i) => {
+        const load = bw && !isTimedSet(s) ? String(setLoad(state, w, ex.exerciseId, s)) : '';
+        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load]);
+      });
     }
   }
   return rows.map((r) => r.map(esc).join(',')).join('\n');

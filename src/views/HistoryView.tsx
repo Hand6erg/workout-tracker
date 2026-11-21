@@ -7,10 +7,12 @@ import {
   formatDuration,
   formatKg,
   formatSet,
+  isBodyweightReps,
   recapToShow,
   recordCount,
   supersetGroups,
   workoutRecords,
+  withLoads,
   workoutVolume,
   workoutDuration,
 } from '../lib/logic';
@@ -47,7 +49,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
               <span>⏱ {formatDuration(workoutDuration(w, w.startedAt))}</span>
-              <span>🏋️ {formatKg(workoutVolume(w))}</span>
+              <span>🏋️ {formatKg(workoutVolume(withLoads(state, w)))}</span>
               {count > 0 && (
                 <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>
               )}
@@ -67,7 +69,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
                           </span>
                         )}
                       </td>
-                      <td className="muted">{b ? formatSet(b) : ''}</td>
+                      <td className="muted">{b ? formatSet(b, isBodyweightReps(state, e.exerciseId)) : ''}</td>
                     </tr>
                   );
                 })}
@@ -154,7 +156,7 @@ function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () 
           <ol>
             {e.sets.map((s) => (
               <li key={s.id}>
-                {formatSet(s)}
+                {formatSet(s, isBodyweightReps(state, e.exerciseId))}
                 {s.rpe && <span className="muted"> @ RPE {s.rpe}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
               </li>

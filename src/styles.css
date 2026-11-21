@@ -261,6 +261,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .hint strong { color: var(--ok); }
 .last-note { font-size: 0.8rem; color: var(--muted); margin: 0 0 8px; overflow-wrap: anywhere; }
 .warmup-msg { font-size: 0.85rem; color: var(--muted); margin: 6px 0 0; }
+.bw-hint { font-size: 0.85rem; margin: 4px 0 6px; }
 .note-input { display: block; resize: vertical; font-size: 0.9rem; margin-bottom: 8px; }
 .workout-note { display: block; font-size: 0.85rem; color: var(--muted); }
 .workout-note span { display: block; margin-bottom: 4px; }
@@ -355,3 +356,26 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .summary-badges { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--accent); background: var(--accent-soft); }
 .summary-badge { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 4px 0; }
 .summary-badge > span:last-child { display: grid; gap: 2px; min-width: 0; }
+
+/* Løftemål (#199) */
+.goals > .row-between { margin: 28px 0 10px; }
+.goals > .row-between .section { margin: 0; }
+.goal-empty { margin: 0 0 8px; font-size: 0.9rem; }
+.goal-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+.goal-row { display: grid; gap: 6px; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.goal-row.reached { border-color: var(--ok); background: var(--ok-soft); }
+.goal-bar { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+.goal-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s; }
+.goal-row.reached .goal-bar > span { background: var(--ok); }
+.goal-ok { color: var(--ok); font-weight: 600; }
+.goal-behind { color: var(--danger); font-weight: 600; }
+.goal-actions { display: flex; justify-content: flex-end; margin-top: -4px; }
+.goal-actions .btn-ghost { padding: 4px 8px; font-size: 0.85rem; }
+.goal-sub { margin: 12px 0 8px; color: var(--muted); font-size: 0.85rem; }
+.goal-form { padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
+.goal-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.summary-goals { border-color: var(--ok); background: var(--ok-soft); }
+.summary-goals h2 { color: var(--ok); }
+.goal-link { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.profile-goals .goal-list { margin-top: 0; }
+.goal-form-actions { display: flex; gap: 8px; justify-content: flex-end; }

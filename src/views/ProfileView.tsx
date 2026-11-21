@@ -6,17 +6,20 @@ import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
+import { ProfileGoals } from '../components/GoalsSection';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
   formatKg,
+  num,
   initialState,
   loadState,
   muscleDistribution,
   toCsv,
   weekStreak,
   weeklyVolume,
+  withLoads,
   workoutVolume,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
@@ -34,7 +37,7 @@ export function ProfileView() {
   const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
-  const total = state.history.reduce((a, w) => a + workoutVolume(w), 0);
+  const total = state.history.reduce((a, w) => a + workoutVolume(withLoads(state, w)), 0);
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (
@@ -54,6 +57,7 @@ export function ProfileView() {
       <StreakCard />
       <WeeklyVolume />
       <MuscleSplit />
+      <ProfileGoals />
       <RecordsWall />
       <MilestonesSection />
       <BodySection />
@@ -131,6 +135,8 @@ export function ProfileView() {
         />
         Vis forslag til næste vægt
       </label>
+
+      <BodyWeightSetting />
 
       <BarSetting />
 
@@ -256,6 +262,36 @@ function MuscleSplit() {
       )}
       {total > 0 && <p className="muted small-print">"Lidt" = under halvdelen af gennemsnittet for dine muskelgrupper.</p>}
     </section>
+  );
+}
+
+function BodyWeightSetting() {
+  const { state, dispatch } = useStore();
+  const stored = state.bodyWeight ?? null;
+  const [text, setText] = useState(stored === null ? '' : String(stored).replace('.', ','));
+  // Følg med, hvis værdien ændres udefra (fx fletning fra en anden enhed)
+  const [seen, setSeen] = useState(stored);
+  if (seen !== stored) {
+    setSeen(stored);
+    if (num(text) !== (stored ?? 0)) setText(stored === null ? '' : String(stored).replace('.', ','));
+  }
+  return (
+    <>
+      <label className="field">
+        Kropsvægt (kg)
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="fx 80"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            dispatch({ type: 'SET_BODY_WEIGHT', kg: num(e.target.value) });
+          }}
+        />
+      </label>
+      <p className="muted rest-global-note">Bruges til kropsvægtsøvelser, når du ikke har et kropsmål.</p>
+    </>
   );
 }
 

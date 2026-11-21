@@ -100,6 +100,22 @@ export interface BodyMeasurement {
   waist?: number;
 }
 
+/** Et løftemål, fx 100 kg × 1 i bænkpres (#197) */
+export interface LiftGoal {
+  id: string;
+  exerciseId: string;
+  /** Vægt i kg */
+  weight: number;
+  reps: number;
+  /** Måldato (ms), valgfri */
+  targetDate?: number;
+  createdAt: number;
+  /** Hvornår målet blev nået (afslutningstidspunktet for træningen) */
+  achievedAt?: number;
+  /** Hvornår målet sidst blev ændret (til fletning mellem enheder) */
+  updatedAt?: number;
+}
+
 export interface AppState {
   version: 1;
   exercises: Exercise[];
@@ -132,6 +148,10 @@ export interface AppState {
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
   favorites: string[];
+  /** Kropsvægt (kg) fra Profil – bruges til kropsvægtsøvelser, når der ikke er et kropsmål (#206). null = ikke angivet. */
+  bodyWeight: number | null;
+  /** Løftemål (#197) */
+  goals: LiftGoal[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
   program: string[];
   /** Antal "Spring over" siden den seneste træning i programmet (`after` = den træning, null = ingen endnu) */

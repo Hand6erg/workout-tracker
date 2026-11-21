@@ -32,6 +32,9 @@ import {
   type VsLastTime,
   type VsStatus,
   type WorkoutChange,
+  bodyweightText,
+  bodyWeightOn,
+  isBodyweightReps,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
@@ -378,7 +381,8 @@ function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
 }
 
 /** "Forrige"-kolonnen i samme format som sættet */
-function prevText(p: SetEntry, kind: ExerciseKind): string {
+function prevText(p: SetEntry, kind: ExerciseKind, bodyweight = false): string {
+  if (bodyweight && kind === 'reps') return `${bodyweightText(p.weight)}×${p.reps}`;
   if (kind === 'time') return p.seconds ? `${num(p.seconds)} sek.` : '–';
   if (kind === 'distance') return p.meters ? `${p.meters.replace('.', ',')} m${p.seconds ? ` · ${formatClock(num(p.seconds))}` : ''}` : '–';
   return `${p.weight || 0}×${p.reps}`;
@@ -414,7 +418,7 @@ function ClockInput({
   );
 }
 
-function recordText(kinds: RecordKind[], weight: string): string {
+function recordText(kinds: RecordKind[], weight: string, bodyweight = false): string {
   const names = kinds.map((k) =>
     k === 'heaviest'
       ? 'tungeste vægt'
@@ -426,7 +430,7 @@ function recordText(kinds: RecordKind[], weight: string): string {
             ? 'længste distance'
             : k === 'pace'
               ? 'hurtigste tid'
-              : `flest reps på ${num(weight) || 0} kg`,
+              : `flest reps på ${bodyweight ? bodyweightText(weight) : `${num(weight) || 0} kg`}`,
   );
   return `Ny rekord: ${names.join(', ')}`;
 }
@@ -465,8 +469,10 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
-  const lastText = `${repsText}${last.weight ? ` @ ${kgText(last.weight)} kg` : ''}`;
-  const nextText = next.weight && next.weight !== last.weight ? `${kgText(next.weight)} kg` : `${next.reps} reps`;
+  // Kropsvægtsøvelser (#209): "@ KV +10" og "prøv KV −17,5"
+  const w = (n: number) => (hint.bodyweight ? bodyweightText(String(n)) : `${kgText(n)} kg`);
+  const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}`;
+  const nextText = next.weight !== last.weight ? w(next.weight) : `${next.reps} reps`;
   return (
     <button
       className="hint"
@@ -489,6 +495,9 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
   const [warmupMsg, setWarmupMsg] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
+  // Kropsvægtsøvelse (#208): vægtfeltet er ekstra vægt (+10) eller assistance (−20)
+  const bw = isBodyweightReps(state, we.exerciseId);
+  const bwMissing = bw && bodyWeightOn(state, w.startedAt) === null;
   const all = w.exercises;
   const pos = all.findIndex((e) => e.id === we.id);
   const next = all[pos + 1];
@@ -590,6 +599,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           }}
         />
       )}
+      {bwMissing && <p className="muted bw-hint">Angiv din kropsvægt i Profil for at tælle den med</p>}
       <table className="sets">
         <thead>
           <tr>
@@ -597,7 +607,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
             <th>Forrige</th>
             {kind === 'reps' && (
               <>
-                <th>kg</th>
+                <th>{bw ? '+kg' : 'kg'}</th>
                 <th>Reps</th>
                 <th>RPE</th>
               </>
@@ -633,7 +643,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                     {s.warmup ? 'O' : i + 1}
                   </button>
                 </td>
-                <td className="prev">{p ? prevText(p, kind) : '–'}</td>
+                <td className="prev">{p ? prevText(p, kind, bw) : '–'}</td>
                 {kind === 'time' && (
                   <>
                     <td>
@@ -691,9 +701,9 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 <>
                 <td>
                   <input
-                    inputMode="decimal"
-                    aria-label={`Vægt ${what} ${i + 1}`}
-                    placeholder={p?.weight || ''}
+                    inputMode={bw ? 'text' : 'decimal'}
+                    aria-label={`${bw ? 'Ekstra vægt' : 'Vægt'} ${what} ${i + 1}`}
+                    placeholder={p?.weight || (bw ? 'KV' : '')}
                     value={s.weight}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight: e.target.value } })}
                   />
@@ -732,10 +742,10 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
               {records.length > 0 && (
                 <tr className="pr-row">
                   <td colSpan={6}>
-                    <span role="img" aria-label={recordText(records, s.weight)}>
+                    <span role="img" aria-label={recordText(records, s.weight, bw)}>
                       🏆
                     </span>{' '}
-                    {recordText(records, s.weight)}
+                    {recordText(records, s.weight, bw)}
                   </td>
                 </tr>
               )}
