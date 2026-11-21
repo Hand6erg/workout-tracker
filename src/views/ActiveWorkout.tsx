@@ -469,8 +469,10 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
-  const lastText = `${repsText}${last.weight ? ` @ ${kgText(last.weight)} kg` : ''}`;
-  const nextText = next.weight && next.weight !== last.weight ? `${kgText(next.weight)} kg` : `${next.reps} reps`;
+  // Kropsvægtsøvelser (#209): "@ KV +10" og "prøv KV −17,5"
+  const w = (n: number) => (hint.bodyweight ? bodyweightText(String(n)) : `${kgText(n)} kg`);
+  const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}`;
+  const nextText = next.weight !== last.weight ? w(next.weight) : `${next.reps} reps`;
   return (
     <button
       className="hint"

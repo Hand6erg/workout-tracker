@@ -120,3 +120,48 @@ test('med kropsvægt i Profil vises intet hint, og normale øvelser har "kg" som
   // (80 + 10) × 5 = 450 kg
   await expect(page.getByRole('region', { name: 'Opsummering' })).toContainText('450 kg');
 });
+
+test('en egen øvelse med udstyret "Kropsvægt" logges som "KV +5 × …" (#209)', async ({ page }) => {
+  await page.goto('./');
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: '+ Ny' }).click();
+  const dlg = page.getByRole('dialog', { name: 'Ny øvelse' });
+  await dlg.getByLabel('Navn').fill('Ringrows');
+  await dlg.getByLabel('Muskelgruppe').selectOption('Ryg');
+  await dlg.getByLabel('Udstyr').selectOption('Kropsvægt');
+  await dlg.getByRole('button', { name: 'Gem øvelse' }).click();
+  await page.getByRole('button', { name: /Ringrows.*egen/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Ringrows' }).getByText('Kropsvægt + ekstra vægt')).toBeVisible();
+  await page.getByRole('dialog', { name: 'Ringrows' }).getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  const picker = page.getByRole('dialog', { name: 'Tilføj øvelser' });
+  await picker.getByPlaceholder('Søg efter øvelse').fill('ringrows');
+  await picker.getByRole('button', { name: /^Ringrows/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+  const ex = workout.getByRole('article', { name: 'Ringrows' });
+  await ex.getByLabel('Ekstra vægt sæt 1').fill('5');
+  await ex.getByLabel('Reps sæt 1').fill('12');
+  await ex.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('region', { name: 'Opsummering' }).getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.getByText('KV +5 × 12', { exact: true })).toBeVisible();
+
+  // Næste gang: 12 reps på alle sæt → forslag om 2,5 kg mere
+  await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
+  await page.getByRole('button', { name: 'Start tom træning' }).click();
+  await workout.getByRole('button', { name: '+ Tilføj øvelser' }).click();
+  await picker.getByPlaceholder('Søg efter øvelse').fill('ringrows');
+  await picker.getByRole('button', { name: /^Ringrows/ }).click();
+  await picker.getByRole('button', { name: 'Tilføj (1)' }).click();
+  const hint = workout.getByRole('article', { name: 'Ringrows' }).getByRole('button', { name: /Sidst: 1 × 12 @ KV \+5\. Prøv KV \+7,5/ });
+  await expect(hint).toBeVisible();
+  await hint.click();
+  await expect(workout.getByRole('article', { name: 'Ringrows' }).getByLabel('Ekstra vægt sæt 1')).toHaveValue('7,5');
+});
