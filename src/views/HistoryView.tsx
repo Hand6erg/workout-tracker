@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatKg,
   formatSet,
+  isBodyweightReps,
   recapToShow,
   recordCount,
   supersetGroups,
@@ -68,7 +69,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
                           </span>
                         )}
                       </td>
-                      <td className="muted">{b ? formatSet(b) : ''}</td>
+                      <td className="muted">{b ? formatSet(b, isBodyweightReps(state, e.exerciseId)) : ''}</td>
                     </tr>
                   );
                 })}
@@ -155,7 +156,7 @@ function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () 
           <ol>
             {e.sets.map((s) => (
               <li key={s.id}>
-                {formatSet(s)}
+                {formatSet(s, isBodyweightReps(state, e.exerciseId))}
                 {s.rpe && <span className="muted"> @ RPE {s.rpe}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
               </li>

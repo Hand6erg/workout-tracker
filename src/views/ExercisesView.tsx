@@ -8,6 +8,7 @@ import {
   formatClock,
   formatKg,
   formatSet,
+  isBodyweightReps,
   num,
   personalRecords,
   uid,
@@ -212,7 +213,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <li key={h.workoutId} className="list-row static">
                 <span>
                   <strong>{shortDate.format(h.date)}</strong>
-                  <small>{h.sets.map(formatSet).join(' · ')}</small>
+                  <small>{h.sets.map((s) => formatSet(s, isBodyweightReps(state, ex.id))).join(' · ')}</small>
                 </span>
                 <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
               </li>
