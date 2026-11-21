@@ -1117,6 +1117,85 @@ export function muscleDistribution(state: AppState, sinceMs: number): MuscleShar
   return [...out.values()];
 }
 
+/* ---------- Restitution pr. muskelgruppe (#286) ---------- */
+
+export type RecoveryStatus = 'rested' | 'recent' | 'hard';
+
+export interface MuscleRecovery {
+  muscle: Muscle;
+  /** Starttidspunkt for den seneste afsluttede træning med et udført arbejdssæt for musklen (null = aldrig) */
+  lastTrainedAt: number | null;
+  /** Hele kalenderdage siden (0 = i dag, null = aldrig) */
+  daysSince: number | null;
+  /** Udførte arbejdssæt de sidste 7 dage */
+  hardSets7d: number;
+  lastWorkoutId: string | null;
+  status: RecoveryStatus;
+}
+
+const HOUR = 3_600_000;
+/** Så mange arbejdssæt inden for 48 timer = hårdt trænet */
+export const RECOVERY_HARD_SETS = 6;
+
+function dayStart(t: number): number {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Hele kalenderdage mellem to tidspunkter (lokal tid) */
+function calendarDaysBetween(from: number, to: number): number {
+  return Math.round((dayStart(to) - dayStart(from)) / 86_400_000);
+}
+
+/** Hvor hvilet er hver muskelgruppe? Udregnes fra historikken – intet gemmes. */
+export function muscleRecovery(state: Pick<AppState, 'history' | 'exercises'>, now: number): MuscleRecovery[] {
+  const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
+  const rows = new Map<Muscle, MuscleRecovery & { sets48h: number }>(
+    MUSCLES.map((m) => [
+      m,
+      { muscle: m, lastTrainedAt: null, daysSince: null, hardSets7d: 0, lastWorkoutId: null, status: 'rested', sets48h: 0 },
+    ]),
+  );
+  for (const w of state.history) {
+    if (!w.finishedAt || w.startedAt > now) continue;
+    for (const we of w.exercises) {
+      const row = rows.get(muscleOf.get(we.exerciseId) as Muscle);
+      if (!row) continue;
+      const sets = we.sets.filter(isWorkSet).length;
+      if (!sets) continue;
+      if (row.lastTrainedAt === null || w.startedAt > row.lastTrainedAt) {
+        row.lastTrainedAt = w.startedAt;
+        row.lastWorkoutId = w.id;
+      }
+      if (now - w.startedAt <= 7 * 24 * HOUR) row.hardSets7d += sets;
+      if (now - w.startedAt <= 48 * HOUR) row.sets48h += sets;
+    }
+  }
+  return [...rows.values()].map(({ sets48h, ...row }) => {
+    if (row.lastTrainedAt === null) return row;
+    const status: RecoveryStatus =
+      sets48h >= RECOVERY_HARD_SETS ? 'hard' : now - row.lastTrainedAt <= 72 * HOUR ? 'recent' : 'rested';
+    return { ...row, daysSince: calendarDaysBetween(row.lastTrainedAt, now), status };
+  });
+}
+
+/** Træner skabelonen mest muskler, der er hvilede? (over halvdelen af de planlagte sæt) */
+export function templateReady(state: Pick<AppState, 'history' | 'exercises' | 'templates'>, templateId: string, now: number): boolean {
+  const t = state.templates.find((x) => x.id === templateId);
+  if (!t) return false;
+  const status = new Map(muscleRecovery(state, now).map((r) => [r.muscle, r.status]));
+  const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
+  let total = 0;
+  let rested = 0;
+  for (const te of t.exercises) {
+    total += te.sets;
+    const m = muscleOf.get(te.exerciseId);
+    if (m && status.get(m) === 'rested') rested += te.sets;
+  }
+  return total > 0 && rested * 2 > total;
+}
+
 /* ---------- Plader og opvarmning ---------- */
 
 export interface PlateResult {
