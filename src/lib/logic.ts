@@ -45,6 +45,7 @@ export function initialState(): AppState {
     keepAwake: true,
     recapDismissed: null,
     favorites: [],
+    bodyWeight: null,
     goals: [],
     program: [],
     programSkip: { after: null, n: 0 },
@@ -881,6 +882,22 @@ export function bodyWeightAt(bodyLog: BodyMeasurement[], at: number): number | n
   return found.weight!;
 }
 
+/** Er øvelsen en kropsvægtsøvelse (#206)? Det er øvelser med udstyret "Kropsvægt" – indbyggede og egne. */
+export function isBodyweight(state: Pick<AppState, 'exercises'>, exerciseId: string): boolean {
+  return state.exercises.find((e) => e.id === exerciseId)?.equipment === 'Kropsvægt';
+}
+
+/**
+ * Kropsvægten på en dato til kropsvægtsøvelser (#206): seneste kropsmål på/før datoen, ellers den første
+ * måling efter, ellers indstillingen i Profil, ellers null (ukendt).
+ */
+export function bodyWeightOn(state: Pick<AppState, 'bodyLog' | 'bodyWeight'>, date: number): number | null {
+  const measured = bodyWeightAt(state.bodyLog ?? [], date);
+  if (measured !== null) return measured;
+  const setting = state.bodyWeight;
+  return typeof setting === 'number' && setting > 0 ? setting : null;
+}
+
 /** Tungeste udførte arbejdssæt (vægt × reps, mindst 1 rep) i en træning */
 function heaviestSet(w: Workout): number {
   let best = 0;
@@ -1551,6 +1568,8 @@ export type Action =
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
+  /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
+  | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
   | { type: 'SKIP_PROGRAM' }
@@ -1942,6 +1961,10 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restVibrate: action.on };
     case 'SET_KEEP_AWAKE':
       return { ...state, keepAwake: action.on };
+    case 'SET_BODY_WEIGHT': {
+      const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
+      return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
+    }
     case 'TOGGLE_FAVORITE': {
       const favs = state.favorites ?? [];
       if (favs.includes(action.exerciseId)) return { ...state, favorites: favs.filter((id) => id !== action.exerciseId) };
@@ -2101,6 +2124,7 @@ const SETTINGS = [
   'favorites',
   'program',
   'programSkip',
+  'bodyWeight',
 ] as const;
 
 type Stamped = { id: string; updatedAt?: number };
@@ -2171,7 +2195,7 @@ export function mergeStates(local: AppState, remote: AppState): AppState {
   for (const [id, at] of Object.entries(local.deleted ?? {})) deleted[id] = Math.max(at, deleted[id] ?? 0);
   const remoteSettingsNewer = (remote.settingsAt ?? 0) > (local.settingsAt ?? 0);
   const settings = remoteSettingsNewer
-    ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] ?? local[k]]), ['settingsAt', remote.settingsAt]])
+    ? Object.fromEntries([...SETTINGS.map((k) => [k, remote[k] === undefined ? local[k] : remote[k]]), ['settingsAt', remote.settingsAt]])
     : {};
   const active = local.active ?? remote.active ?? null;
   const favorites = ((settings as Partial<AppState>).favorites ?? local.favorites ?? []).filter((id) => !(id in deleted));
@@ -2244,6 +2268,8 @@ export function loadState(raw: string | null): AppState {
       exercises,
       // Favoritter fra før #190 findes ikke; ukendte øvelser fjernes
       favorites: Array.isArray(parsed.favorites) ? [...new Set(parsed.favorites)].filter((id) => ids.has(id)) : [],
+      // Kropsvægt-indstillingen fra før #206 findes ikke
+      bodyWeight: typeof parsed.bodyWeight === 'number' && parsed.bodyWeight > 0 ? parsed.bodyWeight : null,
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)

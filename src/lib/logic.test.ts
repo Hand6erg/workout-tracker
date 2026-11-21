@@ -58,6 +58,8 @@ import {
   milestoneProgressText,
   milestoneTileLabel,
   bodyWeightAt,
+  bodyWeightOn,
+  isBodyweight,
   vsRowCells,
   shareCardLines,
   trainingDays,
@@ -2604,5 +2606,69 @@ describe('nåede mål i opsummeringen (#201)', () => {
     s = lift(s, '105', D + 20000);
     const later = s.history.find((w) => w.id !== miss && w.id !== hit)!.id;
     expect(workoutSummary(s, later)!.goals).toEqual([]);
+  });
+});
+
+describe('kropsvægt til kropsvægtsøvelser (#206)', () => {
+  const DAY = 86_400_000;
+  const T = Date.UTC(2026, 5, 15);
+  const log = [
+    { id: 'b', date: T + 10 * DAY, weight: 82 },
+    { id: 'a', date: T, weight: 80 },
+    { id: 'c', date: T + 5 * DAY, bodyFat: 15 },
+  ];
+
+  it('finder øvelser med udstyret Kropsvægt – også egne', () => {
+    const s = initialState();
+    const pullup = s.exercises.find((e) => e.equipment === 'Kropsvægt')!;
+    const bar = s.exercises.find((e) => e.equipment === 'Stang')!;
+    expect(isBodyweight(s, pullup.id)).toBe(true);
+    expect(isBodyweight(s, bar.id)).toBe(false);
+    expect(isBodyweight(s, 'findes-ikke')).toBe(false);
+    const own = reducer(s, { type: 'ADD_CUSTOM_EXERCISE', id: 'ring', name: 'Ringrows', muscle: 'Ryg', equipment: 'Kropsvægt' });
+    expect(isBodyweight(own, 'ring')).toBe(true);
+  });
+
+  it('bruger det seneste kropsmål før datoen, ellers det første efter, ellers indstillingen', () => {
+    const s = { ...initialState(), bodyLog: log, bodyWeight: 75 };
+    expect(bodyWeightOn(s, T - DAY)).toBe(80); // før alle målinger: den første måling
+    expect(bodyWeightOn(s, T)).toBe(80);
+    expect(bodyWeightOn(s, T + 7 * DAY)).toBe(80); // mellem målinger (målingen uden vægt tæller ikke)
+    expect(bodyWeightOn(s, T + 20 * DAY)).toBe(82);
+    expect(bodyWeightOn({ ...s, bodyLog: [] }, T)).toBe(75);
+    expect(bodyWeightOn({ ...s, bodyLog: [{ id: 'x', date: T, waist: 80 }] }, T)).toBe(75);
+    expect(bodyWeightOn({ ...s, bodyLog: [], bodyWeight: null }, T)).toBeNull();
+  });
+
+  it('SET_BODY_WEIGHT gemmer kg, og tom/0 betyder ikke angivet', () => {
+    const s = initialState();
+    expect(s.bodyWeight).toBeNull();
+    const set = reducer(s, { type: 'SET_BODY_WEIGHT', kg: 81.25 });
+    expect(set.bodyWeight).toBe(81.3);
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: 0 }).bodyWeight).toBeNull();
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: NaN }).bodyWeight).toBeNull();
+    expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: -5 }).bodyWeight).toBeNull();
+  });
+
+  it('gamle data uden kropsvægt indlæses, og indstillingen flettes efter settingsAt', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.bodyWeight;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.bodyWeight).toBeNull();
+    expect(bodyWeightOn(loaded, T)).toBeNull();
+    expect(loadState(JSON.stringify({ ...old, bodyWeight: 78 })).bodyWeight).toBe(78);
+
+    const prev = { ...initialState(), settingsAt: 100 };
+    const phone = stampChanges(prev, reducer(prev, { type: 'SET_BODY_WEIGHT', kg: 80 }), 500);
+    expect(phone.settingsAt).toBe(500);
+    expect(mergeStates(prev, phone).bodyWeight).toBe(80);
+    expect(mergeStates(phone, prev).bodyWeight).toBe(80);
+    // At rydde feltet på en nyere enhed rydder det også de andre steder
+    const cleared = stampChanges(phone, reducer(phone, { type: 'SET_BODY_WEIGHT', kg: 0 }), 900);
+    expect(mergeStates(phone, cleared).bodyWeight).toBeNull();
+    // Data fra serveren fra før #206 (uden feltet) rører ikke den lokale værdi
+    const oldRemote = JSON.parse(JSON.stringify({ ...initialState(), settingsAt: 1000 }));
+    delete oldRemote.bodyWeight;
+    expect(mergeStates(phone, oldRemote).bodyWeight).toBe(80);
   });
 });
