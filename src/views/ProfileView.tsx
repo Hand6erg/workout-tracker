@@ -19,6 +19,7 @@ import {
   toCsv,
   weekStreak,
   weeklyVolume,
+  withLoads,
   workoutVolume,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
@@ -36,7 +37,7 @@ export function ProfileView() {
   const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
-  const total = state.history.reduce((a, w) => a + workoutVolume(w), 0);
+  const total = state.history.reduce((a, w) => a + workoutVolume(withLoads(state, w)), 0);
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (

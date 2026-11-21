@@ -11,6 +11,7 @@ import {
   recordCount,
   supersetGroups,
   workoutRecords,
+  withLoads,
   workoutVolume,
   workoutDuration,
 } from '../lib/logic';
@@ -47,7 +48,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
               <span>⏱ {formatDuration(workoutDuration(w, w.startedAt))}</span>
-              <span>🏋️ {formatKg(workoutVolume(w))}</span>
+              <span>🏋️ {formatKg(workoutVolume(withLoads(state, w)))}</span>
               {count > 0 && (
                 <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>
               )}

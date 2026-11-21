@@ -274,6 +274,7 @@ function historySets(history: Workout[], exerciseId: string, kind: ExerciseKind)
 
 /** Rekorder for en øvelse ud fra afsluttede træninger */
 export function personalRecords(state: AppState, exerciseId: string): PersonalRecords {
+  state = loadedState(state);
   return recordsFrom(historySets(state.history, exerciseId, exerciseKind(state, exerciseId)));
 }
 
@@ -282,6 +283,9 @@ export function personalRecords(state: AppState, exerciseId: string): PersonalRe
  * de udførte sæt før det i den aktive træning. Første gang en øvelse laves er ingen rekord.
  */
 export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEntry): RecordKind[] {
+  const date = state.active && state.active.exercises.some((we) => we.sets.includes(set)) ? state.active : { startedAt: Date.now() };
+  if (!LOADED_SETS.has(set) && isBodyweight(state, exerciseId)) set = { ...set, weight: String(setLoad(state, date, exerciseId, set)) };
+  state = loadedState(state);
   const kind = exerciseKind(state, exerciseId);
   const [candidate] = validSets([set], 0, kind);
   if (!candidate) return [];
@@ -313,6 +317,7 @@ export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEnt
 
 /** Rekorder slået i en afsluttet træning (pr. øvelse), sammenlignet med træninger før den */
 export function workoutRecords(state: AppState, workoutId: string): Record<string, RecordKind[]> {
+  state = loadedState(state);
   const w = state.history.find((x) => x.id === workoutId);
   if (!w) return {};
   const before: AppState = { ...state, history: state.history.filter((x) => x.startedAt < w.startedAt), active: w };
@@ -359,6 +364,7 @@ export interface RecordsWallRow {
  * (opvarmning tæller aldrig), nyeste rekord først. Valgfrit filter på muskelgruppe.
  */
 export function recordsWall(state: AppState, muscle?: Muscle): RecordsWallRow[] {
+  state = loadedState(state);
   const rows: RecordsWallRow[] = [];
   for (const ex of state.exercises) {
     if (muscle && ex.muscle !== muscle) continue;
@@ -441,6 +447,7 @@ export function monthKey(year: number, month: number): string {
 }
 
 function monthStats(state: AppState, year: number, month: number): MonthStats {
+  state = loadedState(state);
   const list = workoutsInMonth(state, year, month);
   const ex = new Map(state.exercises.map((e) => [e.id, e]));
   const muscleSets = new Map<Muscle, number>();
@@ -569,6 +576,7 @@ function previousFromTemplate(history: Workout[], w: Workout): Workout | null {
 
 /** Opsummering af en afsluttet træning: varighed, volumen, sæt, nye rekorder og sammenligning med sidst */
 export function workoutSummary(state: AppState, workoutId: string): WorkoutSummary | null {
+  state = loadedState(state);
   const w = state.history.find((x) => x.id === workoutId);
   if (!w) return null;
   const names = new Map(state.exercises.map((e) => [e.id, e.name]));
@@ -651,6 +659,8 @@ function compareValues(now: number, last: number): VsStatus {
  */
 export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime | null {
   if (!workout) return null;
+  state = loadedState(state);
+  workout = withLoads(state, workout);
   const prev = previousFromTemplate(state.history, workout);
   if (!prev) return null;
   const names = new Map(state.exercises.map((e) => [e.id, e.name]));
@@ -793,6 +803,7 @@ export function weeklyVolume(state: AppState, weeks: number, now: number): WeekV
     ws = startOfWeek(ws - DAY_MS); // et døgn før mandag = forrige uge (tåler sommertid)
   }
   const out = starts.map((weekStart) => ({ weekStart, week: isoWeek(weekStart), volume: 0 }));
+  state = loadedState(state);
   for (const w of state.history) {
     const i = starts.indexOf(startOfWeek(w.startedAt));
     if (i >= 0) out[i].volume += workoutVolume(w);
@@ -898,6 +909,75 @@ export function bodyWeightOn(state: Pick<AppState, 'bodyLog' | 'bodyWeight'>, da
   return typeof setting === 'number' && setting > 0 ? setting : null;
 }
 
+/**
+ * Belastningen i et sæt i kg (#207). For kropsvægtsøvelser er vægtfeltet ekstra vægt (+10 = vægtbælte,
+ * −20 = assistance, tomt = 0), og belastningen er kropsvægten på træningens dato + ekstra (aldrig under 0).
+ * Kendes kropsvægten ikke, tæller kun den ekstra vægt – som før. Andre øvelser: bare vægten.
+ */
+export function setLoad(
+  state: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>,
+  workout: Pick<Workout, 'startedAt'>,
+  exerciseId: string,
+  set: SetEntry,
+): number {
+  const extra = num(set.weight);
+  if (LOADED_SETS.has(set) || !isBodyweight(state, exerciseId)) return extra;
+  const bw = bodyWeightOn(state, workout.startedAt) ?? 0;
+  return Math.max(0, Math.round((bw + extra) * 100) / 100);
+}
+
+/** Sæt og træninger, hvor vægtfeltet allerede er belastningen – så den aldrig lægges til to gange */
+const LOADED_SETS = new WeakSet<SetEntry>();
+const LOADED_WORKOUTS = new WeakSet<Workout>();
+const loadCache = new WeakMap<Workout, { ctx: unknown[]; out: Workout }>();
+
+/**
+ * Træningen med belastningen (#207) i vægtfeltet for kropsvægtsøvelser – til tal (volumen, rekorder, statistik).
+ * Gemte data ændres ikke; det beregnes, når det vises. Visning af sæt bruger stadig den rå træning.
+ */
+export function withLoads(state: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>, w: Workout): Workout {
+  if (LOADED_WORKOUTS.has(w)) return w;
+  const ctx = [state.exercises, state.bodyLog, state.bodyWeight];
+  const hit = loadCache.get(w);
+  if (hit && hit.ctx.every((x, i) => x === ctx[i])) return hit.out;
+  let out = w;
+  if (w.exercises.some((we) => isBodyweight(state, we.exerciseId))) {
+    out = {
+      ...w,
+      exercises: w.exercises.map((we) => {
+        if (!isBodyweight(state, we.exerciseId)) return we;
+        return {
+          ...we,
+          sets: we.sets.map((s) => {
+            if (LOADED_SETS.has(s) || isTimedSet(s)) return s;
+            const loaded = { ...s, weight: String(setLoad(state, w, we.exerciseId, s)) };
+            LOADED_SETS.add(loaded);
+            return loaded;
+          }),
+        };
+      }),
+    };
+  }
+  LOADED_WORKOUTS.add(out);
+  loadCache.set(w, { ctx, out });
+  return out;
+}
+
+const stateCache = new WeakMap<AppState, AppState>();
+
+/** Hele tilstanden med belastning i historikken og den aktive træning (#207) – til beregninger */
+export function loadedState(state: AppState): AppState {
+  const hit = stateCache.get(state);
+  if (hit) return hit;
+  const load = (w: Workout | null) => (w ? withLoads(state, w) : w);
+  const history = state.history.map((w) => withLoads(state, w));
+  const changed = history.some((w, i) => w !== state.history[i]) || load(state.active) !== state.active;
+  const out = changed ? { ...state, history, active: load(state.active) } : state;
+  stateCache.set(state, out);
+  stateCache.set(out, out);
+  return out;
+}
+
 /** Tungeste udførte arbejdssæt (vægt × reps, mindst 1 rep) i en træning */
 function heaviestSet(w: Workout): number {
   let best = 0;
@@ -927,7 +1007,7 @@ export function milestones(state: AppState): Milestone[] {
   };
   for (const w of [...state.history].sort((a, b) => a.startedAt - b.startedAt)) {
     count++;
-    volume += workoutVolume(w);
+    volume += workoutVolume(withLoads(state, w));
     const ws = startOfWeek(w.startedAt);
     const n = (weekCount.get(ws) ?? 0) + 1;
     weekCount.set(ws, n);
@@ -999,6 +1079,7 @@ export interface MuscleShare {
 
 /** Udførte sæt og volumen pr. muskelgruppe for træninger fra `sinceMs` (0 = alt) */
 export function muscleDistribution(state: AppState, sinceMs: number): MuscleShare[] {
+  state = loadedState(state);
   const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
   const out = new Map<Muscle, MuscleShare>(MUSCLES.map((m) => [m, { muscle: m, sets: 0, volume: 0 }]));
   for (const w of state.history) {
@@ -1253,19 +1334,28 @@ export interface ExerciseHistoryEntry {
   volume: number;
 }
 
-export function exerciseHistory(history: Workout[], exerciseId: string): ExerciseHistoryEntry[] {
+/**
+ * En øvelses historik: sættene (som de blev logget) + bedste e1RM og volumen pr. træning.
+ * Med `state` regnes kropsvægt med for kropsvægtsøvelser (#207).
+ */
+export function exerciseHistory(
+  history: Workout[],
+  exerciseId: string,
+  state?: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>,
+): ExerciseHistoryEntry[] {
   const out: ExerciseHistoryEntry[] = [];
   for (const w of history) {
     for (const ex of w.exercises) {
       if (ex.exerciseId !== exerciseId) continue;
       const sets = ex.sets.filter(isWorkSet);
       if (!sets.length) continue;
+      const load = (s: SetEntry) => (state ? setLoad(state, w, exerciseId, s) : num(s.weight));
       out.push({
         workoutId: w.id,
         date: w.startedAt,
         sets,
-        best1RM: Math.max(0, ...sets.map((s) => estimate1RM(num(s.weight), num(s.reps)))),
-        volume: sets.reduce((a, s) => a + setVolume(s), 0),
+        best1RM: Math.max(0, ...sets.map((s) => estimate1RM(load(s), num(s.reps)))),
+        volume: sets.reduce((a, s) => a + (isTimedSet(s) ? 0 : load(s) * num(s.reps)), 0),
       });
     }
   }

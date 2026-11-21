@@ -59,6 +59,9 @@ import {
   milestoneTileLabel,
   bodyWeightAt,
   bodyWeightOn,
+  setLoad,
+  withLoads,
+  loadedState,
   isBodyweight,
   vsRowCells,
   shareCardLines,
@@ -2670,5 +2673,78 @@ describe('kropsvægt til kropsvægtsøvelser (#206)', () => {
     const oldRemote = JSON.parse(JSON.stringify({ ...initialState(), settingsAt: 1000 }));
     delete oldRemote.bodyWeight;
     expect(mergeStates(phone, oldRemote).bodyWeight).toBe(80);
+  });
+});
+
+describe('kropsvægt i volumen, rekorder og statistik (#207)', () => {
+  const DAY = 86_400_000;
+  const T = Date.UTC(2026, 5, 15, 10);
+  let n = 0;
+  const set = (weight: string, reps: string): SetEntry => ({ id: `s${++n}`, weight, reps, rpe: '', done: true });
+  const wo = (id: string, at: number, exerciseId: string, sets: SetEntry[]): Workout => ({
+    id, name: 'Træning', startedAt: at, finishedAt: at + 3_600_000, exercises: [{ id: `we-${id}`, exerciseId, sets }],
+  });
+  const base = (history: Workout[], extra: Partial<AppState> = {}): AppState => ({ ...initialState(), history, ...extra });
+
+  it('10 pull-ups med 80 kg kropsvægt: 800 kg, +10 giver 900, −20 giver 600, ukendt kropsvægt 0', () => {
+    const w = wo('a', T, 'pullup', [set('', '10')]);
+    const s = base([w], { bodyWeight: 80 });
+    expect(setLoad(s, w, 'pullup', w.exercises[0].sets[0])).toBe(80);
+    expect(workoutVolume(withLoads(s, w))).toBe(800);
+    expect(workoutVolume(withLoads(s, wo('b', T, 'pullup', [set('10', '10')])))).toBe(900);
+    expect(workoutVolume(withLoads(s, wo('c', T, 'pullup', [set('-20', '10')])))).toBe(600);
+    expect(workoutVolume(withLoads(base([w]), w))).toBe(0);
+    expect(workoutVolume(withLoads(base([]), wo('d', T, 'pullup', [set('-20', '10')])))).toBe(0); // aldrig under 0
+    expect(workoutVolume(withLoads(base([]), wo('e', T, 'pullup', [set('10', '10')])))).toBe(100); // kun ekstra vægt
+    // Tallene i opsummering, ugevolumen og muskelfordeling følger med
+    expect(workoutSummary(s, 'a')!.volume).toBe(800);
+    expect(weeklyVolume(s, 1, T).at(-1)!.volume).toBe(800);
+    expect(muscleDistribution(s, 0).find((m) => m.muscle === 'Ryg')!.volume).toBe(800);
+    expect(exerciseHistory(s.history, 'pullup', s)[0]).toMatchObject({ volume: 800, best1RM: estimate1RM(80, 10) });
+    expect(exerciseHistory(s.history, 'pullup', s)[0].sets[0].weight).toBe(''); // sættene vises som logget
+    // Gemte data ændres ikke
+    expect(s.history[0].exercises[0].sets[0].weight).toBe('');
+  });
+
+  it('et pull-up-sæt med ekstra vægt kan slå et uden som rekord', () => {
+    const first = wo('a', T, 'pullup', [set('', '8')]);
+    const second = wo('b', T + DAY, 'pullup', [set('10', '8')]);
+    const s = base([second, first], { bodyWeight: 80 });
+    expect(workoutRecords(s, 'b').pullup).toEqual(expect.arrayContaining(['heaviest', '1rm']));
+    expect(personalRecords(s, 'pullup').heaviest).toMatchObject({ weight: 90, reps: 8 });
+    expect(recordsWall(s).find((r) => r.exerciseId === 'pullup')!.best1RM!.weight).toBe(90);
+    // Under træningen: +10 slår det bedste uden ekstra vægt
+    const active = { ...wo('c', T + 2 * DAY, 'pullup', [set('12.5', '8')]), finishedAt: undefined };
+    const live = { ...base([first], { bodyWeight: 80 }), active };
+    expect(recordsBrokenBy(live, 'pullup', active.exercises[0].sets[0])).toEqual(expect.arrayContaining(['heaviest', '1rm']));
+  });
+
+  it('øvelser uden kropsvægt giver præcis de samme tal som før', () => {
+    const w = wo('a', T, 'squat', [set('100', '5'), set('110', '3')]);
+    const s = base([w], { bodyWeight: 80 });
+    expect(withLoads(s, w)).toBe(w);
+    expect(loadedState(s)).toBe(s);
+    expect(workoutSummary(s, 'a')!.volume).toBe(830);
+    expect(personalRecords(s, 'squat').heaviest!.weight).toBe(110);
+  });
+
+  it('et kropsmål logget senere ændrer ikke en ældre træning, når der findes et ældre mål', () => {
+    const w = wo('a', T, 'dips', [set('', '10')]);
+    const s = base([w], { bodyLog: [{ id: 'm1', date: T - 10 * DAY, weight: 80 }] });
+    expect(workoutSummary(s, 'a')!.volume).toBe(800);
+    const later = { ...s, bodyLog: [{ id: 'm2', date: T + 10 * DAY, weight: 90 }, ...s.bodyLog] };
+    expect(workoutSummary(later, 'a')!.volume).toBe(800);
+    // Kun det senere mål: det bruges (den første måling efter datoen)
+    expect(workoutSummary({ ...s, bodyLog: [{ id: 'm2', date: T + 10 * DAY, weight: 90 }] }, 'a')!.volume).toBe(900);
+  });
+
+  it('kropsvægten lægges aldrig til to gange og tæller med i volumenmilepæle', () => {
+    const w = wo('a', T, 'pullup', [set('', '10')]);
+    const s = base([w], { bodyWeight: 80 });
+    const once = withLoads(s, w);
+    expect(withLoads(s, once)).toBe(once);
+    expect(workoutVolume(withLoads(s, once))).toBe(800);
+    expect(monthRecap(s, 2026, 5).volume).toBe(800);
+    expect(milestones(s).find((m) => m.id === 'volume-1t')!.current).toBe(800);
   });
 });

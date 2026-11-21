@@ -156,7 +156,7 @@ function NewExercise({ onClose }: { onClose: () => void }) {
 /** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
 export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
   const { state } = useStore();
-  const hist = exerciseHistory(state.history, ex.id);
+  const hist = exerciseHistory(state.history, ex.id, state);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
   const kind = exerciseKind(state, ex.id);
   // Tids- og distanceøvelser måles i sekunder/meter i stedet for 1RM (#136)
