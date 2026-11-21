@@ -148,6 +148,8 @@ export interface AppState {
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
   favorites: string[];
+  /** Kropsvægt (kg) fra Profil – bruges til kropsvægtsøvelser, når der ikke er et kropsmål (#206). null = ikke angivet. */
+  bodyWeight: number | null;
   /** Løftemål (#197) */
   goals: LiftGoal[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */
