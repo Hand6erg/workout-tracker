@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { etaText, formatKg, goalEta, goalOnTrack, goalProgress, uid } from '../lib/logic';
+import { etaText, formatKg, goalEta, goalOnTrack, goalProgress, goalsOverview, uid } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { LiftGoal } from '../lib/types';
+import { ExerciseDetail } from '../views/ExercisesView';
 import { ConfirmButton } from './ui';
 
 const longDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -129,5 +130,74 @@ function GoalForm({ exerciseId, onDone }: { exerciseId: string; onDone: () => vo
         </button>
       </div>
     </div>
+  );
+}
+
+/** "🎯 Mål" i Profil (#200): alle mål på tværs af øvelser – tryk for at åbne øvelsen */
+export function ProfileGoals() {
+  const { state } = useStore();
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [showReached, setShowReached] = useState(false);
+  const { open, reached } = goalsOverview(state);
+  const now = Date.now();
+  const name = (id: string) => state.exercises.find((e) => e.id === id)?.name ?? '';
+  const openEx = state.exercises.find((e) => e.id === openId);
+
+  return (
+    <section aria-label="Mål" className="goals profile-goals">
+      <h2 className="section">🎯 Mål</h2>
+      {!open.length && !reached.length && <p className="muted goal-empty">Sæt et mål på en øvelses side (Øvelser → tryk på en øvelse).</p>}
+      {open.length > 0 && (
+        <ul className="goal-list">
+          {open.map(({ goal, pct }) => {
+            const label = `${name(goal.exerciseId)} ${goalLabel(goal)}`;
+            const eta = goalEta(state, goal.id, now);
+            const current = goalProgress(state, goal.id)!.current;
+            return (
+              <li key={goal.id} aria-label={`Mål ${label}`}>
+                <button className="goal-row goal-link" aria-label={`Åbn ${label}`} onClick={() => setOpenId(goal.exerciseId)}>
+                  <span className="row-between">
+                    <strong>{name(goal.exerciseId)}</strong>
+                    <span className="muted">
+                      {goalLabel(goal)} · {pct} %
+                    </span>
+                  </span>
+                  <span className="goal-bar" role="progressbar" aria-label={`Fremskridt mod ${label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+                    <span style={{ width: `${pct}%` }} />
+                  </span>
+                  <small className="muted">
+                    Nu: {formatKg(Math.round(current * 10) / 10)} e1RM
+                    {eta !== null && <> · I dette tempo: {etaText(eta, now)}</>}
+                  </small>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {reached.length > 0 && (
+        <>
+          <button className="btn-ghost small" aria-expanded={showReached} onClick={() => setShowReached(!showReached)}>
+            {showReached ? '▾' : '▸'} Nået ({reached.length})
+          </button>
+          {showReached && (
+            <ul className="goal-list">
+              {reached.map((g) => (
+                <li key={g.id} aria-label={`Nået mål ${name(g.exerciseId)} ${goalLabel(g)}`}>
+                  <button className="goal-row reached goal-link" onClick={() => setOpenId(g.exerciseId)}>
+                    <span className="row-between">
+                      <strong>{name(g.exerciseId)}</strong>
+                      <span className="muted">{goalLabel(g)}</span>
+                    </span>
+                    <small className="goal-ok">✓ Nået {longDate.format(g.achievedAt!)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+      {openEx && <ExerciseDetail ex={openEx} onClose={() => setOpenId(null)} />}
+    </section>
   );
 }

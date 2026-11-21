@@ -373,4 +373,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .goal-sub { margin: 12px 0 8px; color: var(--muted); font-size: 0.85rem; }
 .goal-form { padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; }
 .goal-fields { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.goal-link { width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+.profile-goals .goal-list { margin-top: 0; }
 .goal-form-actions { display: flex; gap: 8px; justify-content: flex-end; }
