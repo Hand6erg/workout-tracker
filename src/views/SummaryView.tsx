@@ -58,6 +58,19 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         </section>
       )}
 
+      {s.goals.length > 0 && (
+        <section className="card summary-goals" aria-label="Mål nået">
+          <h2>🎯 Mål nået!</h2>
+          <ul className="summary-records">
+            {s.goals.map((g) => (
+              <li key={g.goalId}>
+                <strong>{g.name}</strong> <span>{formatKg(g.weight)} × {g.reps}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {s.records.length > 0 && (
         <section className="card" aria-label="Nye rekorder">
           <h2>🏆 Nye rekorder</h2>
