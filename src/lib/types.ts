@@ -20,6 +20,8 @@ export interface Exercise {
   restSeconds?: number;
   /** Hvornår en egen øvelse sidst blev ændret (til fletning mellem enheder) */
   updatedAt?: number;
+  /** Testet 1RM i kg (#250). Mangler = brug den estimerede 1RM fra historikken */
+  testedOneRM?: number;
 }
 
 export interface SetEntry {
