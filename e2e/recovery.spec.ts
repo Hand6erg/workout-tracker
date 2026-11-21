@@ -53,3 +53,30 @@ test('"Skjul" på restitutionskortet huskes efter genindlæsning (#287)', async 
   await card.getByRole('button', { name: 'Vis' }).click();
   await expect(card.getByRole('listitem')).toHaveCount(6);
 });
+
+test('Tryk på "Ben" åbner bendagen, og "Klar" står på Push men ikke Ben (#288)', async ({ page }) => {
+  await legDay(page);
+  const card = page.getByRole('region', { name: 'Restitution' });
+  // Bryst er aldrig trænet – ingen knap
+  await expect(card.getByRole('button', { name: 'Vis seneste træning for Bryst' })).toHaveCount(0);
+  await card.getByRole('button', { name: 'Vis seneste træning for Ben' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Squat').first()).toBeVisible();
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.screenshot({ path: 'test-results/recovery-detail.png' });
+  await dialog.getByRole('button', { name: 'Luk', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const ready = 'Klar – trænes mest muskler, der er hvilede';
+  await expect(page.getByRole('article', { name: 'Skabelon Push' }).getByRole('img', { name: ready })).toBeVisible();
+  await expect(page.getByRole('article', { name: 'Skabelon Ben' }).getByRole('img', { name: ready })).toHaveCount(0);
+  await page.getByRole('article', { name: 'Skabelon Push' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/recovery-ready.png' });
+});
+
+test('En ny app viser ingen "Klar"-mærker (#288)', async ({ page }) => {
+  await expect(page.getByRole('article', { name: /^Skabelon / }).first()).toBeVisible();
+  await expect(page.getByRole('img', { name: /^Klar – / })).toHaveCount(0);
+});

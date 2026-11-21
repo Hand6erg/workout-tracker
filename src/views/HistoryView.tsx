@@ -92,7 +92,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
   );
 }
 
-function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () => void; onOpenWorkout?: () => void }) {
+export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () => void; onOpenWorkout?: () => void }) {
   const { state, dispatch, exerciseById } = useStore();
   // Gentag træningen (#150): start en ny med samme øvelser og sæt, og vis den dags tal som "Forrige"
   const repeat = () => {

@@ -397,3 +397,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .st-hard { color: var(--danger); }
 .recovery-meta { display: flex; flex-direction: column; align-items: flex-end; text-align: right; font-size: 0.9rem; }
 .recovery-meta small { font-size: 0.78rem; }
+.recovery-open { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.recovery-chevron { color: var(--muted); font-size: 1.2rem; }
+.ready-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; vertical-align: middle; color: var(--ok); background: var(--ok-soft); }

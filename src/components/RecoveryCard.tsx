@@ -30,7 +30,14 @@ export function recoveryLabel(r: MuscleRecovery): string {
   return `${r.muscle}: ${RECOVERY_TEXT[r.status]}, ${daysSinceText(r.daysSince)}, ${r.hardSets7d} sæt de sidste 7 dage`;
 }
 
-export function RecoveryCard({ state }: { state: Pick<AppState, 'history' | 'exercises'> }) {
+export function RecoveryCard({
+  state,
+  onOpenWorkout,
+}: {
+  state: Pick<AppState, 'history' | 'exercises'>;
+  /** Åbn den seneste træning for en muskel (#288) */
+  onOpenWorkout?: (workoutId: string) => void;
+}) {
   const [hidden, setHidden] = useState(readHidden);
   const toggle = () => {
     const next = !hidden;
@@ -55,19 +62,38 @@ export function RecoveryCard({ state }: { state: Pick<AppState, 'history' | 'exe
         <ul className="recovery-list">
           {rows.map((r) => (
             <li key={r.muscle} className="recovery-row" aria-label={recoveryLabel(r)}>
-              <span className={`dot dot-${r.status}`} aria-hidden="true" />
-              <span className="recovery-name">
-                <strong>{r.muscle}</strong>
-                <small className={`recovery-status st-${r.status}`}>{RECOVERY_TEXT[r.status]}</small>
-              </span>
-              <span className="recovery-meta muted">
-                <span>{daysSinceText(r.daysSince)}</span>
-                <small>{r.hardSets7d} sæt / 7 dage</small>
-              </span>
+              {r.lastWorkoutId && onOpenWorkout ? (
+                <button
+                  className="recovery-open"
+                  aria-label={`Vis seneste træning for ${r.muscle}`}
+                  onClick={() => onOpenWorkout(r.lastWorkoutId!)}
+                >
+                  <RecoveryRowContent r={r} />
+                  <span className="recovery-chevron" aria-hidden="true">›</span>
+                </button>
+              ) : (
+                <RecoveryRowContent r={r} />
+              )}
             </li>
           ))}
         </ul>
       )}
     </section>
+  );
+}
+
+function RecoveryRowContent({ r }: { r: MuscleRecovery }) {
+  return (
+    <>
+      <span className={`dot dot-${r.status}`} aria-hidden="true" />
+      <span className="recovery-name">
+        <strong>{r.muscle}</strong>
+        <small className={`recovery-status st-${r.status}`}>{RECOVERY_TEXT[r.status]}</small>
+      </span>
+      <span className="recovery-meta muted">
+        <span>{daysSinceText(r.daysSince)}</span>
+        <small>{r.hardSets7d} sæt / 7 dage</small>
+      </span>
+    </>
   );
 }

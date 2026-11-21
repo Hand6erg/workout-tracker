@@ -1,6 +1,8 @@
 import { RecoveryCard } from '../components/RecoveryCard';
 import { ConfirmButton, Empty } from '../components/ui';
-import { nextInProgram, supersetGroups } from '../lib/logic';
+import { nextInProgram, supersetGroups, templateReady } from '../lib/logic';
+import { useState } from 'react';
+import { WorkoutDetail } from './HistoryView';
 import type { Template } from '../lib/types';
 import { useStore } from '../lib/store';
 
@@ -13,6 +15,11 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
   };
 
   const next = state.active ? null : nextInProgram(state);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openWorkout = state.history.find((w) => w.id === openId);
+  // "Klar"-mærket vises kun når der er historik at regne på (#288)
+  const hasHistory = state.history.some((w) => w.finishedAt);
+  const now = Date.now();
   const summary = (t: Template) =>
     supersetGroups(t.exercises)
       .map((g) => {
@@ -56,7 +63,14 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
         {state.templates.map((t) => (
           <article key={t.id} className="card" aria-label={`Skabelon ${t.name}`}>
             <header>
-              <h3>{t.name}</h3>
+              <h3>
+                {t.name}
+                {hasHistory && templateReady(state, t.id, now) && (
+                  <span className="ready-badge" role="img" aria-label="Klar – trænes mest muskler, der er hvilede">
+                    Klar
+                  </span>
+                )}
+              </h3>
               <ConfirmButton className="btn-ghost small" confirmText="Slet?" onConfirm={() => dispatch({ type: 'DELETE_TEMPLATE', templateId: t.id })}>
                 ✕
               </ConfirmButton>
@@ -69,7 +83,8 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
         ))}
       </div>
 
-      {!state.active && state.history.some((w) => w.finishedAt) && <RecoveryCard state={state} />}
+      {!state.active && hasHistory && <RecoveryCard state={state} onOpenWorkout={setOpenId} />}
+      {openWorkout && <WorkoutDetail w={openWorkout} onClose={() => setOpenId(null)} onOpenWorkout={onOpenWorkout} />}
     </div>
   );
 }
