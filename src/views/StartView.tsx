@@ -1,3 +1,4 @@
+import { RecoveryCard } from '../components/RecoveryCard';
 import { ConfirmButton, Empty } from '../components/ui';
 import { nextInProgram, supersetGroups } from '../lib/logic';
 import type { Template } from '../lib/types';
@@ -67,6 +68,8 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
           </article>
         ))}
       </div>
+
+      {!state.active && state.history.some((w) => w.finishedAt) && <RecoveryCard state={state} />}
     </div>
   );
 }
