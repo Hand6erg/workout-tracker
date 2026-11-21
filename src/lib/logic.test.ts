@@ -85,6 +85,9 @@ import {
   canSwapInTemplate,
   muscleRecovery,
   templateReady,
+  nearestLoadable,
+  percentTable,
+  tableOneRM,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -2914,5 +2917,65 @@ describe('restitution pr. muskelgruppe (#286)', () => {
     expect(templateReady(legs, 'tpl-legs', NOW)).toBe(false);
     expect(templateReady(legs, 'tpl-push', NOW)).toBe(true);
     expect(templateReady(legs, 'findes-ikke', NOW)).toBe(false);
+  });
+});
+
+describe('procenttabel (#250)', () => {
+  /** Historik med ét udført sæt på 100 kg × 1 i bænkpres (e1RM = 100) */
+  function withBench(weight: string, reps = '1', exerciseId = 'bench'): AppState {
+    const w: Workout = {
+      id: 'w1',
+      name: 'Test',
+      startedAt: T0,
+      finishedAt: T0 + 3_600_000,
+      exercises: [
+        { id: 'we1', exerciseId, sets: [{ id: 's1', weight, reps, rpe: '', done: true }] },
+      ],
+    };
+    return { ...initialState(), history: [w] };
+  }
+  const row = (s: AppState, pct: number, id = 'bench') => percentTable(s, id).find((r) => r.pct === pct)!;
+
+  it('estimeret 1RM 100 kg med 20 kg-stang: 80 % = 80 kg og 85 % = 85 kg', () => {
+    const s = withBench('100');
+    expect(row(s, 80).weight).toBe(80);
+    expect(row(s, 85).weight).toBe(85);
+    expect(percentTable(s, 'bench').map((r) => r.pct)).toEqual([95, 90, 85, 80, 75, 70, 65, 60, 55, 50]);
+  });
+
+  it('runder til nærmeste vægt man kan lægge på', () => {
+    // 1RM 101 kg: 95 % = 95,95 → 95 kg (2,5 kg-spring med 1,25-skiver)
+    expect(row(withBench('101'), 95)).toEqual({ pct: 95, exact: 95.95, weight: 95 });
+    expect(nearestLoadable(83.4)).toBe(82.5);
+    expect(nearestLoadable(84)).toBe(85);
+    expect(nearestLoadable(10)).toBe(20); // aldrig under stangen
+    // Kun 20 kg-skiver: 85 kg → 100 eller 60? Nærmest er 100 (afstand 15) mod 60 (25)
+    expect(nearestLoadable(85, 20, [20])).toBe(100);
+    expect(nearestLoadable(70, 15, [10, 5])).toBe(65); // lige langt til 65 og 75 → den letteste
+  });
+
+  it('bruger en gemt testet 1RM i stedet for estimatet, og falder tilbage når den ryddes', () => {
+    let s = withBench('100');
+    s = reducer(s, { type: 'SET_TESTED_1RM', exerciseId: 'bench', weight: 120 });
+    expect(tableOneRM(s, 'bench')).toEqual({ oneRM: 120, source: 'tested' });
+    expect(row(s, 50).weight).toBe(60);
+    s = reducer(s, { type: 'SET_TESTED_1RM', exerciseId: 'bench' });
+    expect(s.exercises.find((e) => e.id === 'bench')!.testedOneRM).toBeUndefined();
+    expect(tableOneRM(s, 'bench')).toEqual({ oneRM: 100, source: 'estimated' });
+    expect(reducer(s, { type: 'SET_TESTED_1RM', exerciseId: 'bench', weight: -5 })).toBe(s);
+  });
+
+  it('testet 1RM gemmes og indlæses igen; gamle data uden feltet indlæses', () => {
+    const s = reducer(withBench('100'), { type: 'SET_TESTED_1RM', exerciseId: 'bench', weight: 110 });
+    expect(loadState(JSON.stringify(s)).exercises.find((e) => e.id === 'bench')!.testedOneRM).toBe(110);
+    const old = loadState(JSON.stringify(withBench('100')));
+    expect(old.exercises.find((e) => e.id === 'bench')!.testedOneRM).toBeUndefined();
+    expect(row(old, 80).weight).toBe(80);
+  });
+
+  it('ingen historik og ingen testet 1RM → ingen rækker; tidsøvelser har ingen tabel', () => {
+    expect(percentTable(initialState(), 'bench')).toEqual([]);
+    const s = reducer(initialState(), { type: 'SET_TESTED_1RM', exerciseId: 'plank', weight: 100 });
+    expect(percentTable(s, 'plank')).toEqual([]);
   });
 });

@@ -1196,6 +1196,65 @@ export function templateReady(state: Pick<AppState, 'history' | 'exercises' | 't
   return total > 0 && rested * 2 > total;
 }
 
+/* ---------- Procenttabel (#250) ---------- */
+
+export const PERCENT_STEPS = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50];
+
+/** Nærmeste vægt der kan lægges på stangen med de skiver, man har (aldrig under stangen) */
+export function nearestLoadable(target: number, barWeight = DEFAULT_BAR, plates = DEFAULT_PLATES): number {
+  if (!(target > barWeight)) return barWeight;
+  const grams = [...new Set(plates.map((p) => Math.round(p * 1000)).filter((g) => g > 0))];
+  if (!grams.length) return barWeight;
+  const unit = grams.reduce((a, b) => {
+    while (b) [a, b] = [b, a % b];
+    return a;
+  });
+  const sideTarget = Math.round(((target - barWeight) / 2) * 1000);
+  const max = Math.ceil((sideTarget + Math.max(...grams)) / unit);
+  // Hvilke vægte pr. side kan sættes sammen af skiverne? (ubegrænset antal af hver)
+  const ok = new Array<boolean>(max + 1).fill(false);
+  ok[0] = true;
+  for (let i = 1; i <= max; i++) ok[i] = grams.some((g) => g / unit <= i && ok[i - g / unit]);
+  let best = 0;
+  for (let i = 0; i <= max; i++) {
+    if (!ok[i]) continue;
+    const d = Math.abs(i * unit - sideTarget);
+    const bd = Math.abs(best * unit - sideTarget);
+    if (d < bd) best = i;
+  }
+  return barWeight + (best * unit * 2) / 1000;
+}
+
+/** Den 1RM procenttabellen regnes ud fra: testet 1RM, ellers bedste estimerede (0 = ingen) */
+export function tableOneRM(state: Pick<AppState, 'history' | 'exercises'>, exerciseId: string): { oneRM: number; source: 'tested' | 'estimated' } | null {
+  const ex = state.exercises.find((e) => e.id === exerciseId);
+  if (ex?.testedOneRM && ex.testedOneRM > 0) return { oneRM: ex.testedOneRM, source: 'tested' };
+  const est = bestE1RM(state.history, exerciseId);
+  return est > 0 ? { oneRM: est, source: 'estimated' } : null;
+}
+
+export interface PercentRow {
+  pct: number;
+  /** Præcis procent af 1RM */
+  exact: number;
+  /** Afrundet til en vægt man kan lægge på */
+  weight: number;
+}
+
+/** Træningsvægte 95 %–50 % af 1RM, afrundet til vægte man kan lægge på stangen (#250) */
+export function percentTable(
+  state: Pick<AppState, 'history' | 'exercises' | 'barWeight' | 'plates'>,
+  exerciseId: string,
+): PercentRow[] {
+  if (exerciseKind(state, exerciseId) !== 'reps' || isBodyweight(state, exerciseId)) return [];
+  const base = tableOneRM(state, exerciseId);
+  if (!base) return [];
+  return PERCENT_STEPS.map((pct) => {
+    const exact = Math.round(base.oneRM * pct) / 100;
+    return { pct, exact, weight: nearestLoadable(exact, state.barWeight, state.plates) };
+  });
+}
+
 /* ---------- Plader og opvarmning ---------- */
 
 export interface PlateResult {
@@ -1765,6 +1824,8 @@ export type Action =
   | { type: 'SKIP_REST' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
+  /** Gem/ryd en testet 1RM for en øvelse (#250). `weight` mangler eller ≤ 0 = ryd */
+  | { type: 'SET_TESTED_1RM'; exerciseId: string; weight?: number }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
   | { type: 'SET_WEEKLY_GOAL'; goal: number }
   | { type: 'SET_SHOW_HINTS'; on: boolean }
@@ -2144,6 +2205,16 @@ export function reducer(state: AppState, action: Action): AppState {
       if (seconds === ex.restSeconds) return state;
       const { restSeconds: _old, ...base } = ex;
       const updated: Exercise = seconds === undefined ? base : { ...base, restSeconds: seconds };
+      return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
+    }
+    case 'SET_TESTED_1RM': {
+      const ex = state.exercises.find((e) => e.id === action.exerciseId);
+      if (!ex) return state;
+      const w = action.weight;
+      const weight = w !== undefined && Number.isFinite(w) && w > 0 ? Math.min(1000, Math.round(w * 100) / 100) : undefined;
+      if (weight === ex.testedOneRM) return state;
+      const { testedOneRM: _old, ...base } = ex;
+      const updated: Exercise = weight === undefined ? base : { ...base, testedOneRM: weight };
       return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
     }
     case 'ADD_MEASUREMENT': {
