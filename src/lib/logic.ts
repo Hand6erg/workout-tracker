@@ -169,13 +169,28 @@ function stopTimer(s: SetEntry, now: number): SetEntry {
   return { ...rest, seconds: String(stopwatchSeconds(s, now)) };
 }
 
-/** Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før. */
-export function formatSet(s: SetEntry): string {
+/**
+ * Vægtfeltet for en kropsvægtsøvelse som tekst (#208): "KV" (ingen ekstra), "KV +10" (vægtbælte)
+ * eller "KV −20" (assistance).
+ */
+export function bodyweightText(weight: string): string {
+  const extra = num(weight);
+  if (!extra) return 'KV';
+  const abs = String(Math.abs(extra)).replace('.', ',');
+  return `KV ${extra > 0 ? '+' : '\u2212'}${abs}`;
+}
+
+/**
+ * Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før.
+ * `bodyweight` = kropsvægtsøvelse: vises som "KV +10 × 8" (#208).
+ */
+export function formatSet(s: SetEntry, bodyweight = false): string {
   if ((s.meters ?? '').trim()) {
     const sec = num(s.seconds ?? '');
     return `${s.meters!.trim().replace('.', ',')} m${sec > 0 ? ` · ${formatClock(sec)}` : ''}`;
   }
   if ((s.seconds ?? '').trim() && !s.reps.trim()) return `${num(s.seconds!)} sek.`;
+  if (bodyweight) return `${bodyweightText(s.weight)} × ${s.reps}`;
   const w = num(s.weight);
   return w ? `${s.weight.replace('.', ',')} kg × ${s.reps}` : `${s.reps} reps`;
 }
@@ -891,6 +906,11 @@ export function bodyWeightAt(bodyLog: BodyMeasurement[], at: number): number | n
   let found = withWeight[0];
   for (const m of withWeight) if (m.date <= at) found = m;
   return found.weight!;
+}
+
+/** Logges øvelsen som kropsvægt + ekstra vægt × reps (#208)? Kropsvægtsøvelser af typen vægt × reps (ikke fx planke). */
+export function isBodyweightReps(state: Pick<AppState, 'exercises'>, exerciseId: string): boolean {
+  return isBodyweight(state, exerciseId) && exerciseKind(state, exerciseId) === 'reps';
 }
 
 /** Er øvelsen en kropsvægtsøvelse (#206)? Det er øvelser med udstyret "Kropsvægt" – indbyggede og egne. */

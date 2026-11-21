@@ -70,6 +70,8 @@ import {
   exerciseKind,
   isSetFilled,
   formatSet,
+  bodyweightText,
+  isBodyweightReps,
   parseClock,
   warmupSets,
   warmupBaseWeight,
@@ -2746,5 +2748,30 @@ describe('kropsvægt i volumen, rekorder og statistik (#207)', () => {
     expect(workoutVolume(withLoads(s, once))).toBe(800);
     expect(monthRecap(s, 2026, 5).volume).toBe(800);
     expect(milestones(s).find((m) => m.id === 'volume-1t')!.current).toBe(800);
+  });
+});
+
+describe('kropsvægtsøvelser som tekst (#208)', () => {
+  const base: SetEntry = { id: 'x', weight: '', reps: '10', rpe: '', done: true };
+  it('bodyweightText: KV, KV +10 og KV −20', () => {
+    expect(bodyweightText('')).toBe('KV');
+    expect(bodyweightText('0')).toBe('KV');
+    expect(bodyweightText('10')).toBe('KV +10');
+    expect(bodyweightText('+2,5')).toBe('KV +2,5');
+    expect(bodyweightText('-20')).toBe('KV −20');
+  });
+  it('formatSet med kropsvægt', () => {
+    expect(formatSet(base, true)).toBe('KV × 10');
+    expect(formatSet({ ...base, weight: '10', reps: '8' }, true)).toBe('KV +10 × 8');
+    expect(formatSet({ ...base, weight: '-20', reps: '6' }, true)).toBe('KV −20 × 6');
+    // Normale øvelser som før
+    expect(formatSet({ ...base, weight: '10', reps: '8' })).toBe('10 kg × 8');
+    expect(formatSet(base)).toBe('10 reps');
+  });
+  it('isBodyweightReps: pull-up ja, planke (tid) og bænkpres nej', () => {
+    const s = initialState();
+    expect(isBodyweightReps(s, 'pullup')).toBe(true);
+    expect(isBodyweightReps(s, 'plank')).toBe(false);
+    expect(isBodyweightReps(s, s.exercises.find((e) => e.equipment === 'Stang')!.id)).toBe(false);
   });
 });
