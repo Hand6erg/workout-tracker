@@ -83,6 +83,8 @@ import {
   syncPayload,
   swapSuggestions,
   canSwapInTemplate,
+  muscleRecovery,
+  templateReady,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -2848,5 +2850,69 @@ describe('kropsvægtsøvelser: progression, egne øvelser og eksport (#209)', ()
     const restored = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(s)) });
     expect(restored.history).toEqual(s.history);
     expect(restored.bodyWeight).toBe(80);
+  });
+});
+
+describe('restitution pr. muskelgruppe (#286)', () => {
+  const DAY = 86_400_000;
+  const NOW = new Date('2026-11-20T18:00:00').getTime();
+  const sets = (n: number, extra: Partial<SetEntry> = {}): SetEntry[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `s${i}`, weight: '60', reps: '8', rpe: '', done: true, ...extra }));
+  const workout = (id: string, startedAt: number, ex: Record<string, SetEntry[]>, finished = true): Workout => ({
+    id,
+    name: id,
+    startedAt,
+    finishedAt: finished ? startedAt + 3_600_000 : undefined,
+    exercises: Object.entries(ex).map(([exerciseId, s], i) => ({ id: `${id}-${i}`, exerciseId, sets: s })),
+  });
+  const withHistory = (...history: Workout[]): AppState => ({ ...initialState(), history });
+  const row = (s: AppState, m: string) => muscleRecovery(s, NOW).find((r) => r.muscle === m)!;
+
+  it('6 sæt i går er hårdt, 3 sæt i går er for nylig, 4 dage siden er hvilet', () => {
+    expect(row(withHistory(workout('a', NOW - DAY, { squat: sets(6) })), 'Ben').status).toBe('hard');
+    expect(row(withHistory(workout('a', NOW - DAY, { squat: sets(3) })), 'Ben').status).toBe('recent');
+    expect(row(withHistory(workout('a', NOW - 4 * DAY, { squat: sets(8) })), 'Ben').status).toBe('rested');
+    // sæt fra to øvelser for samme muskel lægges sammen
+    expect(row(withHistory(workout('a', NOW - DAY, { squat: sets(3), 'leg-press': sets(3) })), 'Ben').status).toBe('hard');
+  });
+
+  it('opvarmning og en igangværende træning tæller ikke', () => {
+    const warm = workout('a', NOW - DAY, { squat: [...sets(3), ...sets(5, { warmup: true })] });
+    expect(row(withHistory(warm), 'Ben').status).toBe('recent');
+    expect(row(withHistory(warm), 'Ben').hardSets7d).toBe(3);
+    const active = workout('b', NOW - 3_600_000, { bench: sets(8) }, false);
+    const s = { ...withHistory(warm), active, history: [active, warm] };
+    expect(row(s, 'Bryst')).toMatchObject({ status: 'rested', lastTrainedAt: null });
+    // ikke-afkrydsede sæt tæller heller ikke
+    expect(row(withHistory(workout('c', NOW - DAY, { bench: sets(8, { done: false }) })), 'Bryst').status).toBe('rested');
+  });
+
+  it('dage siden og sæt de sidste 7 dage passer omkring 7-dagesgrænsen', () => {
+    const s = withHistory(
+      workout('new', NOW - 2 * DAY, { bench: sets(4) }),
+      workout('in', NOW - 7 * DAY + 60_000, { bench: sets(2) }),
+      workout('out', NOW - 7 * DAY - 60_000, { bench: sets(5) }),
+    );
+    const r = row(s, 'Bryst');
+    expect(r.hardSets7d).toBe(6);
+    expect(r.daysSince).toBe(2);
+    expect(r.lastWorkoutId).toBe('new');
+    expect(r.lastTrainedAt).toBe(NOW - 2 * DAY);
+    expect(row(withHistory(workout('t', NOW - 3_600_000, { bench: sets(1) })), 'Bryst').daysSince).toBe(0);
+  });
+
+  it('en muskel, der aldrig er trænet, er hvilet', () => {
+    const rows = muscleRecovery(initialState(), NOW);
+    expect(rows.map((r) => r.muscle)).toEqual(['Bryst', 'Ryg', 'Ben', 'Skuldre', 'Arme', 'Mave']);
+    for (const r of rows) expect(r).toMatchObject({ status: 'rested', lastTrainedAt: null, daysSince: null, hardSets7d: 0 });
+  });
+
+  it('templateReady: Ben er klar efter en brystdag, men ikke lige efter en hård bendag', () => {
+    const chest = withHistory(workout('a', NOW - DAY, { bench: sets(6) }));
+    expect(templateReady(chest, 'tpl-legs', NOW)).toBe(true);
+    const legs = withHistory(workout('a', NOW - DAY, { squat: sets(6) }));
+    expect(templateReady(legs, 'tpl-legs', NOW)).toBe(false);
+    expect(templateReady(legs, 'tpl-push', NOW)).toBe(true);
+    expect(templateReady(legs, 'findes-ikke', NOW)).toBe(false);
   });
 });
