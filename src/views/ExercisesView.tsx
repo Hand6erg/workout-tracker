@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { GoalsSection } from '../components/GoalsSection';
+import { PercentTable } from '../components/PercentTable';
 import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import {
@@ -184,6 +185,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
         <RestControls exerciseId={ex.id} />
       </section>
       {kind === 'reps' && <GoalsSection exerciseId={ex.id} />}
+      <PercentTable exerciseId={ex.id} />
       {!hist.length ? (
         <>
           <Empty>Du har ikke lavet denne øvelse endnu.</Empty>

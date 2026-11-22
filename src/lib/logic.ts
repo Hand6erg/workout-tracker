@@ -1282,6 +1282,15 @@ export function platesPerSide(target: number, barWeight = DEFAULT_BAR, plates = 
   return { perSide, remainder: (side * 2) / 1000, belowBar: false };
 }
 
+/** Skiverne pr. side som tekst, fx "20 + 10 + 2,5 pr. side" (#251) */
+export function formatPlates(target: number, barWeight = DEFAULT_BAR, plates = DEFAULT_PLATES): string {
+  const r = platesPerSide(target, barWeight, plates);
+  if (r.belowBar) return 'Under stangens vægt';
+  if (!r.perSide.length) return 'Kun stangen';
+  const txt = r.perSide.map((p) => String(p).replace('.', ',')).join(' + ') + ' pr. side';
+  return r.remainder > 0 ? `${txt} (mangler ${formatKg(r.remainder)})` : txt;
+}
+
 export interface WarmupSet {
   weight: number;
   reps: number;

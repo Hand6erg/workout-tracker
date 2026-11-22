@@ -400,3 +400,15 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .recovery-open { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .recovery-chevron { color: var(--muted); font-size: 1.2rem; }
 .ready-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; vertical-align: middle; color: var(--ok); background: var(--ok-soft); }
+
+/* Procenttabel (#251) */
+.pct-table { margin-top: 8px; }
+.pct-toggle { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 0; text-align: left; }
+.pct-toggle .section { margin: 20px 0 10px; }
+.pct-base { margin: 0 0 10px; font-size: 0.9rem; }
+.pct-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.pct-row { display: flex; justify-content: space-between; align-items: center; width: 100%; background: var(--surface); border-radius: 10px; padding: 10px 14px; }
+.pct-row.on { background: var(--accent-soft); }
+.pct-pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pct-row.on .pct-pct { color: var(--accent); }
+.pct-plates { margin: 4px 14px 2px; font-size: 0.9rem; color: var(--accent); }
