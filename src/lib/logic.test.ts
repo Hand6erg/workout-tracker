@@ -2990,3 +2990,16 @@ describe('formatPlates (#251)', () => {
     expect(formatPlates(81, 20, [20, 10])).toBe('20 + 10 pr. side (mangler 1 kg)');
   });
 });
+
+describe('testet 1RM i backup og synk (#252)', () => {
+  it('en testet 1RM sat på én enhed vinder ved fletning, og en backup beholder den', () => {
+    const phone = initialState();
+    const pc = stampChanges(phone, reducer(phone, { type: 'SET_TESTED_1RM', exerciseId: 'bench', weight: 120 }), 1000);
+    const merged = mergeStates(phone, pc);
+    expect(merged.exercises.find((e) => e.id === 'bench')!.testedOneRM).toBe(120);
+    const cleared = stampChanges(pc, reducer(pc, { type: 'SET_TESTED_1RM', exerciseId: 'bench' }), 2000);
+    expect(mergeStates(pc, cleared).exercises.find((e) => e.id === 'bench')!.testedOneRM).toBeUndefined();
+    const restored = loadState(JSON.stringify(pc));
+    expect(restored.exercises.find((e) => e.id === 'bench')!.testedOneRM).toBe(120);
+  });
+});
