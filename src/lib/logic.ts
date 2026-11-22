@@ -1700,6 +1700,57 @@ export function lastExerciseNote(history: Workout[], exerciseId: string): { note
   return best;
 }
 
+/* ---------- Søg i historik (#230) ---------- */
+
+/** Normaliserer søgetekst: små bogstaver (også ÆØÅ), ét mellemrum mellem ord */
+export function normalizeSearch(text: string): string {
+  return text.toLocaleLowerCase('da-DK').normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+export interface HistoryMatchExercise {
+  /** Id på øvelsen i træningen (WorkoutExercise.id) */
+  weId: string;
+  exerciseId: string;
+  /** Bedste arbejdssæt (opvarmning tæller ikke) – null hvis ingen */
+  best: SetEntry | null;
+}
+
+export interface HistoryMatch {
+  workout: Workout;
+  /** Øvelser, hvis navn matcher søgningen (tom, hvis der ikke søges på tekst, eller kun navn/note matcher) */
+  matched: HistoryMatchExercise[];
+}
+
+/**
+ * Filtrerer afsluttede træninger (#230): søgeteksten matcher træningens navn, træningens note,
+ * en øvelsesnote eller navnet på en af øvelserne. `templateId` beholder kun træninger startet fra den skabelon.
+ * Tom søgning giver alle. Nyeste først.
+ */
+export function searchHistory(
+  state: Pick<AppState, 'history' | 'exercises'>,
+  opts: { query?: string; templateId?: string | null } = {},
+): HistoryMatch[] {
+  const q = normalizeSearch(opts.query ?? '');
+  const names = new Map(state.exercises.map((e) => [e.id, normalizeSearch(e.name)]));
+  const has = (text: string | undefined) => !!text && normalizeSearch(text).includes(q);
+  const out: HistoryMatch[] = [];
+  const workouts = [...state.history].sort((a, b) => b.startedAt - a.startedAt);
+  for (const w of workouts) {
+    if (opts.templateId && w.templateId !== opts.templateId) continue;
+    if (!q) {
+      out.push({ workout: w, matched: [] });
+      continue;
+    }
+    const matched: HistoryMatchExercise[] = w.exercises
+      .filter((we) => (names.get(we.exerciseId) ?? '').includes(q))
+      .map((we) => ({ weId: we.id, exerciseId: we.exerciseId, best: bestSet(we.sets) }));
+    if (matched.length || has(w.name) || has(w.note) || w.exercises.some((we) => has(we.note))) {
+      out.push({ workout: w, matched });
+    }
+  }
+  return out;
+}
+
 /* ---------- Løftemål (#197) ---------- */
 
 /** Bedste estimerede 1RM for en øvelse ud fra arbejdssæt i afsluttede træninger (0 = ingen) */
