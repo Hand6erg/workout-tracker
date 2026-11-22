@@ -10,6 +10,7 @@ import {
   isBodyweightReps,
   recapToShow,
   recordCount,
+  searchHistory,
   supersetGroups,
   workoutRecords,
   withLoads,
@@ -32,16 +33,48 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
   );
   // Sidste måneds opsummering de første dage af en ny måned (#169)
   const recap = useMemo(() => recapToShow(state, Date.now()), [state.history, state.recapDismissed, state.exercises]);
+  // Søg i historik (#231)
+  const [query, setQuery] = useState('');
+  const searching = query.trim() !== '';
+  const matches = useMemo(() => searchHistory(state, { query }), [state.history, state.exercises, query]);
+  const hitsById = useMemo(() => new Map(matches.map((m) => [m.workout.id, new Set(m.matched.map((x) => x.weId))])), [matches]);
 
   return (
     <div className="page">
       <h1>Historik</h1>
       {recap && <MonthRecapCard r={recap} onDismiss={() => dispatch({ type: 'DISMISS_RECAP', key: recap.key })} />}
-      {state.history.length > 0 && <MonthCalendar onOpen={setOpenId} />}
+      {state.history.length > 0 && (
+        <div className="history-search">
+          <div className="search-wrap">
+            <input
+              className="search"
+              type="search"
+              aria-label="Søg i historik"
+              placeholder="Søg i historik"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {searching && (
+              <button className="search-clear" aria-label="Ryd søgning" onClick={() => setQuery('')}>
+                ✕
+              </button>
+            )}
+          </div>
+          {searching && (
+            <p className="muted search-status" role="status">
+              {matches.length
+                ? `${matches.length} ${matches.length === 1 ? 'træning' : 'træninger'} med "${query.trim()}"`
+                : `Ingen træninger matcher "${query.trim()}"`}
+            </p>
+          )}
+        </div>
+      )}
+      {state.history.length > 0 && !searching && <MonthCalendar onOpen={setOpenId} />}
       {!state.history.length && <Empty>Ingen træninger endnu. Afslut en træning, så dukker den op her.</Empty>}
       <div className="cards">
-        {state.history.map((w) => {
+        {matches.map(({ workout: w }) => {
           const records = recordsById.get(w.id) ?? {};
+          const hits = hitsById.get(w.id);
           const count = recordCount(records);
           return (
           <button key={w.id} className="card as-button" onClick={() => setOpenId(w.id)} aria-label={`Træning ${w.name}`}>
@@ -58,10 +91,12 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
               <tbody>
                 {w.exercises.map((e) => {
                   const b = bestSet(e.sets);
+                  const hit = hits?.has(e.id);
+                  const name = exerciseById(e.exerciseId)?.name;
                   return (
-                    <tr key={e.id}>
+                    <tr key={e.id} className={hit ? 'search-hit' : undefined}>
                       <td>
-                        {e.sets.filter((x) => !x.warmup).length} × {exerciseById(e.exerciseId)?.name}
+                        {e.sets.filter((x) => !x.warmup).length} × {hit ? <mark>{name}</mark> : name}
                         {records[e.exerciseId] && (
                           <span role="img" aria-label="Ny rekord">
                             {' '}
