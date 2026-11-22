@@ -1,3 +1,4 @@
+import { StrengthChart } from '../components/StrengthChart';
 import { useMemo, useState } from 'react';
 import { GoalsSection } from '../components/GoalsSection';
 import { PercentTable } from '../components/PercentTable';
@@ -210,10 +211,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <strong>{hist.length}</strong>
             </div>
           </div>
-          <Sparkline
-            values={[...hist].reverse().map((h) => (kind === 'reps' ? h.best1RM : bestOf(h)))}
-            label={kind === 'reps' ? 'Udvikling i estimeret 1RM' : kind === 'time' ? 'Udvikling i længste hold' : 'Udvikling i længste distance'}
-          />
+          <StrengthChart exerciseId={ex.id} />
           <Records records={personalRecords(state, ex.id)} />
           <h3 className="section">Historik</h3>
           <ul className="list">
@@ -311,23 +309,5 @@ function Records({ records }: { records: PersonalRecords }) {
         </ul>
       )}
     </section>
-  );
-}
-
-function Sparkline({ values, label }: { values: number[]; label: string }) {
-  if (values.length < 2) return null;
-  const w = 300;
-  const h = 80;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 8 - ((v - min) / span) * (h - 16)]);
-  return (
-    <svg className="spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
-      <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
-      {pts.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r="3.5" fill="currentColor" />
-      ))}
-    </svg>
   );
 }
