@@ -1618,6 +1618,25 @@ export function exerciseProgress(
   return all.filter((p) => p.date >= from && p.date <= now);
 }
 
+/**
+ * Teksten under styrkegrafen når man trykker på et punkt (#215),
+ * fx "12. nov. · 100 kg × 5 · est. 1RM 116,7 kg". Rekorder får "🏆 rekord" til sidst.
+ */
+export function describeProgressPoint(p: ProgressPoint, kind: ExerciseKind, metric: ProgressMetric): string {
+  const date = new Date(p.date).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
+  const num = (n: number) => (Math.round(n * 10) / 10).toLocaleString('da-DK', { maximumFractionDigits: 1 });
+  const parts = [date];
+  if (kind === 'time') parts.push(`${num(p.value)} sek.`);
+  else if (kind === 'distance') parts.push(`${num(p.value)} m`);
+  else if (metric === 'volume' || !p.set) parts.push(`volumen ${num(p.value)} kg`);
+  else {
+    parts.push(`${num(p.set.weight)} kg × ${p.set.reps}`);
+    if (metric === '1rm') parts.push(`est. 1RM ${num(p.value)} kg`);
+  }
+  if (p.record) parts.push('🏆 rekord');
+  return parts.join(' · ');
+}
+
 /* ---------- Noter (#81) ---------- */
 
 /** Højeste antal tegn i en note */

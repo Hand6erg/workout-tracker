@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { exerciseKind, exerciseProgress, formatKg, type ProgressMetric, type ProgressRange } from '../lib/logic';
+import { describeProgressPoint, exerciseKind, exerciseProgress, formatKg, type ProgressMetric, type ProgressRange } from '../lib/logic';
 import { useStore } from '../lib/store';
 import { LineChart } from './LineChart';
 
@@ -30,6 +30,11 @@ export function StrengthChart({ exerciseId }: { exerciseId: string }) {
   // Aksen viser kun tal, så de kan være i venstre margen
   const axis = (n: number) => (n >= 10000 ? `${String(Math.round(n / 100) / 10).replace('.', ',')}k` : String(Math.round(n)));
   const newest = points[points.length - 1];
+  const shownMetric: ProgressMetric = kind === 'reps' ? metric : '1rm';
+  const labels = points.map((p) => describeProgressPoint(p, kind, shownMetric));
+  // Valgt punkt huskes pr. træning, så det forsvinder hvis måling/periode skjuler det
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = points.findIndex((p) => p.workoutId === selectedId);
 
   return (
     <section className="strength-chart" aria-label="Styrkegraf">
@@ -61,7 +66,16 @@ export function StrengthChart({ exerciseId }: { exerciseId: string }) {
           points={points.map((p) => ({ t: p.date, value: p.value }))}
           label={`${metricName}: ${format(newest.value)} senest, ${points.length} træninger`}
           format={axis}
+          pointLabels={labels}
+          marks={points.map((p) => p.record)}
+          selected={selected < 0 ? undefined : selected}
+          onSelect={(i) => setSelectedId(points[i].workoutId === selectedId ? null : points[i].workoutId)}
         />
+      )}
+      {points.length >= 2 && (
+        <p className="chart-point" aria-live="polite">
+          {selected >= 0 ? labels[selected] : 'Tryk på et punkt for at se træningen'}
+        </p>
       )}
     </section>
   );
