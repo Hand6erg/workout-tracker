@@ -412,3 +412,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .pct-pct { color: var(--muted); font-variant-numeric: tabular-nums; }
 .pct-row.on .pct-pct { color: var(--accent); }
 .pct-plates { margin: 4px 14px 2px; font-size: 0.9rem; color: var(--accent); }
+.pct-tested { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: end; margin-bottom: 10px; }
+.pct-tested .field { margin: 0; }
+.pct-tested .btn-secondary { margin-bottom: 2px; white-space: nowrap; }
