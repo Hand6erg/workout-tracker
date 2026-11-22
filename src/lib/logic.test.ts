@@ -92,6 +92,8 @@ import {
   exerciseProgress,
   describeProgressPoint,
   lastDeletion,
+  searchHistory,
+  normalizeSearch,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3197,5 +3199,48 @@ describe('fortryd sletning (#221)', () => {
     const after = reducer(s, action);
     const d = lastDeletion(s, action, after)!;
     expect(reducer(after, { type: 'UNDO_DELETE', deletion: d }).editing).toEqual(s.editing);
+  });
+});
+
+describe('søg i historik (#230)', () => {
+  const set = (weight: string, reps: string, warmup = false): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup });
+  const wk = (id: string, t: number, name: string, ex: [string, SetEntry[], string?][], extra: Partial<Workout> = {}): Workout => ({
+    id,
+    name,
+    startedAt: t,
+    finishedAt: t + 1000,
+    exercises: ex.map(([exerciseId, sets, note]) => ({ id: `${id}-${exerciseId}`, exerciseId, sets, note })),
+    ...extra,
+  });
+  const legs = wk('legs', 1000, 'Ben', [['squat', [set('140', '3', true), set('100', '5'), set('110', '3')]], ['legpress', [set('200', '10')]]], { templateId: 'tpl-legs' });
+  const push = wk('push', 3000, 'Push', [['bench', [set('80', '5')], 'skulder ømt']], { templateId: 'tpl-push', note: 'Sov dårligt' });
+  const pull = wk('pull', 2000, 'Pull', [['row', [set('60', '8')]]], { templateId: 'tpl-pull' });
+  const st: AppState = { ...initialState(), history: [push, pull, legs] };
+
+  it('"squat" finder kun træninger med Squat og giver bedste arbejdssæt', () => {
+    const r = searchHistory(st, { query: 'squat' });
+    expect(r.map((m) => m.workout.id)).toEqual(['legs']);
+    expect(r[0].matched).toHaveLength(1);
+    expect(r[0].matched[0].exerciseId).toBe('squat');
+    expect(r[0].matched[0].best).toMatchObject({ weight: '110', reps: '3' }); // opvarmningen på 140 ignoreres
+  });
+
+  it('matcher træningens navn, noter og ÆØÅ uanset store/små bogstaver', () => {
+    expect(searchHistory(st, { query: '  PUSH ' }).map((m) => m.workout.id)).toEqual(['push']);
+    expect(searchHistory(st, { query: 'sov  dårligt' }).map((m) => m.workout.id)).toEqual(['push']);
+    expect(searchHistory(st, { query: 'skulder' }).map((m) => m.workout.id)).toEqual(['push']);
+    const r = searchHistory(st, { query: 'BÆNK' });
+    expect(r.map((m) => m.workout.id)).toEqual(['push']);
+    expect(r[0].matched.map((m) => m.exerciseId)).toEqual(['bench']);
+    expect(searchHistory(st, { query: 'findes ikke' })).toEqual([]);
+    expect(normalizeSearch(' ÆbLe  Ø ')).toBe('æble ø');
+  });
+
+  it('tom søgning giver alle (nyeste først), og templateId filtrerer alene og sammen med tekst', () => {
+    expect(searchHistory(st, { query: '' }).map((m) => m.workout.id)).toEqual(['push', 'pull', 'legs']);
+    expect(searchHistory(st).every((m) => m.matched.length === 0)).toBe(true);
+    expect(searchHistory(st, { templateId: 'tpl-pull' }).map((m) => m.workout.id)).toEqual(['pull']);
+    expect(searchHistory(st, { query: 'squat', templateId: 'tpl-legs' }).map((m) => m.workout.id)).toEqual(['legs']);
+    expect(searchHistory(st, { query: 'squat', templateId: 'tpl-push' })).toEqual([]);
   });
 });
