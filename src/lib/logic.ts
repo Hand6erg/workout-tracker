@@ -1543,6 +1543,81 @@ export function exerciseHistory(
   return out;
 }
 
+/* ---------- Styrkegraf (#213) ---------- */
+
+export type ProgressMetric = '1rm' | 'heaviest' | 'volume';
+export type ProgressRange = '3m' | '1y' | 'all';
+
+export interface ProgressPoint {
+  workoutId: string;
+  date: number;
+  /** kg (1RM, tungeste sæt, volumen), sekunder (tidsøvelser) eller meter (distanceøvelser) */
+  value: number;
+  /** Sættet bag værdien (mangler for volumen) */
+  set?: { weight: number; reps: number; seconds?: number; meters?: number };
+  /** Træningen slog alle tidligere træninger på denne måling (første gang er ingen rekord) */
+  record: boolean;
+}
+
+/** Starttidspunkt for et interval talt tilbage fra `now` (0 = alt) */
+export function progressRangeStart(range: ProgressRange, now: number): number {
+  if (range === 'all') return 0;
+  const d = new Date(now);
+  if (range === '3m') d.setMonth(d.getMonth() - 3);
+  else d.setFullYear(d.getFullYear() - 1);
+  return d.getTime();
+}
+
+/**
+ * Ét punkt pr. afsluttet træning med øvelsen (#213), ældste først. Opvarmning tæller aldrig.
+ * Tidsøvelser giver længste hold og distanceøvelser længste distance uanset `metric`.
+ * Kropsvægt regnes med for kropsvægtsøvelser. Rekorder vurderes mod hele historikken, også før intervallet.
+ */
+export function exerciseProgress(
+  state: AppState,
+  exerciseId: string,
+  metric: ProgressMetric,
+  range: ProgressRange,
+  now: number,
+): ProgressPoint[] {
+  state = loadedState(state);
+  const kind = exerciseKind(state, exerciseId);
+  const workouts = [...state.history].sort((a, b) => a.startedAt - b.startedAt);
+  const all: ProgressPoint[] = [];
+  let best = 0;
+  let seen = false;
+  for (const w of workouts) {
+    const sets = validSets(
+      w.exercises.filter((we) => we.exerciseId === exerciseId).flatMap((we) => we.sets),
+      w.startedAt,
+      kind,
+    );
+    if (!sets.length) continue;
+    let value = 0;
+    let set: ProgressPoint['set'];
+    for (const s of sets) {
+      const v =
+        kind === 'time' ? s.seconds : kind === 'distance' ? s.meters : metric === '1rm' ? estimate1RM(s.weight, s.reps) : metric === 'heaviest' ? s.weight : 0;
+      if (metric === 'volume' && kind === 'reps') {
+        value += s.weight * s.reps;
+        continue;
+      }
+      if (v > value) {
+        value = v;
+        set = kind === 'reps' ? { weight: s.weight, reps: s.reps } : kind === 'time' ? { weight: 0, reps: 0, seconds: s.seconds } : { weight: 0, reps: 0, meters: s.meters, seconds: s.seconds || undefined };
+      }
+    }
+    value = Math.round(value * 10) / 10;
+    if (kind === 'reps' && metric !== 'volume' && value <= 0) continue;
+    const record = seen && value > best;
+    best = Math.max(best, value);
+    seen = true;
+    all.push({ workoutId: w.id, date: w.startedAt, value, ...(set ? { set } : {}), record });
+  }
+  const from = progressRangeStart(range, now);
+  return all.filter((p) => p.date >= from && p.date <= now);
+}
+
 /* ---------- Noter (#81) ---------- */
 
 /** Højeste antal tegn i en note */

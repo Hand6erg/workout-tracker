@@ -89,6 +89,7 @@ import {
   percentTable,
   tableOneRM,
   formatPlates,
+  exerciseProgress,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3001,5 +3002,68 @@ describe('testet 1RM i backup og synk (#252)', () => {
     expect(mergeStates(pc, cleared).exercises.find((e) => e.id === 'bench')!.testedOneRM).toBeUndefined();
     const restored = loadState(JSON.stringify(pc));
     expect(restored.exercises.find((e) => e.id === 'bench')!.testedOneRM).toBe(120);
+  });
+});
+
+describe('styrkegraf (#213)', () => {
+  const DAY = 86_400_000;
+  let n = 0;
+  const set = (weight: string, reps: string, extra: Partial<SetEntry> = {}): SetEntry => ({
+    id: `s${n++}`, weight, reps, rpe: '', done: true, ...extra,
+  });
+  const wo = (id: string, daysAgo: number, exerciseId: string, sets: SetEntry[]): Workout => ({
+    id, name: 'X', startedAt: T0 - daysAgo * DAY, finishedAt: T0 - daysAgo * DAY + 3_600_000,
+    exercises: [{ id: `we-${id}`, exerciseId, sets }],
+  });
+  const withHistory = (history: Workout[]): AppState => ({ ...initialState(), history });
+
+  // Historikken er nyeste først, som i appen
+  const s = withHistory([
+    wo('c', 2, 'bench', [set('100', '3'), set('60', '10', { warmup: true })]),
+    wo('b', 10, 'bench', [set('80', '5'), set('85', '2'), set('140', '1', { done: false })]),
+    wo('a', 400, 'bench', [set('20', '10', { warmup: true }), set('90', '5')]),
+  ]);
+
+  it('giver alle tre målinger pr. træning, ældste først, uden opvarmning', () => {
+    const e = exerciseProgress(s, 'bench', '1rm', 'all', T0);
+    expect(e.map((p) => p.workoutId)).toEqual(['a', 'b', 'c']);
+    expect(e.map((p) => p.value)).toEqual([105, 93.3, 110]);
+    expect(e[1].set).toEqual({ weight: 80, reps: 5 });
+    const h = exerciseProgress(s, 'bench', 'heaviest', 'all', T0);
+    expect(h.map((p) => p.value)).toEqual([90, 85, 100]);
+    expect(h[1].set).toEqual({ weight: 85, reps: 2 });
+    const v = exerciseProgress(s, 'bench', 'volume', 'all', T0);
+    expect(v.map((p) => p.value)).toEqual([450, 570, 300]);
+    expect(v[0].set).toBeUndefined();
+  });
+
+  it('interval filtrerer gamle træninger; rekord kun når alle tidligere slås', () => {
+    expect(exerciseProgress(s, 'bench', '1rm', '3m', T0).map((p) => p.workoutId)).toEqual(['b', 'c']);
+    expect(exerciseProgress(s, 'bench', '1rm', '1y', T0).map((p) => p.workoutId)).toEqual(['b', 'c']);
+    expect(exerciseProgress(s, 'bench', '1rm', 'all', T0).map((p) => p.record)).toEqual([false, false, true]);
+    // Rekorden måles mod hele historikken, også træninger uden for intervallet
+    expect(exerciseProgress(s, 'bench', 'volume', '3m', T0).map((p) => p.record)).toEqual([true, false]);
+    // Samme som 🏆 i træningen
+    expect(workoutRecords(s, 'c').bench).toContain('1rm');
+    expect(workoutRecords(s, 'b').bench ?? []).not.toContain('1rm');
+    expect(exerciseProgress(withHistory([]), 'bench', '1rm', 'all', T0)).toEqual([]);
+    expect(exerciseProgress(s, 'squat', '1rm', 'all', T0)).toEqual([]);
+  });
+
+  it('tidsøvelser giver længste hold; kropsvægt tæller med', () => {
+    const t = withHistory([
+      wo('y', 1, 'plank', [set('', '', { seconds: '75' }), set('', '', { seconds: '60' })]),
+      wo('x', 5, 'plank', [set('', '', { seconds: '45' })]),
+    ]);
+    const p = exerciseProgress(t, 'plank', '1rm', 'all', T0);
+    expect(p.map((x) => x.value)).toEqual([45, 75]);
+    expect(p[1].set?.seconds).toBe(75);
+    expect(p.map((x) => x.record)).toEqual([false, true]);
+    const bw = { ...withHistory([wo('p', 1, 'pullup', [set('10', '5')])]), bodyWeight: 80 };
+    expect(exerciseProgress(bw, 'pullup', 'heaviest', 'all', T0)[0].value).toBe(90);
+  });
+
+  it('gamle data indlæses uændret', () => {
+    expect(loadState(JSON.stringify(s)).history).toEqual(s.history);
   });
 });
