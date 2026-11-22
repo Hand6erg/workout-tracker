@@ -62,3 +62,71 @@ test('fortryder en fjernet øvelse og en annulleret træning; bjælken forsvinde
   await page.clock.runFor(7000);
   await expect(bar).toBeHidden();
 });
+
+async function finishPush(page: Page) {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const bench = page.getByRole('article', { name: 'Bænkpres', exact: true });
+  await bench.getByLabel('Vægt sæt 1').fill('80');
+  await bench.getByLabel('Reps sæt 1').fill('5');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await page.getByRole('button', { name: 'Afslut' }).click();
+  await page.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+}
+
+test('fortryder en slettet træning i Historik – også i kalenderen og efter genindlæsning (#223)', async ({ page }) => {
+  await finishPush(page);
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  const day = page.getByRole('button', { name: /: Push$/ });
+  await expect(day).toHaveCount(1);
+  await card.click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Slet' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Tryk igen for at bekræfte' }).click();
+  await expect(card).toHaveCount(0);
+  await expect(day).toHaveCount(0);
+
+  await page.getByRole('status', { name: 'Fortryd sletning' }).getByRole('button', { name: 'Fortryd: Træning slettet' }).click();
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText('400 kg');
+  await expect(day).toHaveCount(1);
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(card).toHaveCount(1);
+});
+
+test('fortryder en slettet skabelon på samme plads og en slettet kropsmåling (#223)', async ({ page }) => {
+  const templates = page.getByRole('article', { name: /^Skabelon / });
+  const names = await templates.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')));
+  const pull = page.getByRole('article', { name: 'Skabelon Pull' });
+  await pull.getByRole('button', { name: '✕' }).click();
+  await pull.getByRole('button', { name: 'Slet?' }).click();
+  await expect(pull).toHaveCount(0);
+  await page.getByRole('button', { name: 'Fortryd: Skabelon slettet' }).click();
+  await expect(templates).toHaveCount(names.length);
+  expect(await templates.evaluateAll((els) => els.map((e) => e.getAttribute('aria-label')))).toEqual(names);
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  await body.getByLabel('Vægt (kg)').fill('82,5');
+  await body.getByRole('button', { name: 'Gem måling' }).click();
+  const list = body.getByRole('list', { name: 'Målinger' });
+  await list.getByRole('button', { name: 'Slet' }).click();
+  await list.getByRole('button', { name: 'Slet?' }).click();
+  await expect(body).toContainText('Ingen målinger endnu.');
+  await page.getByRole('button', { name: 'Fortryd: Måling slettet' }).click();
+  await expect(list).toContainText('82,5 kg');
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(list).toContainText('82,5 kg');
+});
+
+test('bjælken forsvinder, når man skifter fane (#222)', async ({ page }) => {
+  const pull = page.getByRole('article', { name: 'Skabelon Pull' });
+  await pull.getByRole('button', { name: '✕' }).click();
+  await pull.getByRole('button', { name: 'Slet?' }).click();
+  const bar = page.getByRole('status', { name: 'Fortryd sletning' });
+  await expect(bar).toContainText('Skabelon slettet');
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(bar).toBeHidden();
+});

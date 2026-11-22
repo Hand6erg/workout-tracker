@@ -238,3 +238,27 @@ test('henter ikke automatisk midt i en træning (#39)', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'Aktiv træning' })).toBeVisible();
 });
 
+
+test('en slettet træning, der fortrydes, er der stadig efter næste synk (#223)', async ({ page }) => {
+  const srv: Srv = { state: null, version: null, offline: false, puts: 0 };
+  await mockApi(page, srv);
+  await start(page, { version: 1, exercises: [], templates: [], history: [workout('w1', Date.now())], active: null, rest: null, restSeconds: 90 });
+  const konto = await login(page);
+  await expect(konto.getByRole('status', { name: 'Online-status' })).toHaveText(/^Sidst synkroniseret/);
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: 'Træning Træning w1' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Slet' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Tryk igen for at bekræfte' }).click();
+  // Sletningen når serveren, før den fortrydes
+  await expect.poll(() => srv.state?.history.length).toBe(0);
+  await page.getByRole('button', { name: 'Fortryd: Træning slettet' }).click();
+  await expect.poll(() => srv.state?.history.map((w) => w.id)).toEqual(['w1']);
+
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await konto.getByRole('button', { name: 'Synkronisér nu' }).click();
+  await expect(konto.getByRole('status', { name: 'Online-status' })).toHaveText(/^Sidst synkroniseret/);
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.getByRole('button', { name: 'Træning Træning w1' })).toHaveCount(1);
+  expect(srv.state?.history.map((w) => w.id)).toEqual(['w1']);
+});
