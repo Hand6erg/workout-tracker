@@ -91,6 +91,7 @@ import {
   formatPlates,
   exerciseProgress,
   describeProgressPoint,
+  lastDeletion,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3078,5 +3079,123 @@ describe('punkt-tekst i styrkegrafen (#215)', () => {
     expect(describeProgressPoint({ workoutId: 'w', date, value: 1500, record: false }, 'reps', 'volume')).toBe('12. nov. · volumen 1.500 kg');
     expect(describeProgressPoint({ workoutId: 'w', date, value: 75, record: false }, 'time', '1rm')).toBe('12. nov. · 75 sek.');
     expect(describeProgressPoint({ workoutId: 'w', date, value: 402.5, record: false }, 'distance', '1rm')).toBe('12. nov. · 402,5 m');
+  });
+});
+
+describe('fortryd sletning (#221)', () => {
+  type A = Parameters<typeof reducer>[1];
+  /** Kører en handling som appen gør (med gravsten) og fortryder den med det samme */
+  const delThenUndo = (s: AppState, action: A) => {
+    const after = trackedReducer(s, { ...action, at: T0 + 1000 });
+    const d = lastDeletion(s, action, after);
+    expect(d).not.toBeNull();
+    const back = trackedReducer(after, { type: 'UNDO_DELETE', deletion: d!, at: T0 + 2000 });
+    return { after, d: d!, back };
+  };
+  const strip = (s: AppState) => JSON.parse(JSON.stringify(s, (k, v) => (k === 'updatedAt' || k === 'settingsAt' ? undefined : v)));
+
+  function workoutState(): AppState {
+    let s = startWith(initialState(), 'tpl-push');
+    const ex = s.active!.exercises;
+    s = reducer(s, { type: 'UPDATE_SET', weId: ex[0].id, setId: ex[0].sets[1].id, patch: { weight: '80', reps: '5', warmup: true } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: ex[0].id, setId: ex[0].sets[1].id, now: T0 });
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: ex[1].id });
+    return { ...s, rest: null };
+  }
+
+  it('lægger et slettet sæt tilbage på samme plads med værdier og flag', () => {
+    const s = workoutState();
+    const we = s.active!.exercises[0];
+    const { after, d, back } = delThenUndo(s, { type: 'REMOVE_SET', weId: we.id, setId: we.sets[1].id });
+    expect(d.label).toBe('Sæt slettet');
+    expect(after.active!.exercises[0].sets).toHaveLength(2);
+    expect(back.active).toEqual(s.active);
+  });
+
+  it('lægger en fjernet øvelse tilbage med supersættet intakt', () => {
+    const s = workoutState();
+    const ex = s.active!.exercises;
+    expect(ex[1].supersetId).toBeTruthy();
+    const { after, d, back } = delThenUndo(s, { type: 'REMOVE_EXERCISE', weId: ex[2].id });
+    expect(d.label).toBe('Øvelse fjernet');
+    // Supersættet med kun én øvelse tilbage opløses ved fjernelsen …
+    expect(after.active!.exercises[1].supersetId).toBeUndefined();
+    // … og samles igen ved fortryd
+    expect(back.active).toEqual(s.active);
+  });
+
+  it('genskaber en annulleret træning', () => {
+    const s = workoutState();
+    const { after, d, back } = delThenUndo(s, { type: 'CANCEL_WORKOUT' });
+    expect(after.active).toBeNull();
+    expect(d.label).toBe('Træning annulleret');
+    expect(strip(back)).toEqual(strip(s));
+  });
+
+  function finishedState(): AppState {
+    let s = workoutState();
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 3_600_000 });
+    s = reducer(s, { type: 'ADD_MEASUREMENT', id: 'm1', date: T0, weight: 80 });
+    s = reducer(s, { type: 'ADD_MEASUREMENT', id: 'm2', date: T0 - 86_400_000, weight: 81 });
+    return { ...s, lastFinishedId: null };
+  }
+
+  it.each([
+    ['træning', (s: AppState): A => ({ type: 'DELETE_WORKOUT', workoutId: s.history[0].id }), 'Træning slettet', (s: AppState) => s.history[0].id],
+    ['skabelon', (s: AppState): A => ({ type: 'DELETE_TEMPLATE', templateId: s.templates[1].id }), 'Skabelon slettet', (s: AppState) => s.templates[1].id],
+    ['måling', (): A => ({ type: 'DELETE_MEASUREMENT', id: 'm1' }), 'Måling slettet', () => 'm1'],
+  ])('genskaber en slettet %s uden gravsten, også efter fletning', (_n, act, label, idOf) => {
+    const s = finishedState();
+    const id = idOf(s);
+    const { after, d, back } = delThenUndo(s, act(s));
+    expect(d.label).toBe(label);
+    expect(after.deleted[id]).toBeDefined();
+    expect(back.deleted[id]).toBeUndefined();
+    expect(strip(back)).toEqual(strip(s));
+    // Serveren har en kopi uden tingen (fx fra før den blev oprettet) – den overlever fletningen
+    const remote = { ...initialState(), history: [], templates: [], bodyLog: [] };
+    const merged = mergeStates(back, remote);
+    expect(strip(merged)).toEqual(strip(back));
+  });
+
+  it('gør intet, hvis det slettede ikke længere har et sted at være', () => {
+    const s = workoutState();
+    const we = s.active!.exercises[0];
+    const action: A = { type: 'REMOVE_SET', weId: we.id, setId: we.sets[0].id };
+    const after = reducer(s, action);
+    const d = lastDeletion(s, action, after)!;
+    const finished = reducer(after, { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    expect(reducer(finished, { type: 'UNDO_DELETE', deletion: d })).toBe(finished);
+    // Ny træning med andet id
+    const other = startWith(finished);
+    expect(reducer(other, { type: 'UNDO_DELETE', deletion: d })).toBe(other);
+    // Fjernet øvelse kan heller ikke komme tilbage efter afslutning
+    const action2: A = { type: 'REMOVE_EXERCISE', weId: we.id };
+    const after2 = reducer(s, action2);
+    const d2 = lastDeletion(s, action2, after2)!;
+    const fin2 = reducer(after2, { type: 'FINISH_WORKOUT', now: T0 + 1000 });
+    expect(reducer(fin2, { type: 'UNDO_DELETE', deletion: d2 })).toBe(fin2);
+    // Annulleret træning overskriver ikke en ny træning
+    const a3 = reducer(s, { type: 'CANCEL_WORKOUT' });
+    const d3 = lastDeletion(s, { type: 'CANCEL_WORKOUT' }, a3)!;
+    const fresh = startWith(a3);
+    expect(reducer(fresh, { type: 'UNDO_DELETE', deletion: d3 })).toBe(fresh);
+  });
+
+  it('genkender ikke andre handlinger som sletninger', () => {
+    const s = workoutState();
+    const action: A = { type: 'ADD_SET', weId: s.active!.exercises[0].id };
+    expect(lastDeletion(s, action, reducer(s, action))).toBeNull();
+    expect(lastDeletion(s, { type: 'DELETE_WORKOUT', workoutId: 'nope' }, s)).toBeNull();
+  });
+
+  it('virker også i kladden af en rettet træning', () => {
+    let s = finishedState();
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: s.history[0].id });
+    const we = s.editing!.exercises[0];
+    const action: A = { type: 'REMOVE_SET', weId: we.id, setId: we.sets[0].id, edit: true };
+    const after = reducer(s, action);
+    const d = lastDeletion(s, action, after)!;
+    expect(reducer(after, { type: 'UNDO_DELETE', deletion: d }).editing).toEqual(s.editing);
   });
 });

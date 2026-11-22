@@ -1953,7 +1953,9 @@ export type Action =
   | { type: 'ADD_GOAL'; id: string; exerciseId: string; weight: number; reps: number; targetDate?: number; now: number }
   | { type: 'DELETE_GOAL'; goalId: string }
   | { type: 'DISMISS_RECAP'; key: string }
-  | { type: 'MERGE_REMOTE'; remote: AppState };
+  | { type: 'MERGE_REMOTE'; remote: AppState }
+  /** Fortryd den seneste sletning (#221) – oplysningerne kommer fra `lastDeletion` */
+  | { type: 'UNDO_DELETE'; deletion: Deletion };
 
 function emptySet(): SetEntry {
   return { id: uid(), weight: '', reps: '', rpe: '', done: false };
@@ -2435,6 +2437,119 @@ export function reducer(state: AppState, action: Action): AppState {
       return action.state;
     case 'MERGE_REMOTE':
       return mergeStates(state, action.remote);
+    case 'UNDO_DELETE':
+      return undoDelete(state, action.deletion);
+  }
+}
+
+/* ---------- Fortryd sletning (#221) ---------- */
+
+/** Hvor et slettet sæt/en fjernet øvelse sad: den igangværende træning eller kladden af en rettet træning */
+type DraftTarget = 'active' | 'editing';
+
+/** Det, der skal til for at lægge den seneste sletning tilbage. Huskes kun i hukommelsen, aldrig i localStorage. */
+export type Deletion = { label: string } & (
+  | { kind: 'set'; target: DraftTarget; workoutId: string; weId: string; index: number; set: SetEntry }
+  | {
+      kind: 'exercise';
+      target: DraftTarget;
+      workoutId: string;
+      index: number;
+      exercise: WorkoutExercise;
+      /** Supersæt-id'er før fjernelsen, så et opløst supersæt samles igen */
+      supersets: Record<string, string | undefined>;
+    }
+  | { kind: 'cancelled'; workout: Workout }
+  | { kind: 'workout'; workout: Workout }
+  | { kind: 'template'; index: number; template: Template }
+  | { kind: 'measurement'; measurement: BodyMeasurement }
+);
+
+/**
+ * Genkender en sletning lavet af `action` (prev → next) og returnerer, hvad der skal til for at fortryde den.
+ * null = handlingen slettede ikke noget.
+ */
+export function lastDeletion(prev: AppState, action: Action, next: AppState): Deletion | null {
+  if (prev === next) return null;
+  const target: DraftTarget = 'edit' in action && action.edit ? 'editing' : 'active';
+  const draft = prev[target];
+  switch (action.type) {
+    case 'REMOVE_SET': {
+      const we = draft?.exercises.find((e) => e.id === action.weId);
+      const index = we?.sets.findIndex((x) => x.id === action.setId) ?? -1;
+      if (!draft || !we || index < 0) return null;
+      return { kind: 'set', label: 'Sæt slettet', target, workoutId: draft.id, weId: we.id, index, set: we.sets[index] };
+    }
+    case 'REMOVE_EXERCISE': {
+      const index = draft?.exercises.findIndex((e) => e.id === action.weId) ?? -1;
+      if (!draft || index < 0) return null;
+      const supersets = Object.fromEntries(draft.exercises.map((e) => [e.id, e.supersetId]));
+      return { kind: 'exercise', label: 'Øvelse fjernet', target, workoutId: draft.id, index, exercise: draft.exercises[index], supersets };
+    }
+    case 'CANCEL_WORKOUT':
+      return prev.active ? { kind: 'cancelled', label: 'Træning annulleret', workout: prev.active } : null;
+    case 'DELETE_WORKOUT': {
+      const workout = prev.history.find((w) => w.id === action.workoutId);
+      return workout ? { kind: 'workout', label: 'Træning slettet', workout } : null;
+    }
+    case 'DELETE_TEMPLATE': {
+      const index = prev.templates.findIndex((t) => t.id === action.templateId);
+      return index < 0 ? null : { kind: 'template', label: 'Skabelon slettet', index, template: prev.templates[index] };
+    }
+    case 'DELETE_MEASUREMENT': {
+      const measurement = prev.bodyLog.find((m) => m.id === action.id);
+      return measurement ? { kind: 'measurement', label: 'Måling slettet', measurement } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+function insertAt<T>(list: T[], index: number, item: T): T[] {
+  const i = Math.max(0, Math.min(index, list.length));
+  return [...list.slice(0, i), item, ...list.slice(i)];
+}
+
+/** Lægger en sletning tilbage, hvor den var, og fjerner dens "gravsten", så den ikke slettes igen ved synk */
+function undoDelete(state: AppState, d: Deletion): AppState {
+  const unbury = (s: AppState, id: string): AppState => {
+    if (!(id in (s.deleted ?? {}))) return s;
+    const { [id]: _gone, ...deleted } = s.deleted;
+    return { ...s, deleted };
+  };
+  switch (d.kind) {
+    case 'set':
+    case 'exercise': {
+      const w = state[d.target];
+      if (!w || w.id !== d.workoutId) return state;
+      let changed: Workout;
+      if (d.kind === 'set') {
+        const we = w.exercises.find((e) => e.id === d.weId);
+        if (!we || we.sets.some((x) => x.id === d.set.id)) return state;
+        changed = mapExercise(w, d.weId, (e) => ({ ...e, sets: insertAt(e.sets, d.index, d.set) }));
+      } else {
+        if (w.exercises.some((e) => e.id === d.exercise.id)) return state;
+        const back = insertAt(w.exercises, d.index, d.exercise).map((e): WorkoutExercise => {
+          if (!(e.id in d.supersets)) return e;
+          const { supersetId: _old, ...rest } = e;
+          const id = d.supersets[e.id];
+          return id ? { ...rest, supersetId: id } : rest;
+        });
+        changed = { ...w, exercises: normalizeSupersets(back) };
+      }
+      return { ...state, [d.target]: changed };
+    }
+    case 'cancelled':
+      return state.active ? state : { ...state, active: d.workout };
+    case 'workout':
+      if (state.history.some((w) => w.id === d.workout.id)) return state;
+      return unbury({ ...state, history: [...state.history, d.workout].sort((a, b) => b.startedAt - a.startedAt) }, d.workout.id);
+    case 'template':
+      if (state.templates.some((t) => t.id === d.template.id)) return state;
+      return unbury({ ...state, templates: insertAt(state.templates, d.index, d.template) }, d.template.id);
+    case 'measurement':
+      if (state.bodyLog.some((m) => m.id === d.measurement.id)) return state;
+      return unbury({ ...state, bodyLog: [...state.bodyLog, d.measurement].sort((a, b) => b.date - a.date) }, d.measurement.id);
   }
 }
 
