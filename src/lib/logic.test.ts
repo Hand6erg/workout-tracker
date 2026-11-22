@@ -88,6 +88,7 @@ import {
   nearestLoadable,
   percentTable,
   tableOneRM,
+  formatPlates,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -2977,5 +2978,15 @@ describe('procenttabel (#250)', () => {
     expect(percentTable(initialState(), 'bench')).toEqual([]);
     const s = reducer(initialState(), { type: 'SET_TESTED_1RM', exerciseId: 'plank', weight: 100 });
     expect(percentTable(s, 'plank')).toEqual([]);
+  });
+});
+
+describe('formatPlates (#251)', () => {
+  it('viser skiverne pr. side som tekst', () => {
+    expect(formatPlates(85)).toBe('25 + 5 + 2,5 pr. side');
+    expect(formatPlates(82.5)).toBe('25 + 5 + 1,25 pr. side');
+    expect(formatPlates(20)).toBe('Kun stangen');
+    expect(formatPlates(10)).toBe('Under stangens vægt');
+    expect(formatPlates(81, 20, [20, 10])).toBe('20 + 10 pr. side (mangler 1 kg)');
   });
 });
