@@ -88,7 +88,14 @@ jobs:
     permissions:
       actions: write
     steps:
-      - run: gh workflow run ci.yml --ref main --repo "$GITHUB_REPOSITORY"
+      # Prøv igen ved kortvarige netværksfejl mod GitHubs API (#350)
+      - run: |
+          for i in 1 2 3 4 5; do
+            gh workflow run ci.yml --ref main --repo "$GITHUB_REPOSITORY" && exit 0
+            echo "Forsøg $i mislykkedes – prøver igen om $((i * 15)) s"
+            sleep $((i * 15))
+          done
+          exit 1
         env:
           GH_TOKEN: ${{ github.token }}
 
