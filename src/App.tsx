@@ -9,6 +9,7 @@ import { HistoryView } from './views/HistoryView';
 import { ProfileView } from './views/ProfileView';
 import { StartView } from './views/StartView';
 import { SummaryView } from './views/SummaryView';
+import { UndoBar } from './components/UndoBar';
 
 type Tab = 'start' | 'history' | 'exercises' | 'profile';
 
@@ -20,7 +21,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 export default function App() {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, clearUndo } = useStore();
   const [tab, setTab] = useState<Tab>('start');
   const [workoutOpen, setWorkoutOpen] = useState(true);
   const showWorkout = !!state.active && workoutOpen;
@@ -64,6 +65,7 @@ export default function App() {
         {TABS.map((t) => (
           <button key={t.id} className={tab === t.id ? 'on' : ''} aria-current={tab === t.id ? 'page' : undefined} onClick={() => {
               if (summaryOpen) dispatch({ type: 'CLOSE_SUMMARY' });
+              if (t.id !== tab) clearUndo();
               setTab(t.id);
             }}>
             <span aria-hidden>{t.icon}</span>
@@ -74,6 +76,7 @@ export default function App() {
 
       {showWorkout && <ActiveWorkout onMinimize={() => setWorkoutOpen(false)} />}
       {state.editing && <WorkoutEditor />}
+      <UndoBar inWorkout={showWorkout || !!state.editing} />
     </div>
   );
 }
