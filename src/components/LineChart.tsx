@@ -3,11 +3,28 @@ export interface Point {
   value: number;
 }
 
+interface Taps {
+  /** Tekst pr. punkt; når den er sat, kan punkterne trykkes på (#215) */
+  pointLabels?: string[];
+  /** Punkter der fremhæves med 🏆 (rekorder) */
+  marks?: boolean[];
+  selected?: number;
+  onSelect?: (index: number) => void;
+}
+
 /** Simpel linjegraf i ren SVG (punkter sorteret efter tid) */
-export function LineChart({ points, label, format }: { points: Point[]; label: string; format: (n: number) => string }) {
+export function LineChart({
+  points,
+  label,
+  format,
+  pointLabels,
+  marks,
+  selected,
+  onSelect,
+}: { points: Point[]; label: string; format: (n: number) => string } & Taps) {
   const W = 320;
   const H = 150;
-  const pad = { l: 34, r: 10, t: 12, b: 20 };
+  const pad = { l: 34, r: 10, t: marks?.some(Boolean) ? 22 : 12, b: 20 };
   const ts = points.map((p) => p.t);
   const vs = points.map((p) => p.value);
   const t0 = Math.min(...ts);
@@ -23,7 +40,7 @@ export function LineChart({ points, label, format }: { points: Point[]; label: s
   const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
   const dateFmt = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short' });
 
-  return (
+  const svg = (
     <svg className="line-chart" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={label}>
       {[hi, lo].map((v) => (
         <g key={v}>
@@ -34,9 +51,22 @@ export function LineChart({ points, label, format }: { points: Point[]; label: s
         </g>
       ))}
       <path d={path} className="line" />
-      {points.map((p) => (
-        <circle key={p.t} cx={x(p.t)} cy={y(p.value)} r={3} className="dot" />
+      {points.map((p, i) => (
+        <circle
+          key={p.t}
+          cx={x(p.t)}
+          cy={y(p.value)}
+          r={marks?.[i] ? 4.5 : selected === i ? 4.5 : 3}
+          className={`dot${marks?.[i] ? ' record' : ''}${selected === i ? ' selected' : ''}`}
+        />
       ))}
+      {points.map((p, i) =>
+        marks?.[i] ? (
+          <text key={`m${p.t}`} x={x(p.t)} y={y(p.value) - 7} className="mark">
+            🏆
+          </text>
+        ) : null,
+      )}
       <text x={pad.l} y={H - 4} className="xlbl start">
         {dateFmt.format(t0)}
       </text>
@@ -44,5 +74,22 @@ export function LineChart({ points, label, format }: { points: Point[]; label: s
         {dateFmt.format(t1)}
       </text>
     </svg>
+  );
+  if (!pointLabels || !onSelect) return svg;
+  return (
+    <div className="line-chart-wrap">
+      {svg}
+      {points.map((p, i) => (
+        <button
+          key={p.t}
+          type="button"
+          className="chart-tap"
+          style={{ left: `${(x(p.t) / W) * 100}%`, top: `${(y(p.value) / H) * 100}%` }}
+          aria-label={pointLabels[i]}
+          aria-pressed={selected === i}
+          onClick={() => onSelect(i)}
+        />
+      ))}
+    </div>
   );
 }

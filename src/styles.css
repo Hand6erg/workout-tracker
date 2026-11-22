@@ -232,7 +232,17 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .line-chart { width: 100%; height: auto; display: block; }
 .line-chart .grid { stroke: var(--line); stroke-dasharray: 3 4; }
 .line-chart .line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
-.line-chart .dot { fill: var(--accent); }
+.line-chart .dot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
+.line-chart .dot.record, .line-chart .dot.selected { fill: var(--accent); }
+.line-chart .dot.selected { stroke: var(--text); }
+.line-chart .mark { font-size: 11px; text-anchor: middle; }
+.line-chart-wrap { position: relative; }
+.chart-tap {
+  position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; padding: 0;
+  border: 0; border-radius: 50%; background: transparent; cursor: pointer;
+}
+.chart-tap:focus-visible { outline: 2px solid var(--accent); }
+.strength-chart .chart-point { font-size: 0.85rem; margin: 4px 0 8px; min-height: 1.2em; color: var(--muted); }
 .line-chart text { fill: var(--muted); font-size: 10px; }
 .line-chart .ylbl { text-anchor: end; }
 .line-chart .xlbl.end { text-anchor: end; }

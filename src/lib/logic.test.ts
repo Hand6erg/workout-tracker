@@ -90,6 +90,7 @@ import {
   tableOneRM,
   formatPlates,
   exerciseProgress,
+  describeProgressPoint,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3065,5 +3066,17 @@ describe('styrkegraf (#213)', () => {
 
   it('gamle data indlæses uændret', () => {
     expect(loadState(JSON.stringify(s)).history).toEqual(s.history);
+  });
+});
+
+describe('punkt-tekst i styrkegrafen (#215)', () => {
+  const date = new Date(2026, 10, 12, 18).getTime();
+  it('viser dato, sæt og est. 1RM, og markerer rekorder', () => {
+    const p = { workoutId: 'w', date, value: 116.7, set: { weight: 100, reps: 5 }, record: true };
+    expect(describeProgressPoint(p, 'reps', '1rm')).toBe('12. nov. · 100 kg × 5 · est. 1RM 116,7 kg · 🏆 rekord');
+    expect(describeProgressPoint({ ...p, value: 100, record: false }, 'reps', 'heaviest')).toBe('12. nov. · 100 kg × 5');
+    expect(describeProgressPoint({ workoutId: 'w', date, value: 1500, record: false }, 'reps', 'volume')).toBe('12. nov. · volumen 1.500 kg');
+    expect(describeProgressPoint({ workoutId: 'w', date, value: 75, record: false }, 'time', '1rm')).toBe('12. nov. · 75 sek.');
+    expect(describeProgressPoint({ workoutId: 'w', date, value: 402.5, record: false }, 'distance', '1rm')).toBe('12. nov. · 402,5 m');
   });
 });
