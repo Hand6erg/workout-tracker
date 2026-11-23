@@ -146,6 +146,8 @@ export interface AppState {
   restVibrate: boolean;
   /** Hold skærmen tændt, mens en træning er i gang (#154) */
   keepAwake: boolean;
+  /** Vis RPE-feltet i træningen (#237). Loggede RPE-værdier beholdes, når det er slået fra. */
+  showRpe: boolean;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */

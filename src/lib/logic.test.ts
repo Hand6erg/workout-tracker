@@ -32,6 +32,7 @@ import {
   previousSets,
   previousSetsFor,
   progressionHint,
+  parseRpe,
   recordCount,
   recordsBrokenBy,
   supersetGroups,
@@ -3256,5 +3257,62 @@ describe('skabelon-filtre i historik (#232)', () => {
       { id: 'tpl-legs', name: 'Ben' },
     ]);
     expect(historyTemplates({ ...base, history: [] })).toEqual([]);
+  });
+});
+
+describe('RPE (#237)', () => {
+  function logged(sets: [string, string, string][], exerciseId = 'bench'): AppState {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: [exerciseId] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps, rpe], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps, rpe } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: T0 });
+    });
+    return reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+  }
+
+  it('"Vis RPE" er slået til som standard, også for gamle data, og kan slås fra', () => {
+    expect(initialState().showRpe).toBe(true);
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.showRpe;
+    expect(loadState(JSON.stringify(old)).showRpe).toBe(true);
+    const off = reducer(initialState(), { type: 'SET_SHOW_RPE', on: false });
+    expect(off.showRpe).toBe(false);
+    expect(loadState(JSON.stringify(off)).showRpe).toBe(false);
+    expect(reducer(off, { type: 'SET_SHOW_RPE', on: true }).showRpe).toBe(true);
+  });
+
+  it('læser 6–10 i halve trin med komma eller punktum', () => {
+    expect(parseRpe('8,5')).toBe(8.5);
+    expect(parseRpe('8.5')).toBe(8.5);
+    expect(parseRpe(' 10 ')).toBe(10);
+    expect(parseRpe('6')).toBe(6);
+    for (const bad of ['5', '11', '8,3', '', 'abc', '8,5,1', '-7', undefined]) expect(parseRpe(bad)).toBeNull();
+  });
+
+  it('RPE 10 på tungeste sæt → samme vægt; RPE 6,5 → dobbelt skridt; uden RPE → som før', () => {
+    expect(progressionHint(logged([['100', '5', '8'], ['100', '5', '10']]), 'bench')).toMatchObject({
+      next: { weight: 100, reps: 5 },
+      increase: false,
+      rpe: 10,
+    });
+    expect(progressionHint(logged([['100', '5', '9,5']]), 'bench')).toMatchObject({ next: { weight: 100 }, increase: false });
+    expect(progressionHint(logged([['100', '5', '6,5']]), 'bench')).toMatchObject({ next: { weight: 105, reps: 5 }, increase: true, rpe: 6.5 });
+    expect(progressionHint(logged([['20', '10', '7']], 'curl'), 'curl')).toMatchObject({ next: { weight: 22 }, rpe: 7 });
+    const plain = progressionHint(logged([['100', '5', '']]), 'bench');
+    expect(plain).toEqual({ last: { sets: 1, reps: 5, weight: 100, repsList: [5] }, next: { weight: 102.5, reps: 5 }, increase: true });
+    expect(progressionHint(logged([['100', '5', '8']]), 'bench')).not.toHaveProperty('rpe');
+    // Ugyldig RPE ignoreres
+    expect(progressionHint(logged([['100', '5', '12']]), 'bench')!.next.weight).toBe(102.5);
+  });
+
+  it('RPE kommer med i CSV og overlever backup → gendan', () => {
+    const s = logged([['100', '5', '8,5']]);
+    expect(toCsv(s).split('\n')[1]).toContain(',100,5,"8,5"');
+    const restored = loadState(JSON.stringify(s));
+    expect(restored.history[0].exercises[0].sets[0].rpe).toBe('8,5');
   });
 });
