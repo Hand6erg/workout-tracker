@@ -25,7 +25,8 @@ test('fortryder et slettet sæt med samme vægt, reps og ✓ (#222)', async ({ p
   await bench.getByLabel('Reps sæt 1').fill('5');
   await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
 
-  await bench.getByRole('button', { name: 'Slet sæt 1' }).click();
+  await bench.getByRole('button', { name: 'Valg for sæt 1' }).click();
+  await page.getByRole('dialog', { name: 'Sæt 1' }).getByRole('button', { name: 'Slet sæt 1' }).click();
   await expect(bench.getByLabel('Vægt sæt 1')).toHaveCount(0);
   const bar = page.getByRole('status', { name: 'Fortryd sletning' });
   await expect(bar).toContainText('Sæt slettet');
@@ -57,7 +58,8 @@ test('fortryder en fjernet øvelse og en annulleret træning; bjælken forsvinde
   await expect(bench.getByLabel('Vægt sæt 1')).toHaveValue('60');
 
   // Bjælken lukker efter et par sekunder
-  await bench.getByRole('button', { name: 'Slet sæt 1' }).click();
+  await bench.getByRole('button', { name: 'Valg for sæt 1' }).click();
+  await page.getByRole('dialog', { name: 'Sæt 1' }).getByRole('button', { name: 'Slet sæt 1' }).click();
   await expect(bar).toContainText('Sæt slettet');
   await page.clock.runFor(7000);
   await expect(bar).toBeHidden();

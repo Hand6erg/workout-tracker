@@ -57,6 +57,7 @@ import {
   vsLastTime,
   dropSetWeight,
   setTagInfo,
+  setLabel,
   milestones,
   milestonesUnlockedBy,
   milestoneProgressText,
@@ -3409,6 +3410,38 @@ describe('sæt-mærker: drop-sæt, failure og AMRAP (#243)', () => {
     s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'drop' });
     expect(s.active!.exercises[0].sets[0]).toMatchObject({ tag: 'drop' });
     expect(s.active!.exercises[0].sets[0].warmup).toBeUndefined();
+  });
+
+  it('opvarmning fra menuen fjerner mærket, og tilbage igen (#244)', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    const id = we.sets[0].id;
+    const set0 = (st: AppState) => st.active!.exercises[0].sets[0];
+    s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'failure' });
+    s = reducer(s, { type: 'SET_SET_WARMUP', weId: we.id, setId: id, warmup: true });
+    expect(set0(s).warmup).toBe(true);
+    expect(set0(s)).not.toHaveProperty('tag');
+    expect(reducer(s, { type: 'SET_SET_WARMUP', weId: we.id, setId: id, warmup: true }).active).toEqual(s.active);
+    s = reducer(s, { type: 'SET_SET_WARMUP', weId: we.id, setId: id, warmup: false });
+    expect(set0(s)).not.toHaveProperty('warmup');
+  });
+
+  it('sæt-numre: opvarmning og drop-sæt tælles for sig, mærker viser bogstav (#244)', () => {
+    const sets: SetEntry[] = [
+      { id: 'w', weight: '', reps: '', rpe: '', done: false, warmup: true },
+      { id: 'a', weight: '', reps: '', rpe: '', done: false },
+      { id: 'd', weight: '', reps: '', rpe: '', done: false, tag: 'drop' },
+      { id: 'b', weight: '', reps: '', rpe: '', done: false, tag: 'failure' },
+      { id: 'c', weight: '', reps: '', rpe: '', done: false },
+    ];
+    expect(sets.map((_, i) => setLabel(sets, i))).toEqual([
+      { kind: 'warmup', no: 1, text: 'O' },
+      { kind: 'work', no: 1, text: '1' },
+      { kind: 'drop', no: 1, text: 'D' },
+      { kind: 'work', no: 2, text: 'F' },
+      { kind: 'work', no: 3, text: '3' },
+    ]);
   });
 
   it('bogstav og navn pr. mærke', () => {

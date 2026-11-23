@@ -37,7 +37,10 @@ import {
   isBodyweightReps,
   formatRpe,
   parseRpe,
+  setLabel,
+  SET_TAGS,
 } from '../lib/logic';
+import type { SetTag } from '../lib/types';
 import { useNow, useStore } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
 
@@ -528,6 +531,61 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   );
 }
 
+const TAG_ORDER: SetTag[] = ['drop', 'failure', 'amrap'];
+
+/** Menu fra sæt-nummeret (#244): opvarmning, drop-sæt, til failure, AMRAP, fjern mærke, tilføj drop-sæt og slet */
+function SetMenu({
+  title,
+  deleteLabel,
+  warmup,
+  tag,
+  onClose,
+  onWarmup,
+  onTag,
+  onAddDrop,
+  onDelete,
+}: {
+  title: string;
+  deleteLabel: string;
+  warmup: boolean;
+  tag: SetTag | undefined;
+  onClose: () => void;
+  onWarmup: () => void;
+  onTag: (tag: SetTag | null) => void;
+  onAddDrop: () => void;
+  onDelete: () => void;
+}) {
+  const pick = (fn: () => void) => () => {
+    fn();
+    onClose();
+  };
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="set-menu" role="group" aria-label="Mærke">
+        <button className={`set-menu-item ${warmup ? 'on' : ''}`} aria-pressed={warmup} onClick={pick(onWarmup)}>
+          <span className="set-menu-letter warmup">O</span> Opvarmning
+        </button>
+        {TAG_ORDER.map((t) => (
+          <button key={t} className={`set-menu-item ${tag === t ? 'on' : ''}`} aria-pressed={tag === t} onClick={pick(() => onTag(t))}>
+            <span className={`set-menu-letter tag-${t}`}>{SET_TAGS[t].letter}</span> {SET_TAGS[t].name}
+          </button>
+        ))}
+        <button className="set-menu-item" disabled={!warmup && !tag} onClick={pick(() => onTag(null))}>
+          <span className="set-menu-letter">–</span> Fjern mærke
+        </button>
+      </div>
+      <div className="set-menu-actions">
+        <button className="btn-secondary" onClick={pick(onAddDrop)}>
+          + Tilføj drop-sæt
+        </button>
+        <button className="btn-danger" aria-label={deleteLabel} onClick={pick(onDelete)}>
+          Slet sæt
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { exerciseById } = useStore();
   const { w, base: state, edit, send: dispatch, vs } = useWorkout();
@@ -540,6 +598,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   // "Vis RPE-felt" i Profil (#238): slået fra → ingen RPE-kolonne; loggede værdier beholdes
   const showRpe = state.showRpe !== false;
   const [warmupMsg, setWarmupMsg] = useState(false);
+  // Sæt-menuen (#244): id for sættet hvis menu er åben
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const isBarbell = ex?.equipment === 'Stang';
   // Kropsvægtsøvelse (#208): vægtfeltet er ekstra vægt (+10) eller assistance (−20)
   const bw = isBodyweightReps(state, we.exerciseId);
@@ -670,24 +730,41 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </thead>
         <tbody>
           {we.sets.map((s, idx) => {
-            // Opvarmningssæt nummereres for sig ("O"), så arbejdssæt beholder 1, 2, 3 …
-            const before = we.sets.slice(0, idx);
-            const i = before.filter((x) => x.warmup === s.warmup).length;
-            const what = s.warmup ? 'opvarmning' : 'sæt';
-            const p = s.warmup ? undefined : prev[i];
+            // Opvarmning ("O") og drop-sæt ("D") nummereres for sig, så arbejdssæt beholder 1, 2, 3 … (#244)
+            const label = setLabel(we.sets, idx);
+            const i = label.no - 1;
+            const what = label.kind === 'warmup' ? 'opvarmning' : label.kind === 'drop' ? 'drop-sæt' : 'sæt';
+            const p = label.kind === 'work' ? prev[i] : undefined;
             const records = s.done ? recordsBrokenBy(state, we.exerciseId, s) : [];
             return (
               <Fragment key={s.id}>
-              <tr className={`${s.done ? 'done' : ''} ${s.warmup ? 'warmup' : ''}`}>
+              <tr className={`${s.done ? 'done' : ''} ${s.warmup ? 'warmup' : ''} ${s.tag ? `tag-${s.tag}` : ''}`}>
                 <td>
                   <button
                     className="set-no"
-                    title="Slet sæt"
-                    aria-label={`Slet ${what} ${i + 1}`}
-                    onClick={() => dispatch({ type: 'REMOVE_SET', weId: we.id, setId: s.id })}
+                    title="Mærke eller slet sæt"
+                    aria-label={`Valg for ${what} ${i + 1}`}
+                    aria-haspopup="dialog"
+                    onClick={() => setMenuFor(s.id)}
                   >
-                    {s.warmup ? 'O' : i + 1}
+                    {label.text}
                   </button>
+                  {menuFor === s.id && (
+                    <SetMenu
+                      title={`${what[0].toUpperCase()}${what.slice(1)} ${i + 1}`}
+                      deleteLabel={`Slet ${what} ${i + 1}`}
+                      warmup={!!s.warmup}
+                      tag={s.tag}
+                      onClose={() => setMenuFor(null)}
+                      onWarmup={() => dispatch({ type: 'SET_SET_WARMUP', weId: we.id, setId: s.id, warmup: true })}
+                      onTag={(tag) => {
+                        if (s.warmup) dispatch({ type: 'SET_SET_WARMUP', weId: we.id, setId: s.id, warmup: false });
+                        dispatch({ type: 'SET_SET_TAG', weId: we.id, setId: s.id, tag });
+                      }}
+                      onAddDrop={() => dispatch({ type: 'ADD_DROP_SET', weId: we.id, setId: s.id })}
+                      onDelete={() => dispatch({ type: 'REMOVE_SET', weId: we.id, setId: s.id })}
+                    />
+                  )}
                 </td>
                 <td className="prev">{p ? prevText(p, kind, bw) : '–'}</td>
                 {kind === 'time' && (
