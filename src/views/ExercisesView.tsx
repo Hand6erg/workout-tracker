@@ -11,6 +11,7 @@ import {
   formatClock,
   formatKg,
   formatSet,
+  setTagSuffix,
   isBodyweightReps,
   num,
   personalRecords,
@@ -222,7 +223,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
                   <strong>{shortDate.format(h.date)}</strong>
                   <small>
                     {h.sets
-                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id)) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : ''))
+                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id)) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : '') + setTagSuffix(s))
                       .join(' · ')}
                   </small>
                 </span>

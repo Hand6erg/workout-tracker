@@ -65,3 +65,32 @@ test('"Tilføj drop-sæt" på et 80 kg sæt giver et D-sæt på 65 kg lige under
   await page.getByRole('dialog', { name: 'Drop-sæt 1' }).getByRole('button', { name: 'Luk' }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('en afsluttet træning med drop-sæt viser "(drop-sæt)" i Historik og på øvelsessiden (#245)', async ({ page }) => {
+  const bench = await startWithBench(page);
+  await bench.getByLabel('Vægt sæt 1').fill('80');
+  await bench.getByLabel('Reps sæt 1').fill('8');
+  await bench.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await bench.getByRole('button', { name: 'Valg for sæt 1' }).click();
+  await page.getByRole('dialog', { name: 'Sæt 1' }).getByRole('button', { name: '+ Tilføj drop-sæt' }).click();
+  await bench.getByLabel('Reps drop-sæt 1').fill('10');
+  await bench.getByRole('button', { name: 'Udført drop-sæt 1' }).click();
+
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Historik' }).click();
+  await page.getByRole('button', { name: /^Træning / }).first().click();
+  const detail = page.getByRole('dialog');
+  await expect(detail.getByRole('listitem').nth(1)).toHaveText('65 kg × 10 (drop-sæt)');
+  await expect(detail.getByRole('listitem').nth(0)).toHaveText('80 kg × 8');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: 'test-results/set-tags-history.png' });
+  await detail.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  await expect(page.getByRole('dialog', { name: 'Bænkpres' })).toContainText('80 kg × 8 · 65 kg × 10 (drop-sæt)');
+});
