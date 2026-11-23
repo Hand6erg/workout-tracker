@@ -43,6 +43,7 @@ export function initialState(): AppState {
     restSound: true,
     restVibrate: true,
     keepAwake: true,
+    showRpe: true,
     recapDismissed: null,
     favorites: [],
     bodyWeight: null,
@@ -1446,6 +1447,8 @@ export interface ProgressionHint {
   increase: boolean;
   /** Kropsvægtsøvelse (#209): vægten er ekstra vægt (+) eller assistance (−) oven på kropsvægten */
   bodyweight?: boolean;
+  /** RPE på sidste gangs tungeste sæt, når den ændrede forslaget (#237) */
+  rpe?: number;
   /** Tids- og distanceøvelser (#136): sidste og foreslåede sekunder/meter */
   timed?: { kind: 'time' | 'distance'; last: { seconds: number; meters: number }; next: { seconds: number; meters: number } };
 }
@@ -1504,7 +1507,21 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   }
   if (weight === 0) return { last, next: { weight, reps: reps + 1 }, increase: true };
   const step = equipment === 'Håndvægt' ? 1 : 2.5;
+  // RPE på det tungeste sæt (#237): meget hårdt (9,5–10) → samme igen; let (≤ 7) → dobbelt skridt.
+  // Flere sæt på topvægten: den højeste RPE tæller (det forsigtige valg).
+  const rpes = sets.filter((s) => num(s.weight) === weight).map((s) => parseRpe(s.rpe)).filter((r): r is number => r !== null);
+  const rpe = rpes.length ? Math.max(...rpes) : null;
+  if (rpe !== null && rpe >= 9.5) return { last, next: { weight, reps }, increase: false, rpe };
+  if (rpe !== null && rpe <= 7) return { last, next: { weight: weight + 2 * step, reps }, increase: true, rpe };
   return { last, next: { weight: weight + step, reps }, increase: true };
+}
+
+/** Læser en RPE-værdi (#237): 6–10 i halve trin, med komma eller punktum. Alt andet → null (ingen RPE). */
+export function parseRpe(v: string | undefined): number | null {
+  const t = (v ?? '').trim().replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const n = Number(t);
+  return n >= 6 && n <= 10 && Number.isInteger(n * 2) ? n : null;
 }
 
 export interface ExerciseHistoryEntry {
@@ -1992,6 +2009,7 @@ export type Action =
   | { type: 'SET_REST_SOUND'; on: boolean }
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
+  | { type: 'SET_SHOW_RPE'; on: boolean }
   /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
   | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
@@ -2397,6 +2415,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, restVibrate: action.on };
     case 'SET_KEEP_AWAKE':
       return { ...state, keepAwake: action.on };
+    case 'SET_SHOW_RPE':
+      return { ...state, showRpe: action.on };
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -2669,6 +2689,7 @@ const SETTINGS = [
   'restSound',
   'restVibrate',
   'keepAwake',
+  'showRpe',
   'recapDismissed',
   'favorites',
   'program',
@@ -2819,6 +2840,8 @@ export function loadState(raw: string | null): AppState {
       favorites: Array.isArray(parsed.favorites) ? [...new Set(parsed.favorites)].filter((id) => ids.has(id)) : [],
       // Kropsvægt-indstillingen fra før #206 findes ikke
       bodyWeight: typeof parsed.bodyWeight === 'number' && parsed.bodyWeight > 0 ? parsed.bodyWeight : null,
+      // RPE-indstillingen fra før #237 findes ikke – feltet var altid vist
+      showRpe: typeof parsed.showRpe === 'boolean' ? parsed.showRpe : true,
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
