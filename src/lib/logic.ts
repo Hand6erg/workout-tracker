@@ -1524,6 +1524,12 @@ export function parseRpe(v: string | undefined): number | null {
   return n >= 6 && n <= 10 && Number.isInteger(n * 2) ? n : null;
 }
 
+/** RPE som dansk tekst (#238): "8.5" → "8,5". Ugyldig eller tom RPE → '' (vises ikke). */
+export function formatRpe(v: string | undefined): string {
+  const n = parseRpe(v);
+  return n === null ? '' : String(n).replace('.', ',');
+}
+
 export interface ExerciseHistoryEntry {
   workoutId: string;
   date: number;

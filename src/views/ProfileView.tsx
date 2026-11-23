@@ -113,6 +113,15 @@ export function ProfileView() {
         />
         Hold skærmen tændt under træning
       </label>
+
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.showRpe !== false}
+          onChange={(e) => dispatch({ type: 'SET_SHOW_RPE', on: e.target.checked })}
+        />
+        Vis RPE-felt (hvor hårdt sættet føltes, 6–10)
+      </label>
       {!wakeLockSupported() && <p className="muted rest-global-note">Understøttes ikke i denne browser</p>}
 
       <label className="field">

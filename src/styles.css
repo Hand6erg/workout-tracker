@@ -171,6 +171,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .sets td { text-align: center; padding: 0 3px; }
 .sets td input { text-align: center; padding: 8px 4px; }
 .sets td input.rpe { max-width: 52px; }
+.sets td input.rpe.invalid { border-color: var(--danger, #e5484d); color: var(--danger, #e5484d); }
+.sets td .rpe-error { display: block; color: var(--danger, #e5484d); font-size: 0.7rem; line-height: 1.1; }
 .sets .prev { color: var(--muted); font-size: 0.82rem; white-space: nowrap; }
 .sets tr.done td { background: var(--ok-soft); }
 .sets tr.done td:first-child { border-radius: 8px 0 0 8px; }

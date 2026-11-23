@@ -1,4 +1,4 @@
-import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
+import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { RestPicker, formatRest } from '../components/RestPicker';
 import { SwapPicker } from '../components/SwapPicker';
@@ -35,6 +35,8 @@ import {
   bodyweightText,
   bodyWeightOn,
   isBodyweightReps,
+  formatRpe,
+  parseRpe,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
@@ -437,6 +439,46 @@ function recordText(kinds: RecordKind[], weight: string, bodyweight = false): st
 
 const kgText = (n: number) => String(n).replace('.', ',');
 
+/**
+ * RPE-felt (#238): kun gyldige værdier (6–10 i halve trin) gemmes. En ugyldig værdi bliver stående i feltet
+ * med rød ramme og "RPE 6–10", men gemmes som tom, så den aldrig påvirker forslag eller historik.
+ */
+function RpeInput({ label, value, onChange }: { label: string; value: string; onChange: (rpe: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+  const valid = (t: string) => t.trim() === '' || parseRpe(t) !== null;
+  // Ændret udefra (fx Fortryd eller hint): vis den gemte værdi
+  useEffect(() => {
+    if ((valid(draft) ? draft : '') !== value) setDraft(value);
+  }, [value]);
+  const invalid = !valid(draft);
+  const showError = invalid && !focused;
+  return (
+    <>
+      <input
+        inputMode="decimal"
+        aria-label={label}
+        aria-invalid={showError || undefined}
+        className={`rpe ${showError ? 'invalid' : ''}`}
+        value={draft}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          const t = e.target.value;
+          setDraft(t);
+          const next = valid(t) ? t.trim() : '';
+          if (next !== value) onChange(next);
+        }}
+      />
+      {showError && (
+        <small className="rpe-error" role="alert">
+          RPE 6–10
+        </small>
+      )}
+    </>
+  );
+}
+
 function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
   if (hint.timed) return <TimedHintButton weId={weId} timed={hint.timed} />;
   return <RepsHintButton weId={weId} hint={hint} />;
@@ -471,7 +513,9 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
   // Kropsvægtsøvelser (#209): "@ KV +10" og "prøv KV −17,5"
   const w = (n: number) => (hint.bodyweight ? bodyweightText(String(n)) : `${kgText(n)} kg`);
-  const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}`;
+  // RPE (#238): forklar hvorfor forslaget blev ændret, fx "(RPE 10)"
+  const rpeText = hint.rpe !== undefined ? ` (RPE ${formatRpe(String(hint.rpe))})` : '';
+  const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}${rpeText}`;
   const nextText = next.weight !== last.weight ? w(next.weight) : `${next.reps} reps`;
   return (
     <button
@@ -493,6 +537,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const kind = exerciseKind(state, we.exerciseId);
   const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
   const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
+  // "Vis RPE-felt" i Profil (#238): slået fra → ingen RPE-kolonne; loggede værdier beholdes
+  const showRpe = state.showRpe !== false;
   const [warmupMsg, setWarmupMsg] = useState(false);
   const isBarbell = ex?.equipment === 'Stang';
   // Kropsvægtsøvelse (#208): vægtfeltet er ekstra vægt (+10) eller assistance (−20)
@@ -609,7 +655,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
               <>
                 <th>{bw ? '+kg' : 'kg'}</th>
                 <th>Reps</th>
-                <th>RPE</th>
+                {showRpe && <th>RPE</th>}
               </>
             )}
             {kind === 'time' && <th colSpan={2}>Sek.</th>}
@@ -717,15 +763,15 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { reps: e.target.value } })}
                   />
                 </td>
-                <td>
-                  <input
-                    inputMode="decimal"
-                    aria-label={`RPE ${what} ${i + 1}`}
-                    className="rpe"
-                    value={s.rpe}
-                    onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe: e.target.value } })}
-                  />
-                </td>
+                {showRpe && (
+                  <td>
+                    <RpeInput
+                      label={`RPE ${what} ${i + 1}`}
+                      value={s.rpe}
+                      onChange={(rpe) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe } })}
+                    />
+                  </td>
+                )}
                 </>
                 )}
                 <td>
@@ -741,7 +787,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
               </tr>
               {records.length > 0 && (
                 <tr className="pr-row">
-                  <td colSpan={6}>
+                  <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>
                     <span role="img" aria-label={recordText(records, s.weight, bw)}>
                       🏆
                     </span>{' '}

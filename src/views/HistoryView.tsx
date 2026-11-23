@@ -17,6 +17,7 @@ import {
   withLoads,
   workoutVolume,
   workoutDuration,
+  formatRpe,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
@@ -223,7 +224,7 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
             {e.sets.map((s) => (
               <li key={s.id}>
                 {formatSet(s, isBodyweightReps(state, e.exerciseId))}
-                {s.rpe && <span className="muted"> @ RPE {s.rpe}</span>}
+                {formatRpe(s.rpe) && <span className="muted"> @ RPE {formatRpe(s.rpe)}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
               </li>
             ))}
