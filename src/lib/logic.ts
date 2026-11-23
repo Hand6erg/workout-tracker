@@ -96,6 +96,24 @@ export function setTagInfo(tag: SetTag | undefined): { letter: string; name: str
   return tag && tag in SET_TAGS ? SET_TAGS[tag] : null;
 }
 
+/** Hvilken nummerrække et sæt hører til (#244): opvarmning (O), drop-sæt (D) eller arbejdssæt (1, 2, 3 …) */
+export type SetKind = 'warmup' | 'drop' | 'work';
+export function setKind(s: SetEntry): SetKind {
+  return s.warmup ? 'warmup' : isDropSet(s) ? 'drop' : 'work';
+}
+
+/**
+ * Nummer og visning for sættet på plads `idx` (#244): arbejdssæt tælles 1, 2, 3 … uden opvarmning og drop-sæt,
+ * så "Forrige" passer. Mærkede sæt viser deres bogstav (O / D / F / A) i stedet for tallet.
+ */
+export function setLabel(sets: SetEntry[], idx: number): { kind: SetKind; no: number; text: string } {
+  const s = sets[idx];
+  const kind = setKind(s);
+  const no = sets.slice(0, idx).filter((x) => setKind(x) === kind).length + 1;
+  const text = s.warmup ? 'O' : (setTagInfo(s.tag)?.letter ?? String(no));
+  return { kind, no, text };
+}
+
 /** Vægt til et drop-sæt (#243): ~20 % lettere, rundet til nærmeste 2,5 kg, aldrig under 0. Tom vægt → tom. */
 export function dropSetWeight(weight: string): string {
   if (!weight.trim()) return '';
@@ -2004,7 +2022,9 @@ export type WorkoutChange =
   /** Sæt-mærke (#243): sæt eller fjern (tag: null) drop/failure/AMRAP på et sæt */
   | { type: 'SET_SET_TAG'; weId: string; setId: string; tag: SetTag | null }
   /** Indsætter et drop-sæt lige under sættet med ~20 % lettere vægt (#243) */
-  | { type: 'ADD_DROP_SET'; weId: string; setId: string };
+  | { type: 'ADD_DROP_SET'; weId: string; setId: string }
+  /** Gør et sæt til opvarmning eller tilbage til arbejdssæt (#244). Opvarmning fjerner et evt. mærke. */
+  | { type: 'SET_SET_WARMUP'; weId: string; setId: string; warmup: boolean };
 
 const WORKOUT_CHANGES = new Set<string>([
   'RENAME_WORKOUT',
@@ -2025,6 +2045,7 @@ const WORKOUT_CHANGES = new Set<string>([
   'STOP_SET_TIMER',
   'SET_SET_TAG',
   'ADD_DROP_SET',
+  'SET_SET_WARMUP',
 ] satisfies WorkoutChange['type'][]);
 
 export type Action =
@@ -2378,6 +2399,17 @@ export function reducer(state: AppState, action: Action): AppState {
             if (!action.tag) return rest;
             const { warmup: _w, ...work } = rest;
             return { ...work, tag: action.tag };
+          }),
+        })),
+      );
+    case 'SET_SET_WARMUP':
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) => {
+            if (s.id !== action.setId || !!s.warmup === action.warmup) return s;
+            const { warmup: _w, tag: _t, ...rest } = s;
+            return action.warmup ? { ...rest, warmup: true } : s.tag ? { ...rest, tag: s.tag } : rest;
           }),
         })),
       );
