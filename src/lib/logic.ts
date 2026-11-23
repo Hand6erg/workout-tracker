@@ -9,6 +9,7 @@ import type {
   LiftGoal,
   Muscle,
   SetEntry,
+  SetTag,
   Template,
   Workout,
   WorkoutExercise,
@@ -74,6 +75,34 @@ export function isWorkSet(s: SetEntry): boolean {
   return s.done && !s.warmup;
 }
 
+/** Drop-sæt (#243): et lettere sæt lige efter et tungt – tæller i volumen, men ikke som rekord eller "sidste gang" */
+export function isDropSet(s: SetEntry): boolean {
+  return s.tag === 'drop';
+}
+
+/** Udført hovedsæt: arbejdssæt, der ikke er drop-sæt (#243). Bruges til rekorder, forslag, "Forrige" og "vs. sidst". */
+export function isMainSet(s: SetEntry): boolean {
+  return isWorkSet(s) && !isDropSet(s);
+}
+
+/** Bogstav og dansk navn for et sæt-mærke (#243) */
+export const SET_TAGS: Record<SetTag, { letter: string; name: string }> = {
+  drop: { letter: 'D', name: 'Drop-sæt' },
+  failure: { letter: 'F', name: 'Til failure' },
+  amrap: { letter: 'A', name: 'AMRAP' },
+};
+
+export function setTagInfo(tag: SetTag | undefined): { letter: string; name: string } | null {
+  return tag && tag in SET_TAGS ? SET_TAGS[tag] : null;
+}
+
+/** Vægt til et drop-sæt (#243): ~20 % lettere, rundet til nærmeste 2,5 kg, aldrig under 0. Tom vægt → tom. */
+export function dropSetWeight(weight: string): string {
+  if (!weight.trim()) return '';
+  const w = Math.max(0, Math.round((num(weight) * 0.8) / 2.5) * 2.5);
+  return String(w).replace('.', ',');
+}
+
 /** Tids- eller distancesæt (#133): har sekunder eller meter, men ingen reps */
 export function isTimedSet(s: SetEntry): boolean {
   return !s.reps.trim() && ((s.seconds ?? '').trim() !== '' || (s.meters ?? '').trim() !== '');
@@ -121,7 +150,7 @@ export function bestSet(sets: SetEntry[]): SetEntry | null {
   let best: SetEntry | null = null;
   let bestScore = -1;
   for (const s of sets) {
-    if (!isWorkSet(s)) continue;
+    if (!isMainSet(s)) continue;
     const score = estimate1RM(num(s.weight), num(s.reps)) || num(s.reps) || num(s.meters ?? '') || num(s.seconds ?? '');
     if (score > bestScore) {
       best = s;
@@ -201,7 +230,7 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
   for (const w of history) {
     const ex = w.exercises.find((e) => e.exerciseId === exerciseId);
     if (ex) {
-      const done = ex.sets.filter(isWorkSet);
+      const done = ex.sets.filter(isMainSet);
       if (done.length) return done;
     }
   }
@@ -212,7 +241,7 @@ export function previousSets(history: Workout[], exerciseId: string): SetEntry[]
 export function previousSetsFor(history: Workout[], w: Pick<Workout, 'id' | 'repeatOf'> | null | undefined, exerciseId: string): SetEntry[] {
   if (w?.repeatOf) {
     const src = history.find((h) => h.id === w.repeatOf && h.id !== w.id);
-    const sets = src?.exercises.find((e) => e.exerciseId === exerciseId)?.sets.filter(isWorkSet) ?? [];
+    const sets = src?.exercises.find((e) => e.exerciseId === exerciseId)?.sets.filter(isMainSet) ?? [];
     if (sets.length) return sets;
   }
   return previousSets(history, exerciseId);
@@ -248,7 +277,7 @@ interface ScoredSet {
 /** Arbejdssæt der kan give rekorder. Typen afgør hvilke felter der tæller, så et tidssæt aldrig giver en vægtrekord. */
 function validSets(sets: SetEntry[], date: number, kind: ExerciseKind = 'reps'): ScoredSet[] {
   return sets
-    .filter(isWorkSet)
+    .filter(isMainSet)
     .map((s) =>
       kind === 'reps'
         ? { weight: num(s.weight), reps: isTimedSet(s) ? 0 : num(s.reps), seconds: 0, meters: 0, date }
@@ -689,12 +718,13 @@ export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime
     seen.set(we.exerciseId, occurrence + 1);
     const kind = exerciseKind(state, we.exerciseId);
     const unit = kind === 'time' ? 'sek' : kind === 'distance' ? 'm' : 'kg';
-    const work = we.sets.filter((s) => !s.warmup);
+    // Drop-sæt (#243) ændrer ikke "vs. sidst"
+    const work = we.sets.filter((s) => !s.warmup && !isDropSet(s));
     const done = work.filter((s) => s.done);
     const complete = work.length > 0 && done.length === work.length;
     const now = done.reduce((a, s) => a + setValue(s, kind), 0);
     const lastWe = prev.exercises.filter((e) => e.exerciseId === we.exerciseId)[occurrence];
-    const lastSets = lastWe ? lastWe.sets.filter(isWorkSet) : [];
+    const lastSets = lastWe ? lastWe.sets.filter(isMainSet) : [];
     let last: number | null = null;
     let status: VsStatus | null = null;
     const lastTotal = lastSets.length ? lastSets.reduce((a, s) => a + setValue(s, kind), 0) : null;
@@ -1377,9 +1407,9 @@ export function supersetGroups<T extends { supersetId?: string }>(list: T[]): T[
   return groups;
 }
 
-/** Nummer blandt arbejdssættene (opvarmning tæller ikke) for sættet på plads `idx` */
+/** Nummer blandt arbejdssættene (opvarmning og drop-sæt tæller ikke, #243) for sættet på plads `idx` */
 function workIdxOf(we: WorkoutExercise, idx: number): number {
-  return we.sets.slice(0, idx).filter((x) => !x.warmup).length;
+  return we.sets.slice(0, idx).filter((x) => !x.warmup && !isDropSet(x)).length;
 }
 
 /**
@@ -1391,7 +1421,7 @@ export function roundComplete(w: Workout, we: WorkoutExercise, k: number): boole
   return w.exercises
     .filter((e) => e.supersetId === we.supersetId)
     .every((e) => {
-      const work = e.sets.filter((x) => !x.warmup);
+      const work = e.sets.filter((x) => !x.warmup && !isDropSet(x));
       return k >= work.length || work[k].done;
     });
 }
@@ -1970,7 +2000,11 @@ export type WorkoutChange =
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
   | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
   | { type: 'START_SET_TIMER'; weId: string; setId: string; now: number }
-  | { type: 'STOP_SET_TIMER'; weId: string; setId: string; now: number };
+  | { type: 'STOP_SET_TIMER'; weId: string; setId: string; now: number }
+  /** Sæt-mærke (#243): sæt eller fjern (tag: null) drop/failure/AMRAP på et sæt */
+  | { type: 'SET_SET_TAG'; weId: string; setId: string; tag: SetTag | null }
+  /** Indsætter et drop-sæt lige under sættet med ~20 % lettere vægt (#243) */
+  | { type: 'ADD_DROP_SET'; weId: string; setId: string };
 
 const WORKOUT_CHANGES = new Set<string>([
   'RENAME_WORKOUT',
@@ -1989,6 +2023,8 @@ const WORKOUT_CHANGES = new Set<string>([
   'TOGGLE_SET',
   'START_SET_TIMER',
   'STOP_SET_TIMER',
+  'SET_SET_TAG',
+  'ADD_DROP_SET',
 ] satisfies WorkoutChange['type'][]);
 
 export type Action =
@@ -2331,6 +2367,30 @@ export function reducer(state: AppState, action: Action): AppState {
           sets: e.sets.map((s) => (s.id === action.setId ? stopTimer(s, action.now) : s)),
         })),
       );
+    case 'SET_SET_TAG':
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) => {
+            if (s.id !== action.setId || (s.tag ?? null) === action.tag) return s;
+            const { tag: _old, ...rest } = s;
+            // Et mærket sæt er et arbejdssæt – opvarmning og mærke udelukker hinanden
+            if (!action.tag) return rest;
+            const { warmup: _w, ...work } = rest;
+            return { ...work, tag: action.tag };
+          }),
+        })),
+      );
+    case 'ADD_DROP_SET':
+      return mapActive(state, (w) =>
+        mapExercise(w, action.weId, (e) => {
+          const idx = e.sets.findIndex((s) => s.id === action.setId);
+          if (idx < 0) return e;
+          const from = e.sets[idx];
+          const drop: SetEntry = { ...emptySet(), weight: dropSetWeight(from.weight), reps: '', tag: 'drop' };
+          return { ...e, sets: [...e.sets.slice(0, idx + 1), drop, ...e.sets.slice(idx + 1)] };
+        }),
+      );
     case 'UPDATE_SET':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => ({
@@ -2349,7 +2409,7 @@ export function reducer(state: AppState, action: Action): AppState {
       if (nowDone) {
         // Udfyld tomme felter med sidste gangs tal, ligesom placeholderen viser
         const workIdx = workIdxOf(we, idx);
-        const prev = set.warmup ? undefined : previousSetsFor(state.history, state.active, we.exerciseId)[workIdx];
+        const prev = set.warmup || isDropSet(set) ? undefined : previousSetsFor(state.history, state.active, we.exerciseId)[workIdx];
         const kind = exerciseKind(state, we.exerciseId);
         if (kind === 'reps') {
           const weight = set.weight || prev?.weight || '';

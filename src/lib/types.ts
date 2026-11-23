@@ -39,7 +39,12 @@ export interface SetEntry {
   timerStartedAt?: number;
   /** Opvarmningssæt tæller ikke med i volumen, rekorder og statistik */
   warmup?: boolean;
+  /** Sæt-mærke (#243): drop-sæt, til failure eller AMRAP. Mangler = almindeligt sæt. */
+  tag?: SetTag;
 }
+
+/** Sæt-mærker (#243). Drop-sæt tæller i volumen, men aldrig som rekord eller "sidste gang". */
+export type SetTag = 'drop' | 'failure' | 'amrap';
 
 export interface WorkoutExercise {
   id: string;

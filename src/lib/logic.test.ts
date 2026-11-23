@@ -55,6 +55,8 @@ import {
   toCsv,
   workoutSummary,
   vsLastTime,
+  dropSetWeight,
+  setTagInfo,
   milestones,
   milestonesUnlockedBy,
   milestoneProgressText,
@@ -3322,5 +3324,105 @@ describe('RPE (#237)', () => {
     expect(toCsv(s).split('\n')[1]).toContain(',100,5,"8,5"');
     const restored = loadState(JSON.stringify(s));
     expect(restored.history[0].exercises[0].sets[0].rpe).toBe('8,5');
+  });
+});
+
+describe('sæt-mærker: drop-sæt, failure og AMRAP (#243)', () => {
+  /** Træning med Bænkpres: [vægt, reps, mærke?] – alle sæt udført */
+  function workout(sets: [string, string, ('drop' | 'failure' | 'amrap')?][], base = initialState(), at = T0): AppState {
+    let s = reducer(base, { type: 'START_WORKOUT', now: at });
+    s = { ...s, active: { ...s.active!, templateId: 'tpl-tags' } };
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const weId = s.active!.exercises[0].id;
+    sets.forEach(([weight, reps, tag], i) => {
+      if (i > 0) s = reducer(s, { type: 'ADD_SET', weId });
+      const set = s.active!.exercises[0].sets[i];
+      s = reducer(s, { type: 'UPDATE_SET', weId, setId: set.id, patch: { weight, reps } });
+      if (tag) s = reducer(s, { type: 'SET_SET_TAG', weId, setId: set.id, tag });
+      s = reducer(s, { type: 'TOGGLE_SET', weId, setId: set.id, now: at });
+    });
+    return s;
+  }
+  const finish = (s: AppState, at = T0) => reducer(s, { type: 'FINISH_WORKOUT', now: at + 3_600_000 });
+
+  it('"tilføj drop-sæt" efter 100 kg indsætter et drop-sæt lige under med 80 kg', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'ADD_SET', weId: we.id });
+    const [first, second] = s.active!.exercises[0].sets;
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: first.id, patch: { weight: '100', reps: '5' } });
+    s = reducer(s, { type: 'ADD_DROP_SET', weId: we.id, setId: first.id });
+    const sets = s.active!.exercises[0].sets;
+    expect(sets).toHaveLength(3);
+    expect(sets[0].id).toBe(first.id);
+    expect(sets[1]).toMatchObject({ weight: '80', reps: '', tag: 'drop', done: false });
+    expect(sets[2].id).toBe(second.id);
+  });
+
+  it('drop-vægt: ~20 % lettere, rundet til 2,5 kg, aldrig under 0', () => {
+    expect(dropSetWeight('100')).toBe('80');
+    expect(dropSetWeight('62,5')).toBe('50');
+    expect(dropSetWeight('47,5')).toBe('37,5');
+    expect(dropSetWeight('2')).toBe('2,5');
+    expect(dropSetWeight('1')).toBe('0');
+    expect(dropSetWeight('-10')).toBe('0');
+    expect(dropSetWeight('')).toBe('');
+  });
+
+  it('et tungt drop-sæt bliver aldrig rekord, men tæller i volumen', () => {
+    const before = finish(workout([['100', '5']]), T0 - 86_400_000);
+    const s = workout([['100', '5'], ['120', '5', 'drop']], before);
+    const drop = s.active!.exercises[0].sets[1];
+    expect(recordsBrokenBy(s, 'bench', drop)).toEqual([]);
+    const done = finish(s);
+    const r = personalRecords(done, 'bench');
+    expect(r.heaviest?.weight).toBe(100);
+    expect(r.best1RM?.weight).toBe(100);
+    expect(workoutVolume(done.history[0])).toBe(100 * 5 + 120 * 5);
+  });
+
+  it('forslag, "Forrige" og "vs. sidst" ignorerer drop-sæt fra sidste gang', () => {
+    const s = finish(workout([['100', '5'], ['100', '5'], ['60', '12', 'drop']]));
+    expect(progressionHint(s, 'bench')).toMatchObject({ last: { sets: 2, reps: 5, weight: 100 }, next: { weight: 102.5 }, increase: true });
+    expect(previousSetsFor(s.history, null, 'bench').map((x) => x.weight)).toEqual(['100', '100']);
+    // Samme to hovedsæt i dag + et drop-sæt → "vs. sidst" er det samme
+    const today = workout([['100', '5'], ['100', '5'], ['40', '10', 'drop']], s, T0 + 86_400_000);
+    const vs = vsLastTime(today, today.active)!;
+    expect(vs.rows[0]).toMatchObject({ complete: true, status: 'same', now: 1000, last: 1000 });
+  });
+
+  it('mærk, skift og fjern et mærke; et mærket sæt er ikke opvarmning', () => {
+    let s = reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    const id = we.sets[0].id;
+    const tagOf = (st: AppState) => st.active!.exercises[0].sets[0].tag;
+    s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'failure' });
+    expect(tagOf(s)).toBe('failure');
+    s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'amrap' });
+    expect(tagOf(s)).toBe('amrap');
+    expect(reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'amrap' }).active).toEqual(s.active);
+    s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: null });
+    expect(s.active!.exercises[0].sets[0]).not.toHaveProperty('tag');
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: id, patch: { warmup: true } });
+    s = reducer(s, { type: 'SET_SET_TAG', weId: we.id, setId: id, tag: 'drop' });
+    expect(s.active!.exercises[0].sets[0]).toMatchObject({ tag: 'drop' });
+    expect(s.active!.exercises[0].sets[0].warmup).toBeUndefined();
+  });
+
+  it('bogstav og navn pr. mærke', () => {
+    expect(setTagInfo('drop')).toEqual({ letter: 'D', name: 'Drop-sæt' });
+    expect(setTagInfo('failure')).toEqual({ letter: 'F', name: 'Til failure' });
+    expect(setTagInfo('amrap')).toEqual({ letter: 'A', name: 'AMRAP' });
+    expect(setTagInfo(undefined)).toBeNull();
+  });
+
+  it('gamle data uden mærker indlæses med de samme træninger; mærker overlever gem → indlæs', () => {
+    const old = finish(workout([['100', '5'], ['100', '5']]));
+    const restored = loadState(JSON.stringify(old));
+    expect(restored.history).toEqual(old.history);
+    const tagged = finish(workout([['100', '5'], ['80', '8', 'drop']]));
+    expect(loadState(JSON.stringify(tagged)).history[0].exercises[0].sets[1].tag).toBe('drop');
   });
 });
