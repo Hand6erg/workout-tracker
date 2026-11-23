@@ -54,6 +54,9 @@ export interface WorkoutExercise {
   supersetId?: string;
   /** Note til øvelsen i denne træning (fx "sædehøjde 4") */
   note?: string;
+  /** Rep-interval fra skabelonen (#257), fx 8–12. Mangler = intet interval. */
+  repMin?: number;
+  repMax?: number;
 }
 
 export interface Workout {
@@ -80,7 +83,13 @@ export interface TemplateExercise {
   exerciseId: string;
   sets: number;
   supersetId?: string;
+  /** Rep-interval (#257), fx 8–12. Begge mangler = intet interval. */
+  repMin?: number;
+  repMax?: number;
 }
+
+/** Største tilladte rep-tal i et rep-interval (#257) */
+export const MAX_TEMPLATE_REPS = 50;
 
 export interface Template {
   id: string;

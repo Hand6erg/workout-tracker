@@ -1,5 +1,5 @@
 import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
-import { MUSCLES } from './types';
+import { MAX_TEMPLATE_REPS, MUSCLES } from './types';
 import type {
   AppState,
   BodyMeasurement,
@@ -11,6 +11,7 @@ import type {
   SetEntry,
   SetTag,
   Template,
+  TemplateExercise,
   Workout,
   WorkoutExercise,
 } from './types';
@@ -2092,6 +2093,7 @@ export type Action =
   | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment; kind?: ExerciseKind }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
+  | { type: 'SET_TEMPLATE_REPS'; templateId: string; index: number; min: number | null; max: number | null }
   | { type: 'SWAP_IN_TEMPLATE'; templateId: string; fromExerciseId: string; toExerciseId: string }
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
@@ -2102,6 +2104,33 @@ export type Action =
   | { type: 'MERGE_REMOTE'; remote: AppState }
   /** Fortryd den seneste sletning (#221) – oplysningerne kommer fra `lastDeletion` */
   | { type: 'UNDO_DELETE'; deletion: Deletion };
+
+/* ---------- Rep-intervaller (#257) ---------- */
+
+/** Et gyldigt rep-interval: hele tal, 1 ≤ min ≤ max ≤ 50 */
+export function validRepRange(min: number | null | undefined, max: number | null | undefined): boolean {
+  if (typeof min !== 'number' || typeof max !== 'number') return false;
+  if (!Number.isInteger(min) || !Number.isInteger(max)) return false;
+  return min >= 1 && max <= MAX_TEMPLATE_REPS && min <= max;
+}
+
+/** Rep-intervallet som felter til at sprede ind i en øvelse – tomt objekt, hvis der ikke er et gyldigt interval */
+export function repRangeOf(e: { repMin?: number; repMax?: number }): { repMin?: number; repMax?: number } {
+  return validRepRange(e.repMin, e.repMax) ? { repMin: e.repMin, repMax: e.repMax } : {};
+}
+
+/** "8–12" (eller "10", hvis min = max). null uden interval. */
+export function formatRepRange(e: { repMin?: number; repMax?: number }): string | null {
+  if (!validRepRange(e.repMin, e.repMax)) return null;
+  return e.repMin === e.repMax ? String(e.repMin) : `${e.repMin}–${e.repMax}`;
+}
+
+/** En øvelse i en skabelon som tekst: "Bænkpres 3 × 8–12" eller "Bænkpres 3 sæt" */
+export function formatTemplateLine(exercise: Pick<Exercise, 'name'> | undefined, te: TemplateExercise): string {
+  const name = exercise?.name ?? '?';
+  const range = formatRepRange(te);
+  return range ? `${name} ${te.sets} × ${range}` : `${name} ${te.sets} sæt`;
+}
 
 function emptySet(): SetEntry {
   return { id: uid(), weight: '', reps: '', rpe: '', done: false };
@@ -2227,7 +2256,7 @@ export function reducer(state: AppState, action: Action): AppState {
         name: tpl?.name ?? defaultWorkoutName(action.now),
         startedAt: action.now,
         ...(tpl ? { templateId: tpl.id } : {}),
-        exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => newWorkoutExercise(e.exerciseId, e.sets)) : [],
+        exercises: tpl ? withFreshSupersetIds(tpl.exercises, (e) => ({ ...newWorkoutExercise(e.exerciseId, e.sets), ...repRangeOf(e) })) : [],
       };
       return { ...state, active, rest: null, lastFinishedId: null };
     }
@@ -2241,9 +2270,10 @@ export function reducer(state: AppState, action: Action): AppState {
         name: src.name,
         startedAt: action.now,
         repeatOf: src.id,
-        exercises: withFreshSupersetIds(src.exercises, (e) =>
-          newWorkoutExercise(e.exerciseId, e.sets.filter((x) => !x.warmup).length),
-        ),
+        exercises: withFreshSupersetIds(src.exercises, (e) => ({
+          ...newWorkoutExercise(e.exerciseId, e.sets.filter((x) => !x.warmup).length),
+          ...repRangeOf(e),
+        })),
       };
       return { ...state, active, rest: null, lastFinishedId: null };
     }
@@ -2597,6 +2627,7 @@ export function reducer(state: AppState, action: Action): AppState {
             exerciseId: e.exerciseId,
             sets: e.sets.filter((x) => !x.warmup).length,
             ...(e.supersetId ? { supersetId: e.supersetId } : {}),
+            ...repRangeOf(e),
           })),
         ),
       };
@@ -2610,6 +2641,24 @@ export function reducer(state: AppState, action: Action): AppState {
       const i = tpl?.exercises.findIndex((e) => e.exerciseId === action.fromExerciseId) ?? -1;
       if (!tpl || i < 0) return state;
       const exercises = tpl.exercises.map((e, k) => (k === i ? { ...e, exerciseId: action.toExerciseId } : e));
+      return { ...state, templates: state.templates.map((t) => (t === tpl ? { ...t, exercises } : t)) };
+    }
+    case 'SET_TEMPLATE_REPS': {
+      // Rep-interval på en øvelse i en skabelon (#257). null/null fjerner intervallet.
+      const tpl = state.templates.find((t) => t.id === action.templateId);
+      const cur = tpl?.exercises[action.index];
+      if (!tpl || !cur) return state;
+      let next: TemplateExercise;
+      if (action.min === null && action.max === null) {
+        if (cur.repMin === undefined && cur.repMax === undefined) return state;
+        const { repMin: _a, repMax: _b, ...rest } = cur;
+        next = rest;
+      } else {
+        if (!validRepRange(action.min, action.max)) return state;
+        if (cur.repMin === action.min && cur.repMax === action.max) return state;
+        next = { ...cur, repMin: action.min!, repMax: action.max! };
+      }
+      const exercises = tpl.exercises.map((e, k) => (k === action.index ? next : e));
       return { ...state, templates: state.templates.map((t) => (t === tpl ? { ...t, exercises } : t)) };
     }
     case 'DELETE_TEMPLATE':
