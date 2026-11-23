@@ -1,6 +1,7 @@
 import { RecoveryCard } from '../components/RecoveryCard';
 import { ConfirmButton, Empty } from '../components/ui';
-import { nextInProgram, supersetGroups, templateReady } from '../lib/logic';
+import { formatTemplateLine, nextInProgram, supersetGroups, templateReady } from '../lib/logic';
+import { RepRangeSheet } from '../components/RepRangeSheet';
 import { useState } from 'react';
 import { WorkoutDetail } from './HistoryView';
 import type { Template } from '../lib/types';
@@ -16,6 +17,8 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
 
   const next = state.active ? null : nextInProgram(state);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [repsFor, setRepsFor] = useState<string | null>(null);
+  const repsTemplate = state.templates.find((t) => t.id === repsFor);
   const openWorkout = state.history.find((w) => w.id === openId);
   // "Klar"-mærket vises kun når der er historik at regne på (#288)
   const hasHistory = state.history.some((w) => w.finishedAt);
@@ -23,7 +26,7 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
   const summary = (t: Template) =>
     supersetGroups(t.exercises)
       .map((g) => {
-        const names = g.map((e) => `${e.sets}× ${exerciseById(e.exerciseId)?.name ?? '?'}`);
+        const names = g.map((e) => formatTemplateLine(exerciseById(e.exerciseId), e));
         return g.length > 1 ? `Supersæt: ${names.join(' + ')}` : names[0];
       })
       .join(', ');
@@ -76,14 +79,20 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
               </ConfirmButton>
             </header>
             <p className="muted">{summary(t)}</p>
-            <button className="btn-secondary wide small" disabled={!!state.active} onClick={() => start(t.id)}>
-              Start {t.name}
-            </button>
+            <div className="tpl-actions">
+              <button className="btn-secondary small" disabled={!!state.active} onClick={() => start(t.id)}>
+                Start {t.name}
+              </button>
+              <button className="btn-ghost small" aria-label={`Rediger reps i ${t.name}`} onClick={() => setRepsFor(t.id)}>
+                Rediger reps
+              </button>
+            </div>
           </article>
         ))}
       </div>
 
       {!state.active && hasHistory && <RecoveryCard state={state} onOpenWorkout={setOpenId} />}
+      {repsTemplate && <RepRangeSheet template={repsTemplate} onClose={() => setRepsFor(null)} />}
       {openWorkout && <WorkoutDetail w={openWorkout} onClose={() => setOpenId(null)} onOpenWorkout={onOpenWorkout} />}
     </div>
   );
