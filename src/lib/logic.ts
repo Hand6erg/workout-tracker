@@ -1505,6 +1505,8 @@ export interface ProgressionHint {
   bodyweight?: boolean;
   /** RPE på sidste gangs tungeste sæt, når den ændrede forslaget (#237) */
   rpe?: number;
+  /** Dobbelt progression (#259): rep-intervallet og om alle sæt sidst nåede toppen */
+  range?: { min: number; max: number; topReached: boolean };
   /** Tids- og distanceøvelser (#136): sidste og foreslåede sekunder/meter */
   timed?: { kind: 'time' | 'distance'; last: { seconds: number; meters: number }; next: { seconds: number; meters: number } };
 }
@@ -1542,7 +1544,11 @@ export const BODYWEIGHT_REPS_TARGET = 12;
  * (+2,5 kg for stang/maskine/kabel, +1 kg for håndvægt). Kropsvægtsøvelser (#209): +1 rep, indtil alle
  * sæt har 12+ reps – så +2,5 kg ekstra vægt (for assisterede sæt: 2,5 kg mindre assistance). Ellers samme igen.
  */
-export function progressionHint(state: AppState, exerciseId: string): ProgressionHint | null {
+export function progressionHint(
+  state: AppState,
+  exerciseId: string,
+  range?: Pick<WorkoutExercise, 'repMin' | 'repMax'>,
+): ProgressionHint | null {
   const kind = exerciseKind(state, exerciseId);
   if (kind !== 'reps') return timedHint(state, exerciseId, kind);
   const sets = previousSets(state.history, exerciseId).filter((s) => num(s.reps) > 0);
@@ -1552,6 +1558,9 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   const last = { sets: sets.length, reps, weight, repsList: sets.map((s) => num(s.reps)) };
   const allHit = sets.every((s) => num(s.reps) >= reps);
   const equipment = state.exercises.find((e) => e.id === exerciseId)?.equipment;
+  if (range && validRepRange(range.repMin, range.repMax)) {
+    return doubleProgression(last, sets, { min: range.repMin!, max: range.repMax! }, equipment);
+  }
   if (equipment !== 'Kropsvægt' && !allHit) return { last, next: { weight, reps }, increase: false };
   if (equipment === 'Kropsvægt') {
     const bw = { bodyweight: true as const };
@@ -1570,6 +1579,37 @@ export function progressionHint(state: AppState, exerciseId: string): Progressio
   if (rpe !== null && rpe >= 9.5) return { last, next: { weight, reps }, increase: false, rpe };
   if (rpe !== null && rpe <= 7) return { last, next: { weight: weight + 2 * step, reps }, increase: true, rpe };
   return { last, next: { weight: weight + step, reps }, increase: true };
+}
+
+/**
+ * Dobbelt progression (#259): nåede alle arbejdssæt sidst toppen af intervallet, foreslås et skridt op i vægt
+ * og bunden af intervallet. Ellers samme vægt og én rep mere end sidste gangs laveste sæt (aldrig over toppen).
+ */
+function doubleProgression(
+  last: ProgressionHint['last'],
+  sets: SetEntry[],
+  range: { min: number; max: number },
+  equipment: Equipment | undefined,
+): ProgressionHint {
+  const bw = equipment === 'Kropsvægt' ? { bodyweight: true as const } : {};
+  const lowest = Math.min(...sets.map((s) => num(s.reps)));
+  if (lowest >= range.max) {
+    const step = equipment === 'Håndvægt' ? 1 : 2.5;
+    return {
+      last,
+      next: { weight: Math.round((last.weight + step) * 10) / 10, reps: range.min },
+      increase: true,
+      range: { ...range, topReached: true },
+      ...bw,
+    };
+  }
+  return {
+    last,
+    next: { weight: last.weight, reps: Math.min(range.max, Math.max(range.min, lowest + 1)) },
+    increase: true,
+    range: { ...range, topReached: false },
+    ...bw,
+  };
 }
 
 /** Læser en RPE-værdi (#237): 6–10 i halve trin, med komma eller punktum. Alt andet → null (ingen RPE). */

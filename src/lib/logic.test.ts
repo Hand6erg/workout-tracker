@@ -797,6 +797,27 @@ describe('forslag til næste vægt (#71)', () => {
   it('intet forslag uden historik', () => {
     expect(progressionHint(initialState(), 'bench')).toBeNull();
   });
+  describe('dobbelt progression med rep-interval (#259)', () => {
+    const range = { repMin: 8, repMax: 12 };
+    it('alle sæt nåede toppen → +2,5 kg og bunden af intervallet', () => {
+      const h = progressionHint(logged('bench', [['60', '12'], ['60', '12'], ['60', '12']]), 'bench', range);
+      expect(h).toMatchObject({ next: { weight: 62.5, reps: 8 }, increase: true, range: { min: 8, max: 12, topReached: true } });
+      expect(progressionHint(logged('curl', [['12', '12']]), 'curl', range)!.next).toEqual({ weight: 13, reps: 8 });
+    });
+    it('toppen ikke nået → samme vægt og én rep mere end laveste sæt, aldrig over toppen', () => {
+      const h = progressionHint(logged('bench', [['60', '12'], ['60', '10'], ['60', '9']]), 'bench', range);
+      expect(h).toMatchObject({ next: { weight: 60, reps: 10 }, increase: true, range: { topReached: false } });
+      expect(progressionHint(logged('bench', [['60', '11'], ['60', '12']]), 'bench', range)!.next).toEqual({ weight: 60, reps: 12 });
+      // Under bunden: mindst bunden af intervallet
+      expect(progressionHint(logged('bench', [['60', '5']]), 'bench', range)!.next).toEqual({ weight: 60, reps: 8 });
+    });
+    it('uden (gyldigt) interval → det gamle forslag', () => {
+      const s = logged('bench', [['60', '12'], ['60', '12']]);
+      expect(progressionHint(s, 'bench', {})).toEqual(progressionHint(s, 'bench'));
+      expect(progressionHint(s, 'bench', { repMin: 12, repMax: 8 })!.range).toBeUndefined();
+      expect(progressionHint(s, 'bench')!.next).toEqual({ weight: 62.5, reps: 12 });
+    });
+  });
 });
 
 describe('udfyld forslag (#72)', () => {
