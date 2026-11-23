@@ -918,6 +918,99 @@ export function weekStreak(state: AppState, perWeek: number, now: number): Strea
   return { weeks, thisWeek };
 }
 
+/* ---------- Årets træningskort (#264) ---------- */
+
+export interface HeatmapDay {
+  /** Midnat (lokal tid) for dagen */
+  date: number;
+  /** false for de dage før 1. jan / efter 31. dec, der kun fylder gitteret ud til hele uger */
+  inYear: boolean;
+  /** Udførte arbejdssæt den dag (alle træninger lagt sammen) */
+  workSets: number;
+  /** Løftet vægt den dag (kg) */
+  volume: number;
+  /** 0 = ingen træning; 1–4 = kvartiler af årets træningsdage efter arbejdssæt (travleste dag = 4) */
+  level: 0 | 1 | 2 | 3 | 4;
+  /** Dagens træninger (ældste først) */
+  workoutIds: string[];
+}
+
+export interface YearHeatmap {
+  year: number;
+  /** Mandag-først uger: gitteret starter på en mandag og slutter på en søndag */
+  days: HeatmapDay[];
+  trainingDays: number;
+  /** Flest uger i træk med mindst én træning i året */
+  longestWeekStreak: number;
+  /** Måneden (0 = januar) med flest træningsdage – ved lighed den tidligste. null uden træning. */
+  busiestMonth: number | null;
+}
+
+/** Ét felt pr. dag i `year` med træningsmængde og niveau 0–4, plus årets nøgletal */
+export function yearHeatmap(history: Workout[], year: number): YearHeatmap {
+  const byDay = new Map<number, { workSets: number; volume: number; workoutIds: string[] }>();
+  for (const w of [...history].sort((a, b) => a.startedAt - b.startedAt)) {
+    if (new Date(w.startedAt).getFullYear() !== year) continue;
+    const key = dayStart(w.startedAt);
+    const e = byDay.get(key) ?? { workSets: 0, volume: 0, workoutIds: [] };
+    e.workSets += w.exercises.reduce((n, ex) => n + ex.sets.filter(isWorkSet).length, 0);
+    e.volume += workoutVolume(w);
+    e.workoutIds.push(w.id);
+    byDay.set(key, e);
+  }
+  const counts = [...byDay.values()].map((e) => e.workSets).sort((a, b) => a - b);
+  const levelOf = (sets: number): HeatmapDay['level'] => {
+    // Andelen af træningsdage med højst så mange sæt → kvartil 1–4 (travleste dag = 4)
+    let atMost = 0;
+    while (atMost < counts.length && counts[atMost] <= sets) atMost++;
+    return Math.max(1, Math.ceil((4 * atMost) / counts.length)) as HeatmapDay['level'];
+  };
+
+  const days: HeatmapDay[] = [];
+  const jan1 = new Date(year, 0, 1);
+  const lead = (jan1.getDay() + 6) % 7; // dage fra mandag til 1. jan
+  for (let i = -lead; ; i++) {
+    const d = new Date(year, 0, 1 + i);
+    const inYear = d.getFullYear() === year;
+    if (!inYear && i > 0 && d.getDay() === 1) break; // gitteret slutter på søndagen efter 31. dec
+    const e = inYear ? byDay.get(d.getTime()) : undefined;
+    days.push({
+      date: d.getTime(),
+      inYear,
+      workSets: e?.workSets ?? 0,
+      volume: e?.volume ?? 0,
+      level: e ? levelOf(e.workSets) : 0,
+      workoutIds: e?.workoutIds ?? [],
+    });
+  }
+
+  // Længste række af uger med træning (ugerne i gitteret, mandag-først)
+  let longestWeekStreak = 0;
+  let run = 0;
+  for (let i = 0; i < days.length; i += 7) {
+    if (days.slice(i, i + 7).some((d) => d.workoutIds.length > 0)) longestWeekStreak = Math.max(longestWeekStreak, ++run);
+    else run = 0;
+  }
+
+  const perMonth = new Array<number>(12).fill(0);
+  for (const key of byDay.keys()) perMonth[new Date(key).getMonth()]++;
+  const top = Math.max(...perMonth);
+  return {
+    year,
+    days,
+    trainingDays: byDay.size,
+    longestWeekStreak,
+    busiestMonth: top > 0 ? perMonth.indexOf(top) : null,
+  };
+}
+
+/** Årene med træninger, nyeste først – altid inklusive indeværende år */
+export function heatmapYears(history: Workout[], now: number): number[] {
+  const years = new Set(history.map((w) => new Date(w.startedAt).getFullYear()));
+  years.add(new Date(now).getFullYear());
+  return [...years].sort((a, b) => b - a);
+}
+
 /* ---------- Milepæle (#182) ---------- */
 
 export type MilestoneGroup = 'workouts' | 'volume' | 'streak' | 'lift';

@@ -34,6 +34,8 @@ import {
   previousSets,
   previousSetsFor,
   progressionHint,
+  yearHeatmap,
+  heatmapYears,
   parseRpe,
   formatRpe,
   recordCount,
@@ -3573,5 +3575,89 @@ describe('rep-intervaller i skabeloner (#257)', () => {
     expect(formatTemplateLine(bench, { exerciseId: 'bench', sets: 3 })).toBe('Bænkpres 3 sæt');
     expect(formatTemplateLine(bench, { exerciseId: 'bench', sets: 5, repMin: 5, repMax: 5 })).toBe('Bænkpres 5 × 5');
     expect(formatTemplateLine(undefined, { exerciseId: 'x', sets: 2 })).toBe('? 2 sæt');
+  });
+});
+
+describe('årets træningskort (#264)', () => {
+  let n = 0;
+  const done = (weight = '50', reps = '5') => ({ id: `s${++n}`, weight, reps, rpe: '', done: true });
+  const w = (date: Date, sets: number, extra: Partial<Workout> = {}): Workout => ({
+    id: `w${++n}`,
+    name: 'Træning',
+    startedAt: date.getTime(),
+    finishedAt: date.getTime() + 3600_000,
+    exercises: [
+      { id: `we${n}`, exerciseId: 'bench', sets: [...Array.from({ length: sets }, () => done()), { ...done(), warmup: true }] },
+    ],
+    ...extra,
+  });
+
+  it('3 træningsdage giver 3 felter med niveau ≥ 1; gitteret starter mandag og dækker 1. jan–31. dec', () => {
+    const h = yearHeatmap(
+      [w(new Date(2025, 0, 1, 10), 3), w(new Date(2025, 5, 15, 10), 3), w(new Date(2025, 11, 31, 18), 3), w(new Date(2024, 11, 31, 10), 3)],
+      2025,
+    );
+    expect(h.days.filter((d) => d.level >= 1)).toHaveLength(3);
+    expect(h.days.filter((d) => d.inYear && d.level === 0)).toHaveLength(362);
+    expect(new Date(h.days[0].date).getDay()).toBe(1);
+    expect(new Date(h.days[h.days.length - 1].date).getDay()).toBe(0);
+    expect(h.days.length % 7).toBe(0);
+    const inYear = h.days.filter((d) => d.inYear);
+    expect(inYear).toHaveLength(365);
+    expect(new Date(inYear[0].date)).toEqual(new Date(2025, 0, 1));
+    expect(new Date(inYear[364].date)).toEqual(new Date(2025, 11, 31));
+    // Udfyldningsdage fra 2024 tæller ikke, selvom der blev trænet 31. dec 2024
+    expect(h.days.filter((d) => !d.inYear).every((d) => d.level === 0)).toBe(true);
+    expect(h.trainingDays).toBe(3);
+  });
+
+  it('to træninger samme dag lægges sammen; niveauer skaleres, så den travleste dag er 4', () => {
+    const h = yearHeatmap(
+      [
+        w(new Date(2025, 2, 3, 8), 2),
+        w(new Date(2025, 2, 3, 18), 4),
+        w(new Date(2025, 2, 5, 8), 1),
+        w(new Date(2025, 2, 7, 8), 3),
+        w(new Date(2025, 2, 9, 8), 2),
+      ],
+      2025,
+    );
+    const day = (d: number) => h.days.find((x) => x.date === new Date(2025, 2, d).getTime())!;
+    expect(day(3)).toMatchObject({ workSets: 6, volume: 6 * 250, level: 4 });
+    expect(day(3).workoutIds).toHaveLength(2);
+    expect(day(5).level).toBe(1);
+    expect(day(9).level).toBe(2);
+    expect(day(7).level).toBe(3);
+    expect(h.trainingDays).toBe(4);
+    // Alle dage lige travle → alle niveau 4
+    expect(yearHeatmap([w(new Date(2025, 0, 6), 3), w(new Date(2025, 0, 8), 3)], 2025).days.filter((d) => d.level === 4)).toHaveLength(2);
+  });
+
+  it('længste ugerække og travleste måned, også med et hul; et tomt år giver nul', () => {
+    const h = yearHeatmap(
+      [
+        // 3 uger i træk i januar (uge 2, 3, 4 – mandag 6., 13., 20. jan 2025)
+        w(new Date(2025, 0, 6), 1),
+        w(new Date(2025, 0, 15), 1),
+        w(new Date(2025, 0, 26), 1),
+        // hul, så 2 uger i træk i maj med 3 dage → maj og januar har 3 dage hver
+        w(new Date(2025, 4, 5), 1),
+        w(new Date(2025, 4, 7), 1),
+        w(new Date(2025, 4, 12), 1),
+      ],
+      2025,
+    );
+    expect(h.longestWeekStreak).toBe(3);
+    expect(h.busiestMonth).toBe(0); // lighed → den tidligste
+    expect(yearHeatmap([w(new Date(2025, 4, 5), 1), w(new Date(2025, 4, 7), 1), w(new Date(2025, 0, 6), 1)], 2025).busiestMonth).toBe(4);
+    const empty = yearHeatmap([w(new Date(2025, 4, 5), 1)], 2026);
+    expect(empty).toMatchObject({ year: 2026, trainingDays: 0, longestWeekStreak: 0, busiestMonth: null });
+    expect(empty.days.every((d) => d.level === 0)).toBe(true);
+  });
+
+  it('årene med træninger, nyeste først, altid med indeværende år', () => {
+    const now = new Date(2026, 5, 1).getTime();
+    expect(heatmapYears([w(new Date(2024, 1, 1), 1), w(new Date(2025, 1, 1), 1), w(new Date(2024, 3, 1), 1)], now)).toEqual([2026, 2025, 2024]);
+    expect(heatmapYears([], now)).toEqual([2026]);
   });
 });
