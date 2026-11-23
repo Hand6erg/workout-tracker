@@ -55,3 +55,48 @@ test('en søgning uden træffere viser en tom-besked (#231)', async ({ page }) =
   await expect(page.getByRole('button', { name: /^Træning / })).toHaveCount(0);
   await page.screenshot({ path: 'test-results/history-search-empty.png' });
 });
+
+/** Logger en træning fra en skabelon med ét udført sæt i første øvelse */
+async function logTemplate(page: Page, template: string) {
+  await page.getByRole('button', { name: `Start ${template}` }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  const card = workout.getByRole('article').first();
+  await card.getByLabel('Vægt sæt 1').fill('60');
+  await card.getByLabel('Reps sæt 1').fill('8');
+  await card.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+}
+
+test('skabelon-knapper filtrerer historikken, også sammen med søgning (#232)', async ({ page }) => {
+  await logTemplate(page, 'Push');
+  await logTemplate(page, 'Pull');
+  await page.getByRole('button', { name: 'Historik' }).click();
+  const cards = page.getByRole('button', { name: /^Træning / });
+  await expect(cards).toHaveCount(2);
+
+  const chips = page.getByRole('group', { name: 'Filtrér efter skabelon' });
+  await expect(chips.getByRole('button')).toHaveText(['Alle', 'Push', 'Pull']);
+  await chips.getByRole('button', { name: 'Push' }).click();
+  await expect(cards).toHaveCount(1);
+  await expect(cards.first()).toHaveAccessibleName('Træning Push');
+  await expect(page.getByRole('status')).toHaveText('1 træning fra Push');
+  await page.screenshot({ path: 'test-results/history-template-chips.png' });
+
+  // Knap + søgetekst sammen: Bænkpres findes kun i Push
+  const search = page.getByRole('searchbox', { name: 'Søg i historik' });
+  await search.fill('bænkpres');
+  await expect(cards).toHaveCount(1);
+  await expect(page.getByRole('status')).toHaveText('1 træning med "bænkpres" fra Push');
+  await chips.getByRole('button', { name: 'Pull' }).click();
+  await expect(cards).toHaveCount(0);
+  await expect(page.getByRole('status')).toHaveText('Ingen træninger matcher "bænkpres" fra Pull');
+
+  await chips.getByRole('button', { name: 'Alle' }).click();
+  await expect(cards).toHaveCount(1);
+  await search.fill('');
+  await expect(cards).toHaveCount(2);
+  // Siden må ikke kunne scrolle sidelæns
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

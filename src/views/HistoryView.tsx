@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatKg,
   formatSet,
+  historyTemplates,
   isBodyweightReps,
   recapToShow,
   recordCount,
@@ -19,6 +20,13 @@ import {
 } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
+
+/** Statuslinje under søgning/filter, fx "2 træninger med \"squat\" fra Ben" */
+function statusText(n: number, q: string, template?: string): string {
+  const parts = [q && `med "${q}"`, template && `fra ${template}`].filter(Boolean).join(' ');
+  if (!n) return q ? `Ingen træninger matcher "${q}"${template ? ` fra ${template}` : ''}` : `Ingen træninger ${parts}`;
+  return `${n} ${n === 1 ? 'træning' : 'træninger'} ${parts}`;
+}
 
 const dateFmt = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -36,7 +44,15 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
   // Søg i historik (#231)
   const [query, setQuery] = useState('');
   const searching = query.trim() !== '';
-  const matches = useMemo(() => searchHistory(state, { query }), [state.history, state.exercises, query]);
+  // Filterknap pr. skabelon (#232)
+  const templateChips = useMemo(() => historyTemplates(state), [state.history, state.templates]);
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const activeTemplate = templateChips.find((t) => t.id === templateId) ?? null;
+  const filtering = searching || !!activeTemplate;
+  const matches = useMemo(
+    () => searchHistory(state, { query, templateId: activeTemplate?.id ?? null }),
+    [state.history, state.exercises, query, activeTemplate],
+  );
   const hitsById = useMemo(() => new Map(matches.map((m) => [m.workout.id, new Set(m.matched.map((x) => x.weId))])), [matches]);
 
   return (
@@ -60,16 +76,31 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
               </button>
             )}
           </div>
-          {searching && (
+          {templateChips.length > 0 && (
+            <div className="chips template-chips" role="group" aria-label="Filtrér efter skabelon">
+              <button className={`chip ${activeTemplate ? '' : 'on'}`} aria-pressed={!activeTemplate} onClick={() => setTemplateId(null)}>
+                Alle
+              </button>
+              {templateChips.map((t) => (
+                <button
+                  key={t.id}
+                  className={`chip ${activeTemplate?.id === t.id ? 'on' : ''}`}
+                  aria-pressed={activeTemplate?.id === t.id}
+                  onClick={() => setTemplateId(activeTemplate?.id === t.id ? null : t.id)}
+                >
+                  {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+          {filtering && (
             <p className="muted search-status" role="status">
-              {matches.length
-                ? `${matches.length} ${matches.length === 1 ? 'træning' : 'træninger'} med "${query.trim()}"`
-                : `Ingen træninger matcher "${query.trim()}"`}
+              {statusText(matches.length, query.trim(), activeTemplate?.name)}
             </p>
           )}
         </div>
       )}
-      {state.history.length > 0 && !searching && <MonthCalendar onOpen={setOpenId} />}
+      {state.history.length > 0 && !filtering && <MonthCalendar onOpen={setOpenId} />}
       {!state.history.length && <Empty>Ingen træninger endnu. Afslut en træning, så dukker den op her.</Empty>}
       <div className="cards">
         {matches.map(({ workout: w }) => {

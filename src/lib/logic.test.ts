@@ -93,6 +93,7 @@ import {
   describeProgressPoint,
   lastDeletion,
   searchHistory,
+  historyTemplates,
   normalizeSearch,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
@@ -3242,5 +3243,18 @@ describe('søg i historik (#230)', () => {
     expect(searchHistory(st, { templateId: 'tpl-pull' }).map((m) => m.workout.id)).toEqual(['pull']);
     expect(searchHistory(st, { query: 'squat', templateId: 'tpl-legs' }).map((m) => m.workout.id)).toEqual(['legs']);
     expect(searchHistory(st, { query: 'squat', templateId: 'tpl-push' })).toEqual([]);
+  });
+});
+
+describe('skabelon-filtre i historik (#232)', () => {
+  it('giver kun skabeloner med træninger, i skabelonernes rækkefølge', () => {
+    const base = initialState();
+    const w = (id: string, templateId?: string): Workout => ({ id, name: id, startedAt: 1, finishedAt: 2, exercises: [], templateId });
+    const st = { ...base, history: [w('a', 'tpl-legs'), w('b', 'tpl-push'), w('c'), w('d', 'tpl-slettet'), w('e', 'tpl-push')] };
+    expect(historyTemplates(st)).toEqual([
+      { id: 'tpl-push', name: 'Push' },
+      { id: 'tpl-legs', name: 'Ben' },
+    ]);
+    expect(historyTemplates({ ...base, history: [] })).toEqual([]);
   });
 });
