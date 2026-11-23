@@ -33,6 +33,7 @@ import {
   previousSetsFor,
   progressionHint,
   parseRpe,
+  formatRpe,
   recordCount,
   recordsBrokenBy,
   supersetGroups,
@@ -3307,6 +3308,13 @@ describe('RPE (#237)', () => {
     expect(progressionHint(logged([['100', '5', '8']]), 'bench')).not.toHaveProperty('rpe');
     // Ugyldig RPE ignoreres
     expect(progressionHint(logged([['100', '5', '12']]), 'bench')!.next.weight).toBe(102.5);
+  });
+
+  it('formatRpe viser gyldig RPE med komma og skjuler ugyldig (#238)', () => {
+    expect(formatRpe('8.5')).toBe('8,5');
+    expect(formatRpe('8,5')).toBe('8,5');
+    expect(formatRpe('10')).toBe('10');
+    for (const bad of ['', '12', 'x', undefined]) expect(formatRpe(bad)).toBe('');
   });
 
   it('RPE kommer med i CSV og overlever backup → gendan', () => {

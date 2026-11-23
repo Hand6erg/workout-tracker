@@ -6,6 +6,7 @@ import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import {
   exerciseHistory,
+  formatRpe,
   exerciseKind,
   formatClock,
   formatKg,
@@ -219,7 +220,11 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <li key={h.workoutId} className="list-row static">
                 <span>
                   <strong>{shortDate.format(h.date)}</strong>
-                  <small>{h.sets.map((s) => formatSet(s, isBodyweightReps(state, ex.id))).join(' · ')}</small>
+                  <small>
+                    {h.sets
+                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id)) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : ''))
+                      .join(' · ')}
+                  </small>
                 </span>
                 <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
               </li>
