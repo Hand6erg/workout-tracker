@@ -243,6 +243,13 @@ export function formatSet(s: SetEntry, bodyweight = false): string {
   return w ? `${s.weight.replace('.', ',')} kg × ${s.reps}` : `${s.reps} reps`;
 }
 
+/** Mærke-tekst efter et sæt i Historik og på øvelsessiden (#245), fx " (drop-sæt)". Tom for almindelige sæt. */
+export function setTagSuffix(s: SetEntry): string {
+  const name = setTagInfo(s.tag)?.name;
+  if (!name) return '';
+  return ` (${s.tag === 'amrap' ? name : name.toLowerCase()})`;
+}
+
 /** De seneste udførte sæt for en øvelse (fra historikken, nyeste først) */
 export function previousSets(history: Workout[], exerciseId: string): SetEntry[] {
   for (const w of history) {
@@ -1606,7 +1613,8 @@ export function exerciseHistory(
         workoutId: w.id,
         date: w.startedAt,
         sets,
-        best1RM: Math.max(0, ...sets.map((s) => estimate1RM(load(s), num(s.reps)))),
+        // Drop-sæt (#243) vises i historikken, men tæller ikke som bedste 1RM
+        best1RM: Math.max(0, ...sets.filter(isMainSet).map((s) => estimate1RM(load(s), num(s.reps)))),
         volume: sets.reduce((a, s) => a + (isTimedSet(s) ? 0 : load(s) * num(s.reps)), 0),
       });
     }
@@ -2969,14 +2977,16 @@ export function toCsv(state: AppState): string {
   const name = new Map(state.exercises.map((e) => [e.id, e.name]));
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   // "Belastning (kg)" (#209): kropsvægt + ekstra vægt for kropsvægtsøvelser, tom for andre sæt
-  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)']];
+  // "Mærke" (#245): Opvarmning, Drop-sæt, Til failure eller AMRAP – tom for almindelige sæt
+  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)', 'Mærke']];
   for (const w of [...state.history].reverse()) {
     const date = new Date(w.startedAt).toISOString();
     for (const ex of w.exercises) {
       const bw = isBodyweightReps(state, ex.exerciseId);
       ex.sets.forEach((s, i) => {
         const load = bw && !isTimedSet(s) ? String(setLoad(state, w, ex.exerciseId, s)) : '';
-        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load]);
+        const mark = s.warmup ? 'Opvarmning' : (setTagInfo(s.tag)?.name ?? '');
+        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load, mark]);
       });
     }
   }

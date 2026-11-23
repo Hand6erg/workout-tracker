@@ -225,6 +225,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .modal-foot > * { flex: 1; }
 .modal-foot .wide { margin-top: 0; }
 .detail-ex { margin: 14px 0; }
+.detail-ex .set-tag-note { color: #a78bfa; font-size: 0.85rem; }
 .detail-ex ol { margin: 6px 0; padding-left: 22px; color: var(--text); }
 .list-row.static { cursor: default; }
 .fav-row { display: flex; align-items: center; border-bottom: 1px solid var(--line); }

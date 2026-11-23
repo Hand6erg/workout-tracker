@@ -7,6 +7,7 @@ import {
   formatDuration,
   formatKg,
   formatSet,
+  setTagSuffix,
   historyTemplates,
   isBodyweightReps,
   recapToShow,
@@ -226,6 +227,7 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
                 {formatSet(s, isBodyweightReps(state, e.exerciseId))}
                 {formatRpe(s.rpe) && <span className="muted"> @ RPE {formatRpe(s.rpe)}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
+                {setTagSuffix(s) && <span className="set-tag-note"> {setTagSuffix(s).trim()}</span>}
               </li>
             ))}
           </ol>
