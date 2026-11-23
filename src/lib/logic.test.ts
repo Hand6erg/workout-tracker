@@ -27,6 +27,8 @@ import {
   etaText,
   goalOnTrack,
   stampChanges,
+  validRepRange,
+  formatTemplateLine,
   personalRecords,
   platesPerSide,
   previousSets,
@@ -3478,5 +3480,77 @@ describe('sæt-mærker: drop-sæt, failure og AMRAP (#243)', () => {
     expect(restored.history).toEqual(old.history);
     const tagged = finish(workout([['100', '5'], ['80', '8', 'drop']]));
     expect(loadState(JSON.stringify(tagged)).history[0].exercises[0].sets[1].tag).toBe('drop');
+  });
+});
+
+describe('rep-intervaller i skabeloner (#257)', () => {
+  const setReps = (s: ReturnType<typeof initialState>, index: number, min: number | null, max: number | null) =>
+    reducer(s, { type: 'SET_TEMPLATE_REPS', templateId: 'tpl-push', index, min, max });
+
+  it('gemmer 8–12 på øvelsen og fjerner det igen', () => {
+    const s = initialState();
+    const out = setReps(s, 0, 8, 12);
+    expect(out.templates[0].exercises[0]).toEqual({ ...s.templates[0].exercises[0], repMin: 8, repMax: 12 });
+    expect(out.templates[0].exercises.slice(1)).toEqual(s.templates[0].exercises.slice(1));
+    expect(out.templates.slice(1)).toEqual(s.templates.slice(1));
+    const cleared = setReps(out, 0, null, null);
+    expect(cleared.templates[0].exercises[0]).toEqual(s.templates[0].exercises[0]);
+    expect('repMin' in cleared.templates[0].exercises[0]).toBe(false);
+    // At fjerne et interval, der ikke findes, ændrer intet
+    expect(setReps(s, 0, null, null)).toBe(s);
+  });
+
+  it('afviser ugyldige intervaller, ukendte skabeloner og øvelser', () => {
+    const s = initialState();
+    expect(setReps(s, 0, 12, 8)).toBe(s);
+    expect(setReps(s, 0, 0, 8)).toBe(s);
+    expect(setReps(s, 0, 8, 51)).toBe(s);
+    expect(setReps(s, 0, 8, null)).toBe(s);
+    expect(setReps(s, 0, 8.5, 10)).toBe(s);
+    expect(setReps(s, 99, 8, 12)).toBe(s);
+    expect(reducer(s, { type: 'SET_TEMPLATE_REPS', templateId: 'nej', index: 0, min: 8, max: 12 })).toBe(s);
+    expect(validRepRange(1, 50)).toBe(true);
+    expect(validRepRange(5, 5)).toBe(true);
+  });
+
+  it('en træning fra skabelonen – og en gentagelse af den – får intervallet med', () => {
+    const s = setReps(initialState(), 0, 8, 12);
+    const started = reducer(s, { type: 'START_WORKOUT', templateId: 'tpl-push', now: T0 });
+    const ex = started.active!.exercises;
+    expect(ex[0]).toMatchObject({ repMin: 8, repMax: 12 });
+    expect(ex[0].sets).toHaveLength(s.templates[0].exercises[0].sets);
+    expect(ex[1].repMin).toBeUndefined();
+    // Afslut med ét udfyldt sæt og gentag træningen
+    const w = { ...started, active: { ...started.active!, exercises: started.active!.exercises.map((e, i) => (i === 0 ? { ...e, sets: [{ ...e.sets[0], weight: '60', reps: '10', done: true }] } : e)) } };
+    const done = reducer(w, { type: 'FINISH_WORKOUT', now: T0 + 3600_000 });
+    expect(done.history[0].exercises[0]).toMatchObject({ repMin: 8, repMax: 12 });
+    const again = reducer(done, { type: 'REPEAT_WORKOUT', workoutId: done.history[0].id, now: T0 + 86_400_000 });
+    expect(again.active!.exercises[0]).toMatchObject({ exerciseId: done.history[0].exercises[0].exerciseId, repMin: 8, repMax: 12 });
+    // Gem som skabelon beholder intervallet
+    const saved = reducer(done, { type: 'SAVE_TEMPLATE_FROM_WORKOUT', workoutId: done.history[0].id, name: 'Ny' });
+    expect(saved.templates.at(-1)!.exercises[0]).toMatchObject({ repMin: 8, repMax: 12 });
+  });
+
+  it('ændringen tidsstemples, så den nyeste vinder ved synk', () => {
+    const prev = initialState();
+    const out = stampChanges(prev, setReps(prev, 0, 8, 12), 500);
+    expect(out.templates[0].updatedAt).toBe(500);
+    expect(out.templates[1].updatedAt).toBe(prev.templates[1].updatedAt);
+  });
+
+  it('gamle data uden intervaller indlæses uændret', () => {
+    const old = { ...initialState(), templates: [{ id: 't1', name: 'Gammel', exercises: [{ exerciseId: 'bench', sets: 3 }] }] };
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.templates).toEqual(old.templates);
+    const started = reducer(loaded, { type: 'START_WORKOUT', templateId: 't1', now: T0 });
+    expect(started.active!.exercises[0].repMin).toBeUndefined();
+  });
+
+  it('formatTemplateLine viser "3 × 8–12" eller "3 sæt"', () => {
+    const bench = { name: 'Bænkpres' };
+    expect(formatTemplateLine(bench, { exerciseId: 'bench', sets: 3, repMin: 8, repMax: 12 })).toBe('Bænkpres 3 × 8–12');
+    expect(formatTemplateLine(bench, { exerciseId: 'bench', sets: 3 })).toBe('Bænkpres 3 sæt');
+    expect(formatTemplateLine(bench, { exerciseId: 'bench', sets: 5, repMin: 5, repMax: 5 })).toBe('Bænkpres 5 × 5');
+    expect(formatTemplateLine(undefined, { exerciseId: 'x', sets: 2 })).toBe('? 2 sæt');
   });
 });
