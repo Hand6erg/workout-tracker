@@ -39,6 +39,7 @@ import {
   parseRpe,
   setLabel,
   SET_TAGS,
+  formatRepRange,
 } from '../lib/logic';
 import type { SetTag } from '../lib/types';
 import { useNow, useStore } from '../lib/store';
@@ -835,7 +836,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                   <input
                     inputMode="numeric"
                     aria-label={`Reps ${what} ${i + 1}`}
-                    placeholder={p?.reps || ''}
+                    placeholder={p?.reps || formatRepRange(we) || ''}
                     value={s.reps}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { reps: e.target.value } })}
                   />

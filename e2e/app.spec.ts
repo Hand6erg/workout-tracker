@@ -362,7 +362,7 @@ test('supersæt bevares i skabelon og vises i historikken (#29)', async ({ page 
 
   await page.getByRole('navigation').getByRole('button', { name: /Træning/ }).click();
   const tpl = page.getByRole('article', { name: /^Skabelon / }).last();
-  await expect(tpl).toContainText('Supersæt: 1× Bænkpres + 1× Roning');
+  await expect(tpl).toContainText('Supersæt: Bænkpres 1 sæt + Roning 1 sæt');
   await tpl.getByRole('button', { name: /^Start/ }).click();
   await expect(page.getByRole('group', { name: 'Supersæt: Bænkpres + Roning' })).toBeVisible();
 });
