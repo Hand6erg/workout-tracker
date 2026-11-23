@@ -521,6 +521,22 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   const rpeText = hint.rpe !== undefined ? ` (RPE ${formatRpe(String(hint.rpe))})` : '';
   const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}${rpeText}`;
   const nextText = next.weight !== last.weight ? w(next.weight) : `${next.reps} reps`;
+  // Dobbelt progression (#259): "Alle sæt nåede 12 – prøv 62,5 kg × 8" / "Bliv på 60 kg og gå efter 10 reps"
+  if (hint.range) {
+    const weightText = next.weight ? w(next.weight) : '';
+    const advice = hint.range.topReached
+      ? `Alle sæt nåede ${hint.range.max} – prøv ${weightText ? `${weightText} × ` : ''}${next.reps}`
+      : `${weightText ? `Bliv på ${weightText} og gå` : 'Gå'} efter ${next.reps} reps`;
+    return (
+      <button
+        className="hint"
+        aria-label={`Sidst: ${lastText}. ${advice}. Tryk for at udfylde.`}
+        onClick={() => dispatch({ type: 'APPLY_HINT', weId, weight: next.weight, reps: next.reps })}
+      >
+        Sidst: {lastText} → <strong>{advice}</strong>
+      </button>
+    );
+  }
   return (
     <button
       className="hint"
@@ -595,7 +611,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const prev = previousSetsFor(state.history, w, we.exerciseId);
   const kind = exerciseKind(state, we.exerciseId);
   const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
-  const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
+  const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId, we) : null;
   // "Vis RPE-felt" i Profil (#238): slået fra → ingen RPE-kolonne; loggede værdier beholdes
   const showRpe = state.showRpe !== false;
   const [warmupMsg, setWarmupMsg] = useState(false);
