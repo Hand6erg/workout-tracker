@@ -1751,6 +1751,12 @@ export function searchHistory(
   return out;
 }
 
+/** Skabeloner med mindst én afsluttet træning i historikken, i skabelonernes rækkefølge (filterknapper, #232) */
+export function historyTemplates(state: Pick<AppState, 'history' | 'templates'>): { id: string; name: string }[] {
+  const used = new Set(state.history.map((w) => w.templateId).filter(Boolean));
+  return state.templates.filter((t) => used.has(t.id)).map((t) => ({ id: t.id, name: t.name }));
+}
+
 /* ---------- Løftemål (#197) ---------- */
 
 /** Bedste estimerede 1RM for en øvelse ud fra arbejdssæt i afsluttede træninger (0 = ingen) */
