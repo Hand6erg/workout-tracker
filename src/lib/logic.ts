@@ -1756,6 +1756,76 @@ export function exerciseHistory(
   return out;
 }
 
+/* ---------- Gennem tiden (#272) ---------- */
+
+export interface LifetimeStats {
+  firstDate: number;
+  lastDate: number;
+  /** Træninger med mindst ét udført arbejdssæt af øvelsen */
+  workouts: number;
+  /** Udførte arbejdssæt (opvarmning tæller ikke, drop-sæt gør) */
+  sets: number;
+  reps: number;
+  /** Samlet løftet vægt i kg (tids- og distancesæt tæller ikke) */
+  volumeKg: number;
+}
+
+/**
+ * En øvelses samlede tal fra afsluttede træninger (#272). null = aldrig lavet.
+ * Med `state` regnes kropsvægt med for kropsvægtsøvelser (#207).
+ */
+export function lifetimeStats(
+  history: Workout[],
+  exerciseId: string,
+  state?: Pick<AppState, 'exercises' | 'bodyLog' | 'bodyWeight'>,
+): LifetimeStats | null {
+  const entries = exerciseHistory(history, exerciseId, state);
+  if (!entries.length) return null;
+  const workouts = new Set(entries.map((e) => e.workoutId));
+  return {
+    firstDate: Math.min(...entries.map((e) => e.date)),
+    lastDate: Math.max(...entries.map((e) => e.date)),
+    workouts: workouts.size,
+    sets: entries.reduce((n, e) => n + e.sets.length, 0),
+    reps: entries.reduce((n, e) => n + e.sets.reduce((a, s) => a + (isTimedSet(s) ? 0 : Math.max(0, num(s.reps))), 0), 0),
+    volumeKg: Math.round(entries.reduce((n, e) => n + e.volume, 0) * 100) / 100,
+  };
+}
+
+export interface MostLiftedRow {
+  exerciseId: string;
+  name: string;
+  volumeKg: number;
+  workouts: number;
+}
+
+/** De `n` øvelser med mest samlet løftet vægt (#272). Øvelser uden vægt (fx tid/distance) er udeladt; lighed → navn. */
+export function mostLiftedExercises(state: AppState, n = 3): MostLiftedRow[] {
+  const rows: MostLiftedRow[] = [];
+  for (const ex of state.exercises) {
+    const stats = lifetimeStats(state.history, ex.id, state);
+    if (!stats || stats.volumeKg <= 0) continue;
+    rows.push({ exerciseId: ex.id, name: ex.name, volumeKg: stats.volumeKg, workouts: stats.workouts });
+  }
+  rows.sort((a, b) => b.volumeKg - a.volumeKg || a.name.localeCompare(b.name, 'da'));
+  return rows.slice(0, Math.max(0, n));
+}
+
+/** Samlet vægt på dansk (#272): under 1000 kg → "850 kg", ellers "86,4 tons" */
+export function formatTons(kg: number): string {
+  if (kg < 1000) return `${Math.round(kg).toLocaleString('da-DK')} kg`;
+  const t = Math.round(kg / 100) / 10;
+  return `${t.toLocaleString('da-DK', { maximumFractionDigits: 1 })} ${t === 1 ? 'ton' : 'tons'}`;
+}
+
+/** "i dag", "i går" eller "for 12 dage siden" (hele kalenderdage, lokal tid, #272) */
+export function daysAgoText(date: number, now: number): string {
+  const days = Math.max(0, Math.round((dayStart(now) - dayStart(date)) / DAY_MS));
+  if (days === 0) return 'i dag';
+  if (days === 1) return 'i går';
+  return `for ${days} dage siden`;
+}
+
 /* ---------- Styrkegraf (#213) ---------- */
 
 export type ProgressMetric = '1rm' | 'heaviest' | 'volume';
