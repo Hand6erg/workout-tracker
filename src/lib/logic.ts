@@ -46,6 +46,7 @@ export function initialState(): AppState {
     restVibrate: true,
     keepAwake: true,
     showRpe: true,
+    showTimeLeft: true,
     recapDismissed: null,
     favorites: [],
     bodyWeight: null,
@@ -2285,6 +2286,7 @@ export type Action =
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
   | { type: 'SET_SHOW_RPE'; on: boolean }
+  | { type: 'SET_SHOW_TIME_LEFT'; on: boolean }
   /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
   | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
@@ -2756,6 +2758,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, keepAwake: action.on };
     case 'SET_SHOW_RPE':
       return { ...state, showRpe: action.on };
+    case 'SET_SHOW_TIME_LEFT':
+      return { ...state, showTimeLeft: action.on };
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -3048,6 +3052,7 @@ const SETTINGS = [
   'restVibrate',
   'keepAwake',
   'showRpe',
+  'showTimeLeft',
   'recapDismissed',
   'favorites',
   'program',
@@ -3200,6 +3205,7 @@ export function loadState(raw: string | null): AppState {
       bodyWeight: typeof parsed.bodyWeight === 'number' && parsed.bodyWeight > 0 ? parsed.bodyWeight : null,
       // RPE-indstillingen fra før #237 findes ikke – feltet var altid vist
       showRpe: typeof parsed.showRpe === 'boolean' ? parsed.showRpe : true,
+      showTimeLeft: typeof parsed.showTimeLeft === 'boolean' ? parsed.showTimeLeft : true,
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)

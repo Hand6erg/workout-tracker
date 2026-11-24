@@ -10,6 +10,7 @@ import {
   isSetFilled,
   formatClock,
   formatDuration,
+  timeLeftEstimate,
   parseClock,
   stopwatchSeconds,
   lastExerciseNote,
@@ -71,6 +72,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   const unchecked = uncheckedFilledCount(w, state);
   const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
   const vs = vsLastTime(state, w);
+  const timeLeft = state.showTimeLeft !== false ? timeLeftEstimate(state, now) : null;
 
   return (
     <WorkoutCtx.Provider value={{ w, base: state, edit: false, send: dispatch, vs }}>
@@ -79,8 +81,11 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         <button className="btn-ghost" onClick={onMinimize} aria-label="Minimér">
           ⌄
         </button>
-        <span className={`timer ${w.pausedAt ? 'paused' : ''}`} data-testid="elapsed">
-          {formatDuration(workoutDuration(w, now))}
+        <span className="timer-wrap">
+          <span className={`timer ${w.pausedAt ? 'paused' : ''}`} data-testid="elapsed">
+            {formatDuration(workoutDuration(w, now))}
+          </span>
+          {timeLeft !== null && <span className="time-left">ca. {timeLeft} min tilbage</span>}
         </span>
         <button
           className="btn-ghost small"

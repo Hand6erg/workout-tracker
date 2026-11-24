@@ -3322,6 +3322,17 @@ describe('RPE (#237)', () => {
     expect(reducer(off, { type: 'SET_SHOW_RPE', on: true }).showRpe).toBe(true);
   });
 
+  it('"Vis tid tilbage" er slået til som standard, også for gamle data, og kan slås fra (#281)', () => {
+    expect(initialState().showTimeLeft).toBe(true);
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.showTimeLeft;
+    expect(loadState(JSON.stringify(old)).showTimeLeft).toBe(true);
+    const off = reducer(initialState(), { type: 'SET_SHOW_TIME_LEFT', on: false });
+    expect(off.showTimeLeft).toBe(false);
+    expect(loadState(JSON.stringify(off)).showTimeLeft).toBe(false);
+    expect(reducer(off, { type: 'SET_SHOW_TIME_LEFT', on: true }).showTimeLeft).toBe(true);
+  });
+
   it('læser 6–10 i halve trin med komma eller punktum', () => {
     expect(parseRpe('8,5')).toBe(8.5);
     expect(parseRpe('8.5')).toBe(8.5);
