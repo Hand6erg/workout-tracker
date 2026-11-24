@@ -126,6 +126,15 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
         />
         Vis RPE-felt (hvor hårdt sættet føltes, 6–10)
       </label>
+
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.showTimeLeft !== false}
+          onChange={(e) => dispatch({ type: 'SET_SHOW_TIME_LEFT', on: e.target.checked })}
+        />
+        Vis tid tilbage i træningen
+      </label>
       {!wakeLockSupported() && <p className="muted rest-global-note">Understøttes ikke i denne browser</p>}
 
       <label className="field">

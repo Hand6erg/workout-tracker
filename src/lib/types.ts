@@ -162,6 +162,8 @@ export interface AppState {
   keepAwake: boolean;
   /** Vis RPE-feltet i træningen (#237). Loggede RPE-værdier beholdes, når det er slået fra. */
   showRpe: boolean;
+  /** "ca. 15 min tilbage" i den aktive træning (#281) */
+  showTimeLeft: boolean;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
