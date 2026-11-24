@@ -100,7 +100,11 @@ function useTheme(theme: Theme | undefined) {
   useEffect(() => {
     const mq = window.matchMedia?.('(prefers-color-scheme: light)');
     const apply = () => {
-      document.documentElement.dataset.theme = resolveTheme(theme, !!mq?.matches);
+      const root = document.documentElement;
+      root.dataset.theme = resolveTheme(theme, !!mq?.matches);
+      // Statuslinjen på telefonen får samme farve som baggrunden (#294)
+      const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+      if (bg) document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
     };
     apply();
     if (theme !== 'system' || !mq) return;
