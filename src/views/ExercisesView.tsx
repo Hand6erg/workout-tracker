@@ -1,6 +1,7 @@
 import { StrengthChart } from '../components/StrengthChart';
 import { useMemo, useState } from 'react';
 import { GoalsSection } from '../components/GoalsSection';
+import { LifetimeCard } from '../components/LifetimeCard';
 import { PercentTable } from '../components/PercentTable';
 import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
@@ -213,6 +214,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <strong>{hist.length}</strong>
             </div>
           </div>
+          <LifetimeCard exerciseId={ex.id} />
           <StrengthChart exerciseId={ex.id} />
           <Records records={personalRecords(state, ex.id)} />
           <h3 className="section">Historik</h3>
