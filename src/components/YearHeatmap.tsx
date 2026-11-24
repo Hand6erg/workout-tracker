@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { heatmapYears, withLoads, yearHeatmap } from '../lib/logic';
 import { useStore } from '../lib/store';
+import { WorkoutDetail } from '../views/HistoryView';
+import { Modal } from './ui';
 
 const dayFmt = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'long' });
 const monthShort = new Intl.DateTimeFormat('da-DK', { month: 'short' });
 const monthLong = new Intl.DateTimeFormat('da-DK', { month: 'long' });
+const timeFmt = new Intl.DateTimeFormat('da-DK', { hour: '2-digit', minute: '2-digit' });
 const WEEKDAYS = ['M', '', 'O', '', 'F', '', 'S'];
 
 function plural(n: number, one: string, many: string) {
@@ -12,7 +15,7 @@ function plural(n: number, one: string, many: string) {
 }
 
 /** "Året": ét felt pr. dag, farvet efter hvor meget du trænede (#265) */
-export function YearHeatmap() {
+export function YearHeatmap({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
   const { state } = useStore();
   const [now] = useState(() => Date.now());
   const years = useMemo(() => heatmapYears(state.history, now), [state.history, now]);
@@ -23,7 +26,11 @@ export function YearHeatmap() {
     [state, year],
   );
   const scrollRef = useRef<HTMLDivElement>(null);
-  const todayRef = useRef<HTMLSpanElement>(null);
+  const todayRef = useRef<HTMLElement>(null);
+  // Tryk på en trænet dag (#266): én træning åbnes direkte, flere vælges fra en liste
+  const [pick, setPick] = useState<{ date: number; ids: string[] } | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const open = state.history.find((w) => w.id === openId);
   const today = new Date(new Date(now).setHours(0, 0, 0, 0)).getTime();
 
   useEffect(() => {
@@ -72,22 +79,27 @@ export function YearHeatmap() {
               </span>
             ))}
           </div>
-          <div className="year-grid" role="list" aria-label={`Træningsdage ${year}`}>
+          <div className="year-grid" role="group" aria-label={`Træningsdage ${year}`}>
             {map.days.map((d) => {
               if (!d.inYear) return <span key={d.date} className="year-cell out" aria-hidden />;
               const isToday = d.date === today;
               const label = `${dayFmt.format(new Date(d.date))}: ${
                 d.workoutIds.length ? plural(d.workSets, 'sæt', 'sæt') : 'ingen træning'
               }${isToday ? ' (i dag)' : ''}`;
+              const cls = `year-cell l${d.level}${isToday ? ' today' : ''}`;
+              const ref = isToday ? todayRef : undefined;
+              if (!d.workoutIds.length)
+                return <span key={d.date} ref={ref} role="img" aria-label={label} title={label} data-level={0} className={cls} />;
+              const ids = d.workoutIds;
               return (
-                <span
+                <button
                   key={d.date}
-                  ref={isToday ? todayRef : undefined}
-                  role="listitem"
+                  ref={ref as Ref<HTMLButtonElement> | undefined}
                   aria-label={label}
                   title={label}
                   data-level={d.level}
-                  className={`year-cell l${d.level}${isToday ? ' today' : ''}`}
+                  className={cls}
+                  onClick={() => (ids.length === 1 ? setOpenId(ids[0]) : setPick({ date: d.date, ids }))}
                 />
               );
             })}
@@ -101,6 +113,30 @@ export function YearHeatmap() {
           <li>Travleste måned: {monthLong.format(new Date(year, map.busiestMonth, 1))}</li>
         )}
       </ul>
+      {pick && (
+        <Modal title={dayFmt.format(new Date(pick.date))} onClose={() => setPick(null)}>
+          <div className="year-pick">
+            {pick.ids.map((id) => {
+              const w = state.history.find((x) => x.id === id);
+              if (!w) return null;
+              return (
+                <button
+                  key={id}
+                  className="card as-button"
+                  aria-label={`Træning ${w.name}`}
+                  onClick={() => {
+                    setPick(null);
+                    setOpenId(id);
+                  }}
+                >
+                  <strong>{w.name}</strong> <span className="muted">kl. {timeFmt.format(new Date(w.startedAt))}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Modal>
+      )}
+      {open && <WorkoutDetail w={open} onClose={() => setOpenId(null)} onOpenWorkout={onOpenWorkout} />}
     </section>
   );
 }

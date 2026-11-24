@@ -493,3 +493,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .year-cell.l4 { background: var(--accent); }
 .year-cell.today { outline: 2px solid var(--text); outline-offset: -1px; }
 .year-stats { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 0.8rem; color: var(--muted); }
+button.year-cell { cursor: pointer; }
+.year-pick { display: grid; gap: 8px; }
+.year-pick .as-button { text-align: left; }
