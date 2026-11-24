@@ -1,6 +1,7 @@
 import { RecoveryCard } from '../components/RecoveryCard';
 import { ConfirmButton, Empty } from '../components/ui';
-import { formatTemplateLine, nextInProgram, supersetGroups, templateReady } from '../lib/logic';
+import { formatTemplateLine, nextInProgram, supersetGroups, templateDurationEstimate, templateReady } from '../lib/logic';
+import type { AppState } from '../lib/types';
 import { RepRangeSheet } from '../components/RepRangeSheet';
 import { useState } from 'react';
 import { WorkoutDetail } from './HistoryView';
@@ -44,6 +45,7 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
             </button>
           </header>
           <p className="muted">{summary(next)}</p>
+          <TimeEstimate state={state} templateId={next.id} />
           <button className="btn-primary wide" onClick={() => start(next.id)}>
             Start {next.name}
           </button>
@@ -79,6 +81,7 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
               </ConfirmButton>
             </header>
             <p className="muted">{summary(t)}</p>
+            <TimeEstimate state={state} templateId={t.id} />
             <div className="tpl-actions">
               <button className="btn-secondary small" disabled={!!state.active} onClick={() => start(t.id)}>
                 Start {t.name}
@@ -95,5 +98,21 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
       {repsTemplate && <RepRangeSheet template={repsTemplate} onClose={() => setRepsFor(null)} />}
       {openWorkout && <WorkoutDetail w={openWorkout} onClose={() => setOpenId(null)} onOpenWorkout={onOpenWorkout} />}
     </div>
+  );
+}
+
+/** "⏱ ca. 55 min" på en skabelon (#280) – dæmpet når det kun er et skøn ud fra sæt og pauser */
+function TimeEstimate({ state, templateId }: { state: AppState; templateId: string }) {
+  const est = templateDurationEstimate(state, templateId);
+  if (!est) return null;
+  const guess = est.basis === 'estimate';
+  return (
+    <p
+      className={guess ? 'tpl-time guess' : 'tpl-time'}
+      aria-label={`Anslået tid ca. ${est.minutes} min${guess ? ' (skøn ud fra sæt og pause)' : ''}`}
+      title={guess ? 'Skøn ud fra sæt og pause' : 'Gennemsnit af dine seneste træninger'}
+    >
+      ⏱ ca. {est.minutes} min
+    </p>
   );
 }
