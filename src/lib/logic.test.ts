@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   restFor,
+  lifetimeStats,
+  mostLiftedExercises,
+  formatTons,
+  daysAgoText,
   restInfo,
   suggestedRest,
   estimate1RM,
@@ -3659,5 +3663,78 @@ describe('årets træningskort (#264)', () => {
     const now = new Date(2026, 5, 1).getTime();
     expect(heatmapYears([w(new Date(2024, 1, 1), 1), w(new Date(2025, 1, 1), 1), w(new Date(2024, 3, 1), 1)], now)).toEqual([2026, 2025, 2024]);
     expect(heatmapYears([], now)).toEqual([2026]);
+  });
+});
+
+describe('gennem tiden (#272)', () => {
+  const NOW = new Date('2026-11-20T18:00:00').getTime();
+  const DAY = 86_400_000;
+  let n = 0;
+  const set = (weight: string, reps: string, extra: Partial<SetEntry> = {}): SetEntry => ({ id: `lt${++n}`, weight, reps, rpe: '', done: true, ...extra });
+  const workout = (startedAt: number, ex: Record<string, SetEntry[]>): Workout => ({
+    id: `lw${++n}`,
+    name: 'Træning',
+    startedAt,
+    finishedAt: startedAt + 3_600_000,
+    exercises: Object.entries(ex).map(([exerciseId, sets], i) => ({ id: `lwe${n}-${i}`, exerciseId, sets })),
+  });
+
+  it('lægger sæt, reps og vægt sammen over flere træninger; opvarmning og ikke-afkrydsede sæt tæller ikke', () => {
+    const first = NOW - 30 * DAY;
+    const last = NOW - 2 * DAY;
+    const history = [
+      workout(last, { bench: [set('20', '10', { warmup: true }), set('80', '5'), set('80', '5'), set('60', '8', { tag: 'drop' })] }),
+      workout(NOW - 10 * DAY, { squat: [set('100', '5')] }),
+      workout(first, { bench: [set('70', '8'), set('70', '8'), set('75', '6', { done: false })] }),
+    ];
+    expect(lifetimeStats(history, 'bench')).toEqual({
+      firstDate: first,
+      lastDate: last,
+      workouts: 2,
+      sets: 5,
+      reps: 5 + 5 + 8 + 8 + 8,
+      volumeKg: 80 * 5 * 2 + 60 * 8 + 70 * 8 * 2,
+    });
+  });
+
+  it('en øvelse, der aldrig er lavet (eller kun som opvarmning), giver null', () => {
+    const history = [workout(NOW, { bench: [set('20', '10', { warmup: true })] })];
+    expect(lifetimeStats(history, 'bench')).toBeNull();
+    expect(lifetimeStats(history, 'squat')).toBeNull();
+    expect(lifetimeStats([], 'squat')).toBeNull();
+  });
+
+  it('tidsøvelser tæller træninger og sæt, men ingen reps eller vægt', () => {
+    const history = [workout(NOW, { plank: [set('', '', { seconds: '60' }), set('', '', { seconds: '45' })] })];
+    expect(lifetimeStats(history, 'plank')).toMatchObject({ workouts: 1, sets: 2, reps: 0, volumeKg: 0 });
+  });
+
+  it('mostLiftedExercises rangerer efter samlet vægt, springer tidsøvelser over og respekterer n', () => {
+    const state: AppState = {
+      ...initialState(),
+      history: [
+        workout(NOW - DAY, { squat: [set('100', '5'), set('100', '5')], bench: [set('80', '5')], plank: [set('', '', { seconds: '60' })] }),
+        workout(NOW - 3 * DAY, { bench: [set('80', '5')], deadlift: [set('120', '3')] }),
+      ],
+    };
+    const ids = (s: AppState, k?: number) => mostLiftedExercises(s, k).map((r) => r.exerciseId);
+    const exists = (id: string) => state.exercises.some((e) => e.id === id);
+    expect(['squat', 'bench', 'deadlift', 'plank'].every(exists)).toBe(true);
+    expect(ids(state, 10)).toEqual(['squat', 'bench', 'deadlift']);
+    expect(ids(state)).toHaveLength(3);
+    expect(ids(state, 1)).toEqual(['squat']);
+    expect(mostLiftedExercises(state, 3)[1]).toMatchObject({ exerciseId: 'bench', volumeKg: 800, workouts: 2 });
+    expect(mostLiftedExercises(initialState(), 3)).toEqual([]);
+  });
+
+  it('formatTons og daysAgoText', () => {
+    expect(formatTons(850)).toBe('850 kg');
+    expect(formatTons(0)).toBe('0 kg');
+    expect(formatTons(86_400)).toBe('86,4 tons');
+    expect(formatTons(1_240_000)).toBe('1.240 tons');
+    expect(formatTons(1000)).toBe('1 ton');
+    expect(daysAgoText(NOW - 60_000, NOW)).toBe('i dag');
+    expect(daysAgoText(new Date('2026-11-19T23:30:00').getTime(), NOW)).toBe('i går');
+    expect(daysAgoText(NOW - 12 * DAY, NOW)).toBe('for 12 dage siden');
   });
 });
