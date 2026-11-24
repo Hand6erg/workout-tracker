@@ -7,6 +7,7 @@ import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
 import { ProfileGoals } from '../components/GoalsSection';
+import { MostLifted } from '../components/MostLifted';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { YearHeatmap } from '../components/YearHeatmap';
 import { ConfirmButton, Empty } from '../components/ui';
@@ -61,6 +62,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
       <MuscleSplit />
       <ProfileGoals />
       <RecordsWall />
+      <MostLifted />
       <MilestonesSection />
       <BodySection />
       <ProgramSection />
