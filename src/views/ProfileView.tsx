@@ -8,6 +8,7 @@ import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
 import { ProfileGoals } from '../components/GoalsSection';
 import { MilestonesSection } from '../components/MilestonesSection';
+import { YearHeatmap } from '../components/YearHeatmap';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -55,6 +56,7 @@ export function ProfileView() {
       </div>
 
       <StreakCard />
+      <YearHeatmap />
       <WeeklyVolume />
       <MuscleSplit />
       <ProfileGoals />
