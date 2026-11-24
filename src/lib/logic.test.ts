@@ -109,6 +109,9 @@ import {
   searchHistory,
   historyTemplates,
   normalizeSearch,
+  templateDurationEstimate,
+  timeLeftEstimate,
+  SET_WORK_SECONDS,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3736,5 +3739,86 @@ describe('gennem tiden (#272)', () => {
     expect(daysAgoText(NOW - 60_000, NOW)).toBe('i dag');
     expect(daysAgoText(new Date('2026-11-19T23:30:00').getTime(), NOW)).toBe('i går');
     expect(daysAgoText(NOW - 12 * DAY, NOW)).toBe('for 12 dage siden');
+  });
+});
+
+describe('estimeret træningstid (#279)', () => {
+  const MIN = 60_000;
+  function doneWorkout(id: string, startedAt: number, minutes: number, templateId = 'tpl-push'): Workout {
+    return { id, name: 'Push', startedAt, finishedAt: startedAt + minutes * MIN, templateId, exercises: [] };
+  }
+
+  it('bruger gennemsnittet af de seneste træninger fra skabelonen', () => {
+    const s: AppState = {
+      ...initialState(),
+      history: [doneWorkout('a', T0, 40), doneWorkout('b', T0 + 86_400_000, 50), doneWorkout('c', T0 + 2 * 86_400_000, 60)],
+    };
+    expect(templateDurationEstimate(s, 'tpl-push')).toEqual({ minutes: 50, basis: 'history' });
+  });
+
+  it('trækker pauser fra og bruger kun de seneste 5', () => {
+    const old = Array.from({ length: 5 }, (_, i) => doneWorkout(`n${i}`, T0 + (10 + i) * 86_400_000, 30));
+    const paused = { ...doneWorkout('p', T0 + 20 * 86_400_000, 60), pausedMs: 30 * MIN };
+    const s: AppState = { ...initialState(), history: [doneWorkout('x', T0, 120), ...old.slice(1), paused] };
+    expect(templateDurationEstimate(s, 'tpl-push')).toEqual({ minutes: 30, basis: 'history' });
+  });
+
+  it('ignorerer udsving under 5 min og over 4 timer', () => {
+    const s: AppState = {
+      ...initialState(),
+      history: [doneWorkout('a', T0, 2), doneWorkout('b', T0 + 1, 300), doneWorkout('c', T0 + 2, 45)],
+    };
+    expect(templateDurationEstimate(s, 'tpl-push')).toEqual({ minutes: 45, basis: 'history' });
+  });
+
+  it('regner ud fra sæt × (40 sek + pausetid) uden historik, rundet til 5 min', () => {
+    const s = initialState();
+    const tpl = s.templates.find((t) => t.id === 'tpl-push')!;
+    const secs = tpl.exercises.reduce((n, e) => n + e.sets * (SET_WORK_SECONDS + restFor(s, e.exerciseId)), 0);
+    const est = templateDurationEstimate(s, 'tpl-push')!;
+    expect(est.basis).toBe('estimate');
+    expect(est.minutes % 5).toBe(0);
+    expect(est.minutes).toBe(Math.round(secs / 60 / 5) * 5);
+    // Træninger fra andre skabeloner tæller ikke
+    const other = { ...s, history: [doneWorkout('a', T0, 50, 'tpl-legs')] };
+    expect(templateDurationEstimate(other, 'tpl-push')!.basis).toBe('estimate');
+    expect(templateDurationEstimate(s, 'findes-ikke')).toBeNull();
+  });
+
+  it('et supersæt har kun én pause pr. runde', () => {
+    const base = initialState();
+    const s: AppState = {
+      ...base,
+      templates: [
+        { id: 't1', name: 'A', exercises: [{ exerciseId: 'bench', sets: 3 }, { exerciseId: 'squat', sets: 3 }] },
+        { id: 't2', name: 'B', exercises: [{ exerciseId: 'bench', sets: 3, supersetId: 'g' }, { exerciseId: 'squat', sets: 3, supersetId: 'g' }] },
+      ],
+    };
+    expect(templateDurationEstimate(s, 't2')!.minutes).toBeLessThan(templateDurationEstimate(s, 't1')!.minutes);
+  });
+
+  it('tid tilbage falder, når sæt bliver udført, og er null når alt er udført', () => {
+    let s = startWith(initialState());
+    expect(timeLeftEstimate(s, T0)).toBeNull(); // tom træning
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    for (let i = 0; i < 4; i++) s = reducer(s, { type: 'ADD_SET', weId: s.active!.exercises[0].id });
+    const we = () => s.active!.exercises[0];
+    expect(we().sets).toHaveLength(5);
+    // Ingen udførte sæt: 5 × (40 sek + 3 min bænkpres-pause) = 18,3 min
+    expect(timeLeftEstimate(s, T0)).toBe(18);
+    const tick = (i: number, at: number) => {
+      s = reducer(s, { type: 'UPDATE_SET', weId: we().id, setId: we().sets[i].id, patch: { weight: '80', reps: '5' } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we().id, setId: we().sets[i].id, now: at });
+    };
+    tick(0, T0 + 2 * MIN);
+    expect(timeLeftEstimate(s, T0 + 2 * MIN)).toBe(15);
+    tick(1, T0 + 6 * MIN);
+    tick(2, T0 + 9 * MIN);
+    // 3 sæt på 9 min → 3 min pr. sæt × 2 tilbage
+    expect(timeLeftEstimate(s, T0 + 9 * MIN)).toBe(6);
+    tick(3, T0 + 12 * MIN);
+    expect(timeLeftEstimate(s, T0 + 12 * MIN)).toBe(3);
+    tick(4, T0 + 15 * MIN);
+    expect(timeLeftEstimate(s, T0 + 15 * MIN)).toBeNull();
   });
 });

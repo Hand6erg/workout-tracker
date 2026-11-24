@@ -3244,3 +3244,78 @@ export function toCsv(state: AppState): string {
   }
   return rows.map((r) => r.map(esc).join(',')).join('\n');
 }
+
+/* ---------- Estimeret træningstid (#279) ---------- */
+
+/** Ca. tid for selve sættet (uden pause), når der ikke er historik */
+export const SET_WORK_SECONDS = 40;
+const MIN_REAL_WORKOUT_MS = 5 * 60_000;
+const MAX_REAL_WORKOUT_MS = 4 * 3_600_000;
+
+export interface DurationEstimate {
+  /** Minutter, rundet til nærmeste 5 */
+  minutes: number;
+  /** 'history' = gennemsnit af dine seneste træninger, 'estimate' = regnet ud fra sæt og pauser */
+  basis: 'history' | 'estimate';
+}
+
+function roundTo5(min: number): number {
+  return Math.max(5, Math.round(min / 5) * 5);
+}
+
+/**
+ * Hvor lang tid en skabelon ca. tager (#279): gennemsnit af de seneste op til 5 afsluttede
+ * træninger fra skabelonen (pauser fraregnet, under 5 min og over 4 timer ignoreres).
+ * Uden historik: sæt × (≈40 sek + øvelsens pausetid); et supersæt holder kun én pause pr. runde.
+ * null hvis skabelonen ikke findes eller er tom.
+ */
+export function templateDurationEstimate(state: AppState, templateId: string): DurationEstimate | null {
+  const tpl = state.templates.find((t) => t.id === templateId);
+  if (!tpl) return null;
+  const recent = state.history
+    .filter((w) => w.templateId === templateId && w.finishedAt)
+    .map((w) => ({ at: w.startedAt, ms: workoutDuration(w, w.finishedAt!) }))
+    .filter((d) => d.ms >= MIN_REAL_WORKOUT_MS && d.ms <= MAX_REAL_WORKOUT_MS)
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 5);
+  if (recent.length) {
+    const avg = recent.reduce((n, d) => n + d.ms, 0) / recent.length;
+    return { minutes: roundTo5(avg / 60_000), basis: 'history' };
+  }
+  if (!tpl.exercises.some((e) => e.sets > 0)) return null;
+  let seconds = 0;
+  const seenGroups = new Set<string>();
+  for (const te of tpl.exercises) {
+    seconds += te.sets * SET_WORK_SECONDS;
+    if (!te.supersetId) {
+      seconds += te.sets * restFor(state, te.exerciseId);
+    } else if (!seenGroups.has(te.supersetId)) {
+      seenGroups.add(te.supersetId);
+      const group = tpl.exercises.filter((e) => e.supersetId === te.supersetId);
+      const rounds = Math.max(...group.map((e) => e.sets));
+      seconds += rounds * Math.max(...group.map((e) => restFor(state, e.exerciseId)));
+    }
+  }
+  return { minutes: roundTo5(seconds / 60), basis: 'estimate' };
+}
+
+/**
+ * Ca. minutter tilbage af den aktive træning (#279): sæt der mangler × tid pr. sæt.
+ * Tid pr. sæt = gennemsnit i denne træning, når mindst 3 sæt er udført, ellers ≈40 sek + pausetid.
+ * null når der ikke er en træning, eller alle sæt er udført.
+ */
+export function timeLeftEstimate(state: AppState, now: number): number | null {
+  const w = state.active;
+  if (!w) return null;
+  const all = w.exercises.flatMap((we) => we.sets.map((s) => ({ we, s })));
+  const left = all.filter((x) => !x.s.done);
+  if (!left.length) return null;
+  const doneCount = all.length - left.length;
+  let seconds: number;
+  if (doneCount >= 3) {
+    seconds = (workoutDuration(w, now) / 1000 / doneCount) * left.length;
+  } else {
+    seconds = left.reduce((n, x) => n + SET_WORK_SECONDS + restFor(state, x.we.exerciseId), 0);
+  }
+  return Math.max(1, Math.round(seconds / 60));
+}
