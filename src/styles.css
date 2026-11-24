@@ -19,6 +19,22 @@
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
 }
+/* Lyst tema (#293) */
+:root[data-theme='light'] {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --surface-2: #e9ecf1;
+  --line: #d5d9e2;
+  --text: #14171f;
+  --muted: #5a6172;
+  --accent: #d9480f;
+  --accent-soft: rgba(217, 72, 15, 0.12);
+  --ok: #18874a;
+  --ok-soft: rgba(24, 135, 74, 0.13);
+  --danger: #d02848;
+  --warn: #a67800;
+  color-scheme: light;
+}
 
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100dvh; }
@@ -263,6 +279,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .bar-chart .hl text { fill: var(--text); font-weight: 600; }
 .seg { display: flex; gap: 6px; margin-bottom: 10px; }
 .seg button { flex: 1; padding: 8px; border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 0.85rem; }
+.theme-setting { margin-bottom: 14px; font-size: 0.95rem; }
+.theme-setting .seg { margin: 8px 0 0; }
 .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .hbars { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 10px; }
 .hbars li { display: grid; grid-template-columns: 64px 1fr 76px; align-items: center; gap: 10px; font-size: 0.9rem; }

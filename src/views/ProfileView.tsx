@@ -18,6 +18,7 @@ import {
   initialState,
   loadState,
   muscleDistribution,
+  THEMES,
   toCsv,
   weekStreak,
   weeklyVolume,
@@ -68,6 +69,21 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
       <ProgramSection />
 
       <h2 className="section">Indstillinger</h2>
+      <div className="theme-setting">
+        <span id="theme-label">Tema</span>
+        <div className="seg" role="group" aria-labelledby="theme-label">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={(state.theme ?? 'dark') === t.id}
+              onClick={() => dispatch({ type: 'SET_THEME', theme: t.id })}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <label className="field">
         Pausetimer efter hvert sæt (sekunder, 0 = slået fra)
         <input

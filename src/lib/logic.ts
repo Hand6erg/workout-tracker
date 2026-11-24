@@ -10,6 +10,7 @@ import type {
   Muscle,
   SetEntry,
   SetTag,
+  Theme,
   Template,
   TemplateExercise,
   Workout,
@@ -47,6 +48,7 @@ export function initialState(): AppState {
     keepAwake: true,
     showRpe: true,
     showTimeLeft: true,
+    theme: 'dark',
     recapDismissed: null,
     favorites: [],
     bodyWeight: null,
@@ -2287,6 +2289,8 @@ export type Action =
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
   | { type: 'SET_SHOW_RPE'; on: boolean }
   | { type: 'SET_SHOW_TIME_LEFT'; on: boolean }
+  /** Farvetema (#293). Ukendte værdier ignoreres. */
+  | { type: 'SET_THEME'; theme: Theme }
   /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
   | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
@@ -2760,6 +2764,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, showRpe: action.on };
     case 'SET_SHOW_TIME_LEFT':
       return { ...state, showTimeLeft: action.on };
+    case 'SET_THEME':
+      return isTheme(action.theme) && action.theme !== state.theme ? { ...state, theme: action.theme } : state;
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -3180,6 +3186,25 @@ export function hasOwnData(state: AppState): boolean {
 export const STORAGE_KEY: string = import.meta.env.VITE_STORAGE_KEY || 'loeft-state-v1';
 export const IS_STAGING = import.meta.env.VITE_STAGING === '1';
 
+/* ---------- Tema (#293) ---------- */
+
+export const THEMES: { id: Theme; label: string }[] = [
+  { id: 'dark', label: 'Mørk' },
+  { id: 'light', label: 'Lys' },
+  { id: 'system', label: 'Følg telefonen' },
+];
+
+export function isTheme(v: unknown): v is Theme {
+  return v === 'dark' || v === 'light' || v === 'system';
+}
+
+/** Det tema, der faktisk vises: "Følg telefonen" bliver lys eller mørk efter telefonens indstilling. */
+export function resolveTheme(theme: Theme | undefined, phonePrefersLight: boolean): 'dark' | 'light' {
+  if (theme === 'light') return 'light';
+  if (theme === 'system') return phonePrefersLight ? 'light' : 'dark';
+  return 'dark';
+}
+
 export function loadState(raw: string | null): AppState {
   const base = initialState();
   if (!raw) return base;
@@ -3206,6 +3231,8 @@ export function loadState(raw: string | null): AppState {
       // RPE-indstillingen fra før #237 findes ikke – feltet var altid vist
       showRpe: typeof parsed.showRpe === 'boolean' ? parsed.showRpe : true,
       showTimeLeft: typeof parsed.showTimeLeft === 'boolean' ? parsed.showTimeLeft : true,
+      // Tema fra før #293 findes ikke – appen var altid mørk
+      theme: isTheme(parsed.theme) ? parsed.theme : 'dark',
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)

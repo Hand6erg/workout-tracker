@@ -56,6 +56,7 @@ import {
   formatTotalTime,
   monthNameDa,
   reducer,
+  resolveTheme,
   restAlertDue,
   wantsWakeLock,
   STORAGE_KEY,
@@ -3320,6 +3321,24 @@ describe('RPE (#237)', () => {
     expect(off.showRpe).toBe(false);
     expect(loadState(JSON.stringify(off)).showRpe).toBe(false);
     expect(reducer(off, { type: 'SET_SHOW_RPE', on: true }).showRpe).toBe(true);
+  });
+
+  it('Tema: mørk som standard, også for gamle data; ugyldige værdier ignoreres (#293)', () => {
+    expect(initialState().theme).toBe('dark');
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.theme;
+    expect(loadState(JSON.stringify(old)).theme).toBe('dark');
+    expect(loadState(JSON.stringify({ ...old, theme: 'pink' })).theme).toBe('dark');
+    const light = reducer(initialState(), { type: 'SET_THEME', theme: 'light' });
+    expect(light.theme).toBe('light');
+    expect(loadState(JSON.stringify(light)).theme).toBe('light');
+    expect(reducer(light, { type: 'SET_THEME', theme: 'system' }).theme).toBe('system');
+    expect(reducer(light, { type: 'SET_THEME', theme: 'pink' as never })).toBe(light);
+    expect(resolveTheme('dark', true)).toBe('dark');
+    expect(resolveTheme('light', false)).toBe('light');
+    expect(resolveTheme('system', true)).toBe('light');
+    expect(resolveTheme('system', false)).toBe('dark');
+    expect(resolveTheme(undefined, true)).toBe('dark');
   });
 
   it('"Vis tid tilbage" er slået til som standard, også for gamle data, og kan slås fra (#281)', () => {
