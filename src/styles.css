@@ -455,6 +455,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .recovery-meta small { font-size: 0.78rem; }
 .recovery-open { display: flex; align-items: center; gap: 10px; width: 100%; padding: 0; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .recovery-chevron { color: var(--muted); font-size: 1.2rem; }
+.tpl-time { margin: -4px 0 10px; font-size: 0.85rem; font-weight: 600; color: var(--text); }
+.tpl-time.guess { font-weight: 400; color: var(--muted); }
 .ready-badge { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; vertical-align: middle; color: var(--ok); background: var(--ok-soft); }
 
 /* Procenttabel (#251) */
