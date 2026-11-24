@@ -34,7 +34,7 @@ function download(name: string, content: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ProfileView() {
+export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
   const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
@@ -56,7 +56,7 @@ export function ProfileView() {
       </div>
 
       <StreakCard />
-      <YearHeatmap />
+      <YearHeatmap onOpenWorkout={onOpenWorkout} />
       <WeeklyVolume />
       <MuscleSplit />
       <ProfileGoals />
