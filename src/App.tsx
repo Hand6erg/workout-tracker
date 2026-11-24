@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { formatDuration, IS_STAGING, workoutDuration } from './lib/logic';
+import { useEffect, useState } from 'react';
+import { formatDuration, IS_STAGING, resolveTheme, workoutDuration } from './lib/logic';
+import type { Theme } from './lib/types';
 import { useRestAlerts } from './lib/alerts';
 import { useWakeLock } from './lib/wakeLock';
 import { useNow, useStore } from './lib/store';
@@ -28,6 +29,7 @@ export default function App() {
   const summaryOpen = !!state.lastFinishedId && !state.active;
   useRestAlerts();
   useWakeLock();
+  useTheme(state.theme);
 
   return (
     <div className="app">
@@ -91,4 +93,18 @@ function MiniBar({ onOpen }: { onOpen: () => void }) {
       <span>{formatDuration(workoutDuration(state.active, now))}</span>
     </button>
   );
+}
+
+/** Sætter `data-theme` på <html>; "Følg telefonen" følger telefonens lys/mørk-indstilling live (#293). */
+function useTheme(theme: Theme | undefined) {
+  useEffect(() => {
+    const mq = window.matchMedia?.('(prefers-color-scheme: light)');
+    const apply = () => {
+      document.documentElement.dataset.theme = resolveTheme(theme, !!mq?.matches);
+    };
+    apply();
+    if (theme !== 'system' || !mq) return;
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, [theme]);
 }

@@ -132,6 +132,9 @@ export interface LiftGoal {
   updatedAt?: number;
 }
 
+/** Farvetema (#293) */
+export type Theme = 'dark' | 'light' | 'system';
+
 export interface AppState {
   version: 1;
   exercises: Exercise[];
@@ -164,6 +167,8 @@ export interface AppState {
   showRpe: boolean;
   /** "ca. 15 min tilbage" i den aktive træning (#281) */
   showTimeLeft: boolean;
+  /** Farvetema (#293): mørk (standard), lys eller følg telefonen. Gælder kun denne enhed. */
+  theme: Theme;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
