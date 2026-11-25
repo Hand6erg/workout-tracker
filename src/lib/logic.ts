@@ -1972,6 +1972,8 @@ function restAfterSet(state: AppState, w: Workout, we: WorkoutExercise, warmup: 
 
 /** Huller over 15 min mellem to afkrydsede sæt er ikke en pause (fx en glemt træning) */
 export const MAX_REAL_REST_SECONDS = 15 * 60;
+/** Sæt krydset af med under 5 s imellem er krydset af samlet bagefter – heller ikke en pause (#316) */
+export const MIN_REAL_REST_SECONDS = 5;
 
 export interface ActualRest {
   /** Sættet, pausen gik forud for */
@@ -1997,7 +1999,8 @@ export function actualRests(w: Workout): ActualRest[] {
     const { e, s: b } = sets[i];
     const ms = b.doneAt! - a.doneAt! - Math.max(0, (b.donePausedMs ?? 0) - (a.donePausedMs ?? 0));
     const seconds = Math.max(0, Math.round(ms / 1000));
-    if (seconds > MAX_REAL_REST_SECONDS) continue;
+    // Under 5 s = sættene blev krydset af i ét hug (ikke en pause); over 15 min = ikke en pause
+    if (seconds < MIN_REAL_REST_SECONDS || seconds > MAX_REAL_REST_SECONDS) continue;
     out.push({ weId: e.id, setId: b.id, exerciseId: e.exerciseId, seconds });
   }
   return out;

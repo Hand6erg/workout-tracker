@@ -4213,6 +4213,11 @@ describe('reelle pauser (#315)', () => {
     expect(actualRests(s.active!).map((r) => r.seconds)).toEqual([160]);
   });
 
+  it('ignorerer sæt krydset af i ét hug (under 5 s)', () => {
+    const s = benchWorkout(initialState(), [0, 2000, 90_000]);
+    expect(actualRests(s.active!).map((r) => r.seconds)).toEqual([88]);
+  });
+
   it('ignorerer huller over 15 min', () => {
     const s = benchWorkout(initialState(), [0, 20 * 60_000, 20 * 60_000 + 90_000]);
     expect(actualRests(s.active!).map((r) => r.seconds)).toEqual([90]);

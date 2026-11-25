@@ -10,6 +10,7 @@ import {
   exerciseKind,
   isSetFilled,
   formatClock,
+  actualRests,
   formatDuration,
   timeLeftEstimate,
   parseClock,
@@ -647,6 +648,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
     !edit && !!swappedFrom && swappedFrom !== we.exerciseId && canSwapInTemplate(live, w.templateId, swappedFrom);
   const templateName = live.templates.find((t) => t.id === w.templateId)?.name ?? '';
   const restLabel = formatRest(restFor(live, we.exerciseId));
+  // Reel pause før hvert afkrydset sæt (#316)
+  const restBefore = new Map(actualRests(w).filter((r) => r.weId === we.id).map((r) => [r.setId, r.seconds]));
 
   return (
     <article className="ex-block" aria-label={ex?.name}>
@@ -887,6 +890,11 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                   </button>
                 </td>
               </tr>
+              {s.done && restBefore.has(s.id) && (
+                <tr className="rest-row">
+                  <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>hvilede {formatClock(restBefore.get(s.id)!)}</td>
+                </tr>
+              )}
               {records.length > 0 && (
                 <tr className="pr-row">
                   <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>
