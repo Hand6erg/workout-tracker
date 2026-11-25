@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { yearReview, yearReviewCardYear, yearReviewSlides, yearsWithWorkouts } from '../lib/logic';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { yearReview, yearReviewCardYear, yearReviewSlides, yearShareCardLines, yearsWithWorkouts } from '../lib/logic';
+import { shareYearImage } from '../lib/shareImage';
 import { useStore } from '../lib/store';
 
 /** "Dit træningsår"-kortet i Historik (dec–jan) og "Tidligere år"-links (#309) */
@@ -46,9 +47,10 @@ export function YearReviewSection({ now }: { now: number }) {
 }
 
 /** Fuldskærms-historien med 6–8 slides (#309) */
-export function YearStory({ year, onClose, lastSlideExtra }: { year: number; onClose: () => void; lastSlideExtra?: ReactNode }) {
+export function YearStory({ year, onClose }: { year: number; onClose: () => void }) {
   const { state } = useStore();
-  const slides = useMemo(() => yearReviewSlides(yearReview(state, year)), [state, year]);
+  const review = useMemo(() => yearReview(state, year), [state, year]);
+  const slides = useMemo(() => yearReviewSlides(review), [review]);
   const [i, setI] = useState(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const last = slides.length - 1;
@@ -114,7 +116,11 @@ export function YearStory({ year, onClose, lastSlideExtra }: { year: number; onC
             {l}
           </p>
         ))}
-        {i === last && lastSlideExtra}
+        {i === last && (
+          <button className="btn-primary story-share" onClick={() => void shareYearImage(yearShareCardLines(review))}>
+            <span aria-hidden>📤</span> Del mit år
+          </button>
+        )}
       </div>
       <footer className="story-foot">
         <button className="btn-secondary" onClick={prev} disabled={i === 0}>

@@ -96,3 +96,52 @@ test('"Skjul" fjerner kortet, også efter genindlæsning (#309)', async ({ page 
   await expect(page.getByRole('heading', { name: 'Historik' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Dit træningsår 2026' })).toHaveCount(0);
 });
+
+async function openLastSlide(page: Page) {
+  await start(page, new Date(2026, 11, 2, 18));
+  await pushWorkout(page, '80');
+  await history(page);
+  await page.getByRole('region', { name: 'Dit træningsår 2026' }).getByRole('button', { name: /Dit træningsår 2026/ }).click();
+  const story = page.getByRole('dialog', { name: 'Dit træningsår 2026' });
+  while (await story.getByRole('button', { name: 'Næste' }).count()) {
+    await story.getByRole('button', { name: 'Næste' }).click();
+  }
+  await expect(story).toContainText('Godt gået!');
+  return story;
+}
+
+test('"Del mit år" deler en PNG via telefonens del-menu (#310)', async ({ page }) => {
+  await page.addInitScript(() => {
+    const w = window as unknown as { shared: { name: string; type: string; size: number }[] };
+    w.shared = [];
+    Object.defineProperty(navigator, 'canShare', { value: () => true, configurable: true });
+    Object.defineProperty(navigator, 'share', {
+      value: async (d: ShareData) => {
+        for (const f of d.files ?? []) w.shared.push({ name: f.name, type: f.type, size: f.size });
+      },
+      configurable: true,
+    });
+  });
+  const story = await openLastSlide(page);
+  await page.screenshot({ path: 'test-results/year-share.png', animations: 'disabled' });
+  await story.getByRole('button', { name: 'Del mit år' }).click();
+  type Shared = { shared: { name: string; type: string; size: number }[] };
+  await page.waitForFunction(() => (window as unknown as Shared).shared.length > 0, undefined, { timeout: 15_000 });
+  const shared = await page.evaluate(() => (window as unknown as Shared).shared);
+  expect(shared).toHaveLength(1);
+  expect(shared[0]).toMatchObject({ name: 'loeft-traeningsaar-2026.png', type: 'image/png' });
+  expect(shared[0].size).toBeGreaterThan(1000);
+});
+
+test('"Del mit år" downloader billedet, når telefonen ikke kan dele (#310)', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
+    Object.defineProperty(navigator, 'canShare', { value: undefined, configurable: true });
+  });
+  const story = await openLastSlide(page);
+  const [download] = await Promise.all([page.waitForEvent('download'), story.getByRole('button', { name: 'Del mit år' }).click()]);
+  expect(download.suggestedFilename()).toBe('loeft-traeningsaar-2026.png');
+  const data = Buffer.concat(await (await download.createReadStream()).toArray());
+  expect(data.subarray(1, 4).toString('ascii')).toBe('PNG');
+  await download.saveAs('test-results/year-share-card.png');
+});

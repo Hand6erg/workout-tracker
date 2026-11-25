@@ -1310,6 +1310,34 @@ export function yearReviewSlides(r: YearReview): YearSlide[] {
   return slides;
 }
 
+export interface YearShareCard {
+  app: string;
+  title: string;
+  stats: { label: string; value: string }[];
+  lines: string[];
+  fileName: string;
+}
+
+/** Teksten til delebilledet "Mit træningsår" (#310) – ren funktion, så den kan testes */
+export function yearShareCardLines(r: YearReview): YearShareCard {
+  return {
+    app: 'Løft',
+    title: `Mit træningsår ${r.year}`,
+    stats: [
+      { label: 'Træninger', value: r.workouts.toLocaleString('da-DK') },
+      { label: 'Tid', value: formatTotalTime(r.durationMs) },
+      { label: 'Løftet', value: formatTons(r.volume) },
+      { label: 'Længste stime', value: plural(r.longestWeekStreak, 'uge', 'uger') },
+    ],
+    lines: [
+      ...(r.favourite ? [`❤️ Favoritøvelse: ${r.favourite.name}`] : []),
+      ...(r.records ? [`🏆 ${plural(r.records, 'rekord', 'rekorder')}`] : []),
+      ...(r.comparison ? [`${r.comparison.icon} Det svarer til ${r.comparison.text.replace(/^= /, '')}`] : []),
+    ],
+    fileName: `loeft-traeningsaar-${r.year}.png`,
+  };
+}
+
 /* ---------- Milepæle (#182) ---------- */
 
 export type MilestoneGroup = 'workouts' | 'volume' | 'streak' | 'lift';
