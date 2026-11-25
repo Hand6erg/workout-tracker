@@ -1,3 +1,4 @@
+import { SetTargetRings } from '../components/SetTargets';
 import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { RestPicker, formatRest } from '../components/RestPicker';
@@ -108,6 +109,8 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
           </ConfirmButton>
         )}
       </header>
+
+      <SetTargetRings compact />
 
       {w.pausedAt && (
         <p className="paused-banner" role="status">

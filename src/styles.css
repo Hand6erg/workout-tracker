@@ -581,3 +581,21 @@ button.year-cell { cursor: pointer; }
 .st-unit { font-size: 0.85rem; }
 .st-off { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.9rem; }
 .st-off input { width: 20px; height: 20px; accent-color: var(--accent); }
+
+/* Ugens sæt som ringe (#302) */
+.set-rings ul { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.set-rings li { display: flex; align-items: center; gap: 6px; background: var(--surface); border-radius: 12px; padding: 6px 10px 6px 6px; }
+.set-rings svg { width: 34px; height: 34px; flex: none; }
+.set-rings .ring-bg { fill: none; stroke: var(--line); stroke-width: 4; }
+.set-rings .ring-fg { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+.set-rings li.reached .ring-fg { stroke: var(--ok); }
+.set-rings .ring-text { display: grid; line-height: 1.15; }
+.set-rings .ring-text strong { font-size: 0.85rem; }
+.set-rings .ring-text small { color: var(--muted); font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.set-rings li.reached .ring-text small { color: var(--ok); }
+.set-rings.compact { padding: 8px 16px 0; }
+.set-rings.compact ul { flex-wrap: nowrap; overflow-x: auto; gap: 6px; margin-bottom: 8px; scrollbar-width: none; }
+.set-rings.compact li { padding: 4px 8px 4px 4px; flex: none; }
+.set-rings.compact svg { width: 26px; height: 26px; }
+.set-rings.compact .ring-text strong { font-size: 0.75rem; }
+.set-rings.compact .ring-text small { font-size: 0.72rem; }
