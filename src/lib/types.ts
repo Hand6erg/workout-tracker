@@ -177,6 +177,8 @@ export interface AppState {
   favorites: string[];
   /** Kropsvægt (kg) fra Profil – bruges til kropsvægtsøvelser, når der ikke er et kropsmål (#206). null = ikke angivet. */
   bodyWeight: number | null;
+  /** Ugentligt mål for arbejdssæt pr. muskelgruppe (#300). null = slået fra for den muskel. */
+  setTargets: Record<Muscle, number | null>;
   /** Løftemål (#197) */
   goals: LiftGoal[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */

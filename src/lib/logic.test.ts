@@ -113,6 +113,8 @@ import {
   templateDurationEstimate,
   timeLeftEstimate,
   SET_WORK_SECONDS,
+  weeklySetProgress,
+  DEFAULT_SET_TARGETS,
 } from './logic';
 import type { AppState, SetEntry, Workout } from './types';
 
@@ -3863,5 +3865,76 @@ describe('estimeret træningstid (#279)', () => {
     expect(timeLeftEstimate(s, T0 + 12 * MIN)).toBe(3);
     tick(4, T0 + 15 * MIN);
     expect(timeLeftEstimate(s, T0 + 15 * MIN)).toBeNull();
+  });
+});
+
+describe('ugentlige sætmål pr. muskelgruppe (#300)', () => {
+  // Fredag 20. nov. 2026; ugen starter mandag 16. nov.
+  const NOW = new Date('2026-11-20T18:00:00').getTime();
+  const sets = (n: number, extra: Partial<SetEntry> = {}): SetEntry[] =>
+    Array.from({ length: n }, (_, i) => ({ id: `s${i}`, weight: '60', reps: '8', rpe: '', done: true, ...extra }));
+  const workout = (id: string, startedAt: number, ex: Record<string, SetEntry[]>, finished = true): Workout => ({
+    id,
+    name: id,
+    startedAt,
+    finishedAt: finished ? startedAt + 3_600_000 : undefined,
+    exercises: Object.entries(ex).map(([exerciseId, s], i) => ({ id: `${id}-${i}`, exerciseId, sets: s })),
+  });
+  const row = (s: AppState, m: string) => weeklySetProgress(s, NOW).find((r) => r.muscle === m)!;
+
+  it('sæt fra mandag tæller, sæt fra søndagen før tæller ikke', () => {
+    const s: AppState = {
+      ...initialState(),
+      history: [
+        workout('sun', new Date('2026-11-15T23:30:00').getTime(), { bench: sets(5) }),
+        workout('mon', new Date('2026-11-16T00:30:00').getTime(), { bench: sets(3) }),
+        workout('thu', new Date('2026-11-19T17:00:00').getTime(), { bench: sets(2), squat: sets(4) }),
+      ],
+    };
+    expect(row(s, 'Bryst')).toEqual({ muscle: 'Bryst', done: 5, target: 12, reached: false });
+    expect(row(s, 'Ben').done).toBe(4);
+    expect(row(s, 'Ryg').done).toBe(0);
+    expect(weeklySetProgress(s, NOW).map((r) => r.muscle)).toEqual(['Bryst', 'Ryg', 'Ben', 'Skuldre', 'Arme', 'Mave']);
+  });
+
+  it('opvarmning og ikke-afkrydsede sæt tæller ikke; afkrydsede sæt i den aktive træning gør', () => {
+    const warm = workout('a', NOW - 86_400_000, { bench: [...sets(2), ...sets(3, { warmup: true }), ...sets(4, { done: false })] });
+    const active = workout('b', NOW - 600_000, { bench: [...sets(3), ...sets(2, { done: false })] }, false);
+    expect(row({ ...initialState(), history: [warm] }, 'Bryst').done).toBe(2);
+    expect(row({ ...initialState(), history: [warm], active }, 'Bryst').done).toBe(5);
+  });
+
+  it('SET_SET_TARGET sætter, afgrænser (1–40) og slår et mål fra; "nået" præcis ved målet', () => {
+    const base = initialState();
+    expect(base.setTargets).toEqual(DEFAULT_SET_TARGETS);
+    const ryg = reducer(base, { type: 'SET_SET_TARGET', muscle: 'Ryg', value: 16 });
+    expect(ryg.setTargets.Ryg).toBe(16);
+    expect(ryg.setTargets.Bryst).toBe(12);
+    expect(reducer(base, { type: 'SET_SET_TARGET', muscle: 'Ryg', value: 0 }).setTargets.Ryg).toBe(1);
+    expect(reducer(base, { type: 'SET_SET_TARGET', muscle: 'Ryg', value: 99 }).setTargets.Ryg).toBe(40);
+    const off = reducer(base, { type: 'SET_SET_TARGET', muscle: 'Mave', value: null });
+    expect(off.setTargets.Mave).toBeNull();
+    expect(reducer(off, { type: 'SET_SET_TARGET', muscle: 'Mave', value: null })).toBe(off);
+    expect(row(off, 'Mave')).toMatchObject({ target: null, reached: false });
+
+    const three = reducer(base, { type: 'SET_SET_TARGET', muscle: 'Bryst', value: 3 });
+    const at = (n: number) => row({ ...three, history: [workout('a', NOW - 3_600_000, { bench: sets(n) })] }, 'Bryst').reached;
+    expect(at(2)).toBe(false);
+    expect(at(3)).toBe(true);
+    expect(at(4)).toBe(true);
+  });
+
+  it('målene synkroniseres som andre indstillinger (stempler settingsAt)', () => {
+    const phone = trackedReducer(initialState(), { type: 'SET_SET_TARGET', muscle: 'Ryg', value: 18, at: 500 });
+    expect(phone.settingsAt).toBe(500);
+    expect(mergeStates(initialState(), phone).setTargets.Ryg).toBe(18);
+  });
+
+  it('gamle data uden setTargets får standardmålene; ugyldige værdier rettes', () => {
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.setTargets;
+    expect(loadState(JSON.stringify(old)).setTargets).toEqual(DEFAULT_SET_TARGETS);
+    const odd = loadState(JSON.stringify({ ...old, setTargets: { Ryg: 99, Mave: null, Ben: 'x' } }));
+    expect(odd.setTargets).toEqual({ ...DEFAULT_SET_TARGETS, Ryg: 40, Mave: null });
   });
 });
