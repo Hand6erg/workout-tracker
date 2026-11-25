@@ -1,4 +1,5 @@
 import { RecoveryCard } from '../components/RecoveryCard';
+import { SetTargetRings } from '../components/SetTargets';
 import { ConfirmButton, Empty } from '../components/ui';
 import { formatTemplateLine, nextInProgram, supersetGroups, templateDurationEstimate, templateReady } from '../lib/logic';
 import type { AppState } from '../lib/types';
@@ -61,6 +62,8 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
           Start tom træning
         </button>
       )}
+
+      <SetTargetRings />
 
       <h2 className="section">Skabeloner</h2>
       {!state.templates.length && <Empty>Ingen skabeloner endnu. Gem en træning som skabelon fra Historik.</Empty>}
