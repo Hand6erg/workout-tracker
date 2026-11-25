@@ -169,6 +169,8 @@ export interface AppState {
   showTimeLeft: boolean;
   /** Farvetema (#293): mørk (standard), lys eller følg telefonen. Gælder kun denne enhed. */
   theme: Theme;
+  /** Stor tekst (#295): større felter og knapper i træningen. Gælder kun denne enhed. */
+  largeText: boolean;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */

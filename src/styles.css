@@ -558,3 +558,16 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 button.year-cell { cursor: pointer; }
 .year-pick { display: grid; gap: 8px; }
 .year-pick .as-button { text-align: left; }
+
+/* Stor tekst (#295): lidt større tekst i hele appen, og tydeligt større felter og knapper i træningen */
+:root[data-text='large'] { font-size: 112.5%; }
+:root[data-text='large'] .sets { font-size: 1.05rem; }
+:root[data-text='large'] .sets td { padding: 0 2px; }
+:root[data-text='large'] .sets td input { padding: 12px 2px; font-size: 1.2rem; font-weight: 600; }
+:root[data-text='large'] .sets td input.rpe { max-width: 56px; }
+:root[data-text='large'] .set-no { width: 36px; height: 44px; font-size: 1.05rem; }
+:root[data-text='large'] .tick { width: 46px; height: 46px; font-size: 1.3rem; }
+:root[data-text='large'] .sets .prev { font-size: 0.82rem; white-space: normal; }
+:root[data-text='large'] .rest-time { font-size: 1.7rem; }
+:root[data-text='large'] .ex-block header { flex-wrap: wrap; justify-content: flex-start; column-gap: 4px; }
+:root[data-text='large'] .ex-block header h3 { flex: 1 1 100%; }

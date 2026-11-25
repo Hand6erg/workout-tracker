@@ -30,6 +30,7 @@ export default function App() {
   useRestAlerts();
   useWakeLock();
   useTheme(state.theme);
+  useLargeText(state.largeText);
 
   return (
     <div className="app">
@@ -111,4 +112,13 @@ function useTheme(theme: Theme | undefined) {
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
   }, [theme]);
+}
+
+/** Sætter `data-text="large"` på <html>, når "Stor tekst" er slået til (#295). */
+function useLargeText(on: boolean | undefined) {
+  useEffect(() => {
+    const root = document.documentElement;
+    if (on) root.dataset.text = 'large';
+    else delete root.dataset.text;
+  }, [on]);
 }

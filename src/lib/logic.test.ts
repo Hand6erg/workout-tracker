@@ -3323,6 +3323,19 @@ describe('RPE (#237)', () => {
     expect(reducer(off, { type: 'SET_SHOW_RPE', on: true }).showRpe).toBe(true);
   });
 
+  it('Stor tekst: slået fra som standard, også for gamle data; kan slås til og fra (#295)', () => {
+    expect(initialState().largeText).toBe(false);
+    const old = JSON.parse(JSON.stringify(initialState()));
+    delete old.largeText;
+    expect(loadState(JSON.stringify(old)).largeText).toBe(false);
+    expect(loadState(JSON.stringify({ ...old, largeText: 'ja' })).largeText).toBe(false);
+    const on = reducer(initialState(), { type: 'SET_LARGE_TEXT', on: true });
+    expect(on.largeText).toBe(true);
+    expect(loadState(JSON.stringify(on)).largeText).toBe(true);
+    expect(reducer(on, { type: 'SET_LARGE_TEXT', on: true })).toBe(on);
+    expect(reducer(on, { type: 'SET_LARGE_TEXT', on: false }).largeText).toBe(false);
+  });
+
   it('Tema: mørk som standard, også for gamle data; ugyldige værdier ignoreres (#293)', () => {
     expect(initialState().theme).toBe('dark');
     const old = JSON.parse(JSON.stringify(initialState()));

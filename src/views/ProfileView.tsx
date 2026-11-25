@@ -84,6 +84,14 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
           ))}
         </div>
       </div>
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.largeText === true}
+          onChange={(e) => dispatch({ type: 'SET_LARGE_TEXT', on: e.target.checked })}
+        />
+        Stor tekst (større felter og knapper i træningen)
+      </label>
       <label className="field">
         Pausetimer efter hvert sæt (sekunder, 0 = slået fra)
         <input
