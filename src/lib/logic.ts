@@ -49,6 +49,7 @@ export function initialState(): AppState {
     showRpe: true,
     showTimeLeft: true,
     theme: 'dark',
+    largeText: false,
     recapDismissed: null,
     favorites: [],
     bodyWeight: null,
@@ -2291,6 +2292,7 @@ export type Action =
   | { type: 'SET_SHOW_TIME_LEFT'; on: boolean }
   /** Farvetema (#293). Ukendte værdier ignoreres. */
   | { type: 'SET_THEME'; theme: Theme }
+  | { type: 'SET_LARGE_TEXT'; on: boolean }
   /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
   | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
@@ -2766,6 +2768,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, showTimeLeft: action.on };
     case 'SET_THEME':
       return isTheme(action.theme) && action.theme !== state.theme ? { ...state, theme: action.theme } : state;
+    case 'SET_LARGE_TEXT':
+      return !!action.on === state.largeText ? state : { ...state, largeText: !!action.on };
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -3233,6 +3237,8 @@ export function loadState(raw: string | null): AppState {
       showTimeLeft: typeof parsed.showTimeLeft === 'boolean' ? parsed.showTimeLeft : true,
       // Tema fra før #293 findes ikke – appen var altid mørk
       theme: isTheme(parsed.theme) ? parsed.theme : 'dark',
+      // Stor tekst fra før #295 findes ikke
+      largeText: parsed.largeText === true,
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
