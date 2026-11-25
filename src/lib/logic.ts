@@ -1968,6 +1968,93 @@ function restAfterSet(state: AppState, w: Workout, we: WorkoutExercise, warmup: 
   return warmup ? Math.min(longest, state.restSeconds) : longest;
 }
 
+/* ---------- Reelle pauser (#315) ---------- */
+
+/** Huller over 15 min mellem to afkrydsede sæt er ikke en pause (fx en glemt træning) */
+export const MAX_REAL_REST_SECONDS = 15 * 60;
+
+export interface ActualRest {
+  /** Sættet, pausen gik forud for */
+  weId: string;
+  setId: string;
+  exerciseId: string;
+  /** Pausen i sekunder (tid sat på pause er trukket fra) */
+  seconds: number;
+}
+
+/**
+ * Den reelle pause før hvert afkrydset sæt: tiden siden det forrige afkrydsede sæt i træningen,
+ * minus tid træningen var sat på pause. Træningens første sæt og huller over 15 min giver ingen pause.
+ * Sæt uden tidsstempel (ældre træninger) springes over.
+ */
+export function actualRests(w: Workout): ActualRest[] {
+  const sets = w.exercises
+    .flatMap((e) => e.sets.filter((s) => s.done && typeof s.doneAt === 'number').map((s) => ({ e, s })))
+    .sort((a, b) => a.s.doneAt! - b.s.doneAt!);
+  const out: ActualRest[] = [];
+  for (let i = 1; i < sets.length; i++) {
+    const a = sets[i - 1].s;
+    const { e, s: b } = sets[i];
+    const ms = b.doneAt! - a.doneAt! - Math.max(0, (b.donePausedMs ?? 0) - (a.donePausedMs ?? 0));
+    const seconds = Math.max(0, Math.round(ms / 1000));
+    if (seconds > MAX_REAL_REST_SECONDS) continue;
+    out.push({ weId: e.id, setId: b.id, exerciseId: e.exerciseId, seconds });
+  }
+  return out;
+}
+
+/** Den reelle pause før ét sæt, eller null (#316) */
+export function actualRestBefore(w: Workout, setId: string): number | null {
+  return actualRests(w).find((r) => r.setId === setId)?.seconds ?? null;
+}
+
+export interface RestSummary {
+  /** Gennemsnitlig reel pause i sekunder */
+  average: number;
+  /** Gennemsnitlig planlagt pause (pausetimeren) for de samme sæt */
+  planned: number;
+  /** Antal pauser */
+  count: number;
+  /** Øvelsen med den længste gennemsnitlige pause */
+  longest: { exerciseId: string; seconds: number };
+}
+
+/** Pauser i en træning: gennemsnit, planlagt gennemsnit og øvelsen med længst pause. null uden pauser. */
+export function restSummary(w: Workout, state: AppState): RestSummary | null {
+  const rests = actualRests(w);
+  if (rests.length === 0) return null;
+  const avg = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) / xs.length);
+  const per = new Map<string, number[]>();
+  for (const r of rests) per.set(r.exerciseId, [...(per.get(r.exerciseId) ?? []), r.seconds]);
+  let longest = { exerciseId: rests[0].exerciseId, seconds: -1 };
+  for (const [exerciseId, xs] of per) {
+    const seconds = avg(xs);
+    if (seconds > longest.seconds) longest = { exerciseId, seconds };
+  }
+  return {
+    average: avg(rests.map((r) => r.seconds)),
+    planned: avg(rests.map((r) => restFor(state, r.exerciseId))),
+    count: rests.length,
+    longest,
+  };
+}
+
+/** Typisk (median) reel pause før sæt i en øvelse over de seneste op til 5 træninger. null ved under 3 pauser. */
+export function typicalRest(state: AppState, exerciseId: string): number | null {
+  const xs: number[] = [];
+  let workouts = 0;
+  for (const w of [...state.history].sort((a, b) => b.startedAt - a.startedAt)) {
+    const rests = actualRests(w).filter((r) => r.exerciseId === exerciseId);
+    if (rests.length === 0) continue;
+    xs.push(...rests.map((r) => r.seconds));
+    if (++workouts >= 5) break;
+  }
+  if (xs.length < 3) return null;
+  xs.sort((a, b) => a - b);
+  const mid = Math.floor(xs.length / 2);
+  return Math.round(xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2);
+}
+
 /* ---------- Forslag til progression ---------- */
 
 export interface ProgressionHint {
@@ -2753,6 +2840,11 @@ function endPause(w: Workout, now: number): Workout {
   return { ...rest, pausedMs: (w.pausedMs ?? 0) + Math.max(0, now - pausedAt) };
 }
 
+/** Samlet pausetid (ms) indtil `now`, inkl. en igangværende pause */
+function pausedMsAt(w: Workout, now: number): number {
+  return (w.pausedMs ?? 0) + (w.pausedAt ? Math.max(0, now - w.pausedAt) : 0);
+}
+
 /** Træningens varighed i ms – tid sat på pause tæller ikke med */
 export function workoutDuration(w: Workout, now: number): number {
   const end = w.finishedAt ?? w.pausedAt ?? now;
@@ -3086,7 +3178,18 @@ export function reducer(state: AppState, action: Action): AppState {
           patch = { ...patch, seconds, ...(kind === 'distance' ? { meters } : {}) };
         }
       }
-      const next = reducer(state, { type: 'UPDATE_SET', weId: action.weId, setId: action.setId, patch });
+      let next = reducer(state, { type: 'UPDATE_SET', weId: action.weId, setId: action.setId, patch });
+      // Reelle pauser (#315): husk hvornår sættet blev krydset af, og hvor meget træningen da havde været sat på pause
+      next = mapActive(next, (w) =>
+        mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) => {
+            if (s.id !== action.setId) return s;
+            const { doneAt: _d, donePausedMs: _p, ...rest } = s;
+            return nowDone ? { ...rest, doneAt: action.now, donePausedMs: pausedMsAt(w, action.now) } : rest;
+          }),
+        })),
+      );
       const seconds = nowDone ? restAfterSet(state, next.active!, we, !!set.warmup) : 0;
       const startRest = seconds > 0 && (set.warmup || roundComplete(next.active!, we, workIdxOf(we, idx)));
       return {

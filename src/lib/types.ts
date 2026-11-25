@@ -41,6 +41,10 @@ export interface SetEntry {
   warmup?: boolean;
   /** Sæt-mærke (#243): drop-sæt, til failure eller AMRAP. Mangler = almindeligt sæt. */
   tag?: SetTag;
+  /** Hvornår sættet blev krydset af (ms, #315). Fjernes, når krydset fjernes. Mangler i gamle data. */
+  doneAt?: number;
+  /** Træningens samlede pausetid (ms), da sættet blev krydset af (#315) – så pauser trækkes fra hviletiden */
+  donePausedMs?: number;
 }
 
 /** Sæt-mærker (#243). Drop-sæt tæller i volumen, men aldrig som rekord eller "sidste gang". */

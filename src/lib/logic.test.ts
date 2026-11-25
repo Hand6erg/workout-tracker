@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  actualRests,
+  restSummary,
+  typicalRest,
+  actualRestBefore,
   yearReview,
   yearsWithWorkouts,
   yearReviewCardYear,
@@ -4164,5 +4168,95 @@ describe('dit træningsår: delebillede (#310)', () => {
     const card = yearShareCardLines(yearReview(s, 2026));
     expect(card.stats.map((x) => x.value)).toEqual(['1', '1 t 30 min', '1,2 tons', '1 uge']);
     expect(card.lines).toEqual(['❤️ Favoritøvelse: Bænkpres', '🚗 Det svarer til 1 bil']);
+  });
+});
+
+describe('reelle pauser (#315)', () => {
+  /** Bænkpres med 3 sæt, krydset af på de givne tidspunkter (ms efter T0) */
+  function benchWorkout(base: AppState, times: number[], pause?: { at: number; ms: number }) {
+    let s = reducer(base, { type: 'START_WORKOUT', now: T0 });
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    for (let i = 1; i < times.length; i++) s = reducer(s, { type: 'ADD_SET', weId: s.active!.exercises[0].id });
+    const we = s.active!.exercises[0];
+    we.sets.forEach((set, i) => {
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: set.id, patch: { weight: '60', reps: '8' } });
+      if (pause && pause.at <= times[i] && !s.active!.pausedAt && !s.active!.pausedMs) {
+        s = reducer(s, { type: 'PAUSE_WORKOUT', now: T0 + pause.at });
+        s = reducer(s, { type: 'RESUME_WORKOUT', now: T0 + pause.at + pause.ms });
+      }
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: set.id, now: T0 + times[i] + (pause && pause.at <= times[i] ? pause.ms : 0) });
+    });
+    return s;
+  }
+
+  it('husker hvornår et sæt krydses af og glemmer det igen', () => {
+    let s = benchWorkout(initialState(), [5000]);
+    const we = s.active!.exercises[0];
+    expect(we.sets[0]).toMatchObject({ done: true, doneAt: T0 + 5000, donePausedMs: 0 });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 + 9000 });
+    expect(s.active!.exercises[0].sets[0].done).toBe(false);
+    expect('doneAt' in s.active!.exercises[0].sets[0]).toBe(false);
+    expect('donePausedMs' in s.active!.exercises[0].sets[0]).toBe(false);
+  });
+
+  it('regner pauser mellem afkrydsede sæt', () => {
+    const s = benchWorkout(initialState(), [0, 160_000, 300_000]);
+    const w = s.active!;
+    expect(actualRests(w).map((r) => r.seconds)).toEqual([160, 140]);
+    expect(actualRestBefore(w, w.exercises[0].sets[0].id)).toBeNull();
+    expect(actualRestBefore(w, w.exercises[0].sets[1].id)).toBe(160);
+  });
+
+  it('trækker tid sat på pause fra', () => {
+    // 5 min pause mellem sæt 1 og 2: sættet krydses af 160 s + 300 s efter sæt 1
+    const s = benchWorkout(initialState(), [0, 160_000], { at: 60_000, ms: 300_000 });
+    expect(actualRests(s.active!).map((r) => r.seconds)).toEqual([160]);
+  });
+
+  it('ignorerer huller over 15 min', () => {
+    const s = benchWorkout(initialState(), [0, 20 * 60_000, 20 * 60_000 + 90_000]);
+    expect(actualRests(s.active!).map((r) => r.seconds)).toEqual([90]);
+  });
+
+  it('opsummerer pauser for en træning', () => {
+    let s = benchWorkout(initialState(), [0, 120_000, 270_000]);
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['curl'] });
+    const we = s.active!.exercises[1];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: '10', reps: '10' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 + 330_000 });
+    const sum = restSummary(s.active!, s)!;
+    expect(sum.count).toBe(3);
+    expect(sum.average).toBe(110); // (120 + 150 + 60) / 3
+    expect(sum.planned).toBe(Math.round((180 + 180 + restFor(s, 'curl')) / 3));
+    expect(sum.longest).toEqual({ exerciseId: 'bench', seconds: 135 });
+    expect(restSummary(benchWorkout(initialState(), [0]).active!, s)).toBeNull();
+  });
+
+  it('finder den typiske pause for en øvelse', () => {
+    let s = initialState();
+    expect(typicalRest(s, 'bench')).toBeNull();
+    s = reducer(benchWorkout(s, [0, 100_000, 220_000]), { type: 'FINISH_WORKOUT', now: T0 + 300_000 });
+    expect(typicalRest(s, 'bench')).toBeNull(); // kun 2 pauser
+    s = reducer(benchWorkout(s, [0, 150_000]), { type: 'FINISH_WORKOUT', now: T0 + 300_000 });
+    expect(typicalRest(s, 'bench')).toBe(120); // median af 100, 120, 150
+  });
+
+  it('gamle træninger uden tidsstempler loader og giver ingen pauser', () => {
+    const old = {
+      ...initialState(),
+      history: [
+        {
+          id: 'w1', name: 'Gammel', startedAt: T0, finishedAt: T0 + 3_600_000,
+          exercises: [{ id: 'e1', exerciseId: 'bench', sets: [
+            { id: 's1', weight: '60', reps: '8', rpe: '', done: true },
+            { id: 's2', weight: '60', reps: '8', rpe: '', done: true },
+          ] }],
+        },
+      ],
+    };
+    const s = loadState(JSON.stringify(old));
+    expect(s.history).toHaveLength(1);
+    expect(actualRests(s.history[0])).toEqual([]);
+    expect(typicalRest(s, 'bench')).toBeNull();
   });
 });
