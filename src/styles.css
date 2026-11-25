@@ -571,3 +571,13 @@ button.year-cell { cursor: pointer; }
 :root[data-text='large'] .rest-time { font-size: 1.7rem; }
 :root[data-text='large'] .ex-block header { flex-wrap: wrap; justify-content: flex-start; column-gap: 4px; }
 :root[data-text='large'] .ex-block header h3 { flex: 1 1 100%; }
+
+/* Ugentlige sætmål (#301) */
+.set-targets { list-style: none; padding: 4px 14px; margin: 0 0 14px; }
+.st-row { display: flex; align-items: center; gap: 10px; min-height: 52px; border-bottom: 1px solid var(--line); }
+.st-row:last-child { border-bottom: 0; }
+.st-name { flex: 1; font-weight: 600; }
+.st-row input[type='number'] { width: 64px; text-align: center; }
+.st-unit { font-size: 0.85rem; }
+.st-off { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.9rem; }
+.st-off input { width: 20px; height: 20px; accent-color: var(--accent); }

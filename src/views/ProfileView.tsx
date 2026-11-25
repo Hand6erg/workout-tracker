@@ -10,6 +10,7 @@ import { ProfileGoals } from '../components/GoalsSection';
 import { MostLifted } from '../components/MostLifted';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { YearHeatmap } from '../components/YearHeatmap';
+import { SetTargetsSection } from '../components/SetTargets';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
@@ -61,6 +62,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
       <YearHeatmap onOpenWorkout={onOpenWorkout} />
       <WeeklyVolume />
       <MuscleSplit />
+      <SetTargetsSection />
       <ProfileGoals />
       <RecordsWall />
       <MostLifted />
