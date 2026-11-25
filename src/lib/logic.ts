@@ -1016,6 +1016,110 @@ export function heatmapYears(history: Workout[], now: number): number[] {
   return [...years].sort((a, b) => b - a);
 }
 
+/* ---------- Dit træningsår (#307) ---------- */
+
+/** Ting at sammenligne årets løftede vægt med, tungeste først (kg pr. stk.) */
+export const VOLUME_COMPARISONS: { kg: number; one: string; many: string; icon: string }[] = [
+  { kg: 150_000, one: 'blåhval', many: 'blåhvaler', icon: '🐋' },
+  { kg: 6_000, one: 'elefant', many: 'elefanter', icon: '🐘' },
+  { kg: 1_500, one: 'bil', many: 'biler', icon: '🚗' },
+  { kg: 500, one: 'hest', many: 'heste', icon: '🐎' },
+  { kg: 75, one: 'vaskemaskine', many: 'vaskemaskiner', icon: '🧺' },
+  { kg: 7, one: 'bowlingkugle', many: 'bowlingkugler', icon: '🎳' },
+];
+
+export interface VolumeComparison {
+  count: number;
+  /** "elefanter" / "elefant" */
+  name: string;
+  icon: string;
+  /** "= 4 elefanter" */
+  text: string;
+}
+
+/** Sjov sammenligning af en vægt: den tungeste ting, der giver mindst 1 stk. (1–999). null under 7 kg. */
+export function volumeComparison(kg: number): VolumeComparison | null {
+  for (const c of VOLUME_COMPARISONS) {
+    const count = Math.round(kg / c.kg);
+    if (count < 1) continue;
+    if (count > 999 && c !== VOLUME_COMPARISONS[0]) return null;
+    const name = count === 1 ? c.one : c.many;
+    return { count, name, icon: c.icon, text: `= ${count.toLocaleString('da-DK')} ${name}` };
+  }
+  return null;
+}
+
+export interface YearReview {
+  year: number;
+  workouts: number;
+  /** Samlet træningstid i ms (pauser tæller ikke med) */
+  durationMs: number;
+  /** Løftet vægt i kg (arbejdssæt; kropsvægtsøvelser tæller med kropsvægten) */
+  volume: number;
+  comparison: VolumeComparison | null;
+  /** Dage med mindst én træning */
+  trainingDays: number;
+  /** Øvelsen i flest træninger (ved lighed flest arbejdssæt) */
+  favourite: { exerciseId: string; name: string; workouts: number; sets: number } | null;
+  /** Måneden med mest løftet vægt (0 = januar) */
+  strongestMonth: { month: number; name: string; volume: number } | null;
+}
+
+/** Afsluttede træninger i et kalenderår */
+function workoutsInYear(history: Workout[], year: number): Workout[] {
+  return history.filter((w) => new Date(w.startedAt).getFullYear() === year);
+}
+
+/** Årets træning (#307): tal for alle afsluttede træninger i `year`. Intet gemmes – alt beregnes fra historikken. */
+export function yearReview(state: AppState, year: number): YearReview {
+  state = loadedState(state);
+  const list = workoutsInYear(state.history, year);
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const exStats = new Map<string, { workouts: number; sets: number }>();
+  const monthVolume = new Array<number>(12).fill(0);
+  const days = new Set<number>();
+  let durationMs = 0;
+  let volume = 0;
+  for (const w of list) {
+    durationMs += workoutDuration(w, w.finishedAt ?? w.startedAt);
+    const v = workoutVolume(w);
+    volume += v;
+    monthVolume[new Date(w.startedAt).getMonth()] += v;
+    days.add(dayStart(w.startedAt));
+    const setsHere = new Map<string, number>();
+    for (const we of w.exercises) {
+      const n = we.sets.filter(isWorkSet).length;
+      if (n) setsHere.set(we.exerciseId, (setsHere.get(we.exerciseId) ?? 0) + n);
+    }
+    for (const [id, n] of setsHere) {
+      const e = exStats.get(id) ?? { workouts: 0, sets: 0 };
+      exStats.set(id, { workouts: e.workouts + 1, sets: e.sets + n });
+    }
+  }
+  let favourite: YearReview['favourite'] = null;
+  for (const [exerciseId, e] of exStats) {
+    if (!favourite || e.workouts > favourite.workouts || (e.workouts === favourite.workouts && e.sets > favourite.sets))
+      favourite = { exerciseId, name: names.get(exerciseId) ?? exerciseId, ...e };
+  }
+  const top = Math.max(...monthVolume);
+  const month = monthVolume.indexOf(top);
+  return {
+    year,
+    workouts: list.length,
+    durationMs,
+    volume,
+    comparison: volumeComparison(volume),
+    trainingDays: days.size,
+    favourite,
+    strongestMonth: top > 0 ? { month, name: monthNameDa(month), volume: top } : null,
+  };
+}
+
+/** Årene med mindst én afsluttet træning, nyeste først */
+export function yearsWithWorkouts(state: Pick<AppState, 'history'>): number[] {
+  return [...new Set(state.history.map((w) => new Date(w.startedAt).getFullYear()))].sort((a, b) => b - a);
+}
+
 /* ---------- Milepæle (#182) ---------- */
 
 export type MilestoneGroup = 'workouts' | 'volume' | 'streak' | 'lift';
