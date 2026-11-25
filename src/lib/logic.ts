@@ -51,6 +51,7 @@ export function initialState(): AppState {
     theme: 'dark',
     largeText: false,
     recapDismissed: null,
+    yearReviewHidden: [],
     favorites: [],
     bodyWeight: null,
     setTargets: { ...DEFAULT_SET_TARGETS },
@@ -1212,6 +1213,101 @@ export function yearReview(state: AppState, year: number): YearReview {
 /** Årene med mindst én afsluttet træning, nyeste først */
 export function yearsWithWorkouts(state: Pick<AppState, 'history'>): number[] {
   return [...new Set(state.history.map((w) => new Date(w.startedAt).getFullYear()))].sort((a, b) => b - a);
+}
+
+/**
+ * Året, hvis "Dit træningsår"-kort skal vises øverst i Historik (#309): i december det igangværende år,
+ * i januar året der lige er slut. null resten af året, hvis året ikke har træninger, eller hvis kortet er skjult.
+ */
+export function yearReviewCardYear(state: Pick<AppState, 'history' | 'yearReviewHidden'>, now: number): number | null {
+  const d = new Date(now);
+  const month = d.getMonth();
+  if (month !== 11 && month !== 0) return null;
+  const year = month === 11 ? d.getFullYear() : d.getFullYear() - 1;
+  if ((state.yearReviewHidden ?? []).includes(year)) return null;
+  return yearsWithWorkouts(state).includes(year) ? year : null;
+}
+
+export interface YearSlide {
+  id: 'intro' | 'volume' | 'favourite' | 'records' | 'streak' | 'month' | 'growth' | 'end';
+  icon: string;
+  title: string;
+  /** Det store tal/navn midt på sliden */
+  big: string;
+  lines: string[];
+}
+
+const plural = (n: number, one: string, many: string) => `${n.toLocaleString('da-DK')} ${n === 1 ? one : many}`;
+
+/** Sliderne i "Dit træningsår"-historien (#309). Slides uden data springes over. */
+export function yearReviewSlides(r: YearReview): YearSlide[] {
+  const slides: YearSlide[] = [
+    {
+      id: 'intro',
+      icon: '🎉',
+      title: `Dit træningsår ${r.year}`,
+      big: plural(r.workouts, 'træning', 'træninger'),
+      lines: [`${formatTotalTime(r.durationMs)} under stangen`, `${plural(r.trainingDays, 'dag', 'dage')} med træning`],
+    },
+  ];
+  if (r.volume > 0)
+    slides.push({
+      id: 'volume',
+      icon: r.comparison?.icon ?? '🏋️',
+      title: 'Du løftede i alt',
+      big: formatTons(r.volume),
+      lines: r.comparison ? [`Det svarer til ${r.comparison.text.replace(/^= /, '')}`] : [],
+    });
+  if (r.favourite)
+    slides.push({
+      id: 'favourite',
+      icon: '❤️',
+      title: 'Din favoritøvelse',
+      big: r.favourite.name,
+      lines: [`${plural(r.favourite.workouts, 'træning', 'træninger')} · ${plural(r.favourite.sets, 'sæt', 'sæt')}`],
+    });
+  if (r.records > 0)
+    slides.push({
+      id: 'records',
+      icon: '🏆',
+      title: 'Nye rekorder',
+      big: plural(r.records, 'rekord', 'rekorder'),
+      lines: r.biggestRecord
+        ? [`Største spring: ${r.biggestRecord.name}`, `${formatKg(r.biggestRecord.from)} → ${formatKg(r.biggestRecord.to)} (est. 1RM)`]
+        : [],
+    });
+  if (r.longestWeekStreak > 0)
+    slides.push({
+      id: 'streak',
+      icon: '🔥',
+      title: 'Længste stime',
+      big: plural(r.longestWeekStreak, 'uge', 'uger'),
+      lines: ['i træk med mindst én træning'],
+    });
+  if (r.strongestMonth)
+    slides.push({
+      id: 'month',
+      icon: '📅',
+      title: 'Din stærkeste måned',
+      big: r.strongestMonth.name,
+      lines: [`${formatTons(r.strongestMonth.volume)} løftet`],
+    });
+  if (r.liftGrowth.length)
+    slides.push({
+      id: 'growth',
+      icon: '📈',
+      title: 'Sådan voksede dine løft',
+      big: `+${r.liftGrowth[0].pct} %`,
+      lines: r.liftGrowth.map((g) => `${g.name}: ${formatKg(Math.round(g.start))} → ${formatKg(Math.round(g.end))} (+${g.pct} %)`),
+    });
+  slides.push({
+    id: 'end',
+    icon: '💪',
+    title: 'Godt gået!',
+    big: `${r.year} er i bogen`,
+    lines: ['Tak fordi du mødte op. Vi ses under stangen!'],
+  });
+  return slides;
 }
 
 /* ---------- Milepæle (#182) ---------- */
@@ -2568,6 +2664,7 @@ export type Action =
   | { type: 'ADD_GOAL'; id: string; exerciseId: string; weight: number; reps: number; targetDate?: number; now: number }
   | { type: 'DELETE_GOAL'; goalId: string }
   | { type: 'DISMISS_RECAP'; key: string }
+  | { type: 'HIDE_YEAR_REVIEW'; year: number }
   | { type: 'MERGE_REMOTE'; remote: AppState }
   /** Fortryd den seneste sletning (#221) – oplysningerne kommer fra `lastDeletion` */
   | { type: 'UNDO_DELETE'; deletion: Deletion };
@@ -3044,6 +3141,10 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'DISMISS_RECAP':
       return { ...state, recapDismissed: action.key };
+    case 'HIDE_YEAR_REVIEW': {
+      const hidden = state.yearReviewHidden ?? [];
+      return hidden.includes(action.year) ? state : { ...state, yearReviewHidden: [...hidden, action.year] };
+    }
     case 'ADD_GOAL': {
       const weight = Math.round(action.weight * 100) / 100;
       const reps = Math.round(action.reps);
@@ -3326,6 +3427,7 @@ const SETTINGS = [
   'showRpe',
   'showTimeLeft',
   'recapDismissed',
+  'yearReviewHidden',
   'favorites',
   'program',
   'programSkip',
@@ -3502,6 +3604,10 @@ export function loadState(raw: string | null): AppState {
       theme: isTheme(parsed.theme) ? parsed.theme : 'dark',
       // Stor tekst fra før #295 findes ikke
       largeText: parsed.largeText === true,
+      // Skjulte årsoversigter fra før #309 findes ikke
+      yearReviewHidden: Array.isArray(parsed.yearReviewHidden)
+        ? parsed.yearReviewHidden.filter((y): y is number => Number.isInteger(y))
+        : [],
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Ugentlige sætmål fra før #300 findes ikke – standardmålene bruges

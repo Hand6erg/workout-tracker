@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { MonthCalendar } from '../components/MonthCalendar';
 import { MonthRecapCard } from '../components/MonthRecap';
+import { YearReviewSection } from '../components/YearReview';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
   bestSet,
@@ -60,6 +61,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
   return (
     <div className="page">
       <h1>Historik</h1>
+      {state.history.length > 0 && <YearReviewSection now={Date.now()} />}
       {recap && <MonthRecapCard r={recap} onDismiss={() => dispatch({ type: 'DISMISS_RECAP', key: recap.key })} />}
       {state.history.length > 0 && (
         <div className="history-search">
