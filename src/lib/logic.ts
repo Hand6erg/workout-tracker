@@ -321,25 +321,45 @@ function validSets(sets: SetEntry[], date: number, kind: ExerciseKind = 'reps'):
 
 function recordsFrom(sets: ScoredSet[]): PersonalRecords {
   const r: PersonalRecords = { repsAtWeight: {} };
-  for (const s of sets) {
-    if (s.meters > 0) {
-      if (!r.longestDistance || s.meters > r.longestDistance.meters) r.longestDistance = { meters: s.meters, seconds: s.seconds, date: s.date };
-      const pace = s.seconds / s.meters;
-      if (s.seconds > 0 && (!r.fastest || pace < r.fastest.pace)) r.fastest = { meters: s.meters, seconds: s.seconds, pace, date: s.date };
-      continue;
-    }
-    if (s.seconds > 0) {
-      if (!r.longestHold || s.seconds > r.longestHold.seconds) r.longestHold = { seconds: s.seconds, date: s.date };
-      continue;
-    }
-    if (s.reps <= 0) continue;
-    if (s.weight > 0 && (!r.heaviest || s.weight > r.heaviest.weight)) r.heaviest = { ...s };
-    const e = estimate1RM(s.weight, s.reps);
-    if (e > 0 && (!r.best1RM || e > r.best1RM.value)) r.best1RM = { value: e, ...s };
-    const key = String(s.weight);
-    if (!r.repsAtWeight[key] || s.reps > r.repsAtWeight[key].reps) r.repsAtWeight[key] = { reps: s.reps, date: s.date };
-  }
+  for (const s of sets) addToRecords(r, s);
   return r;
+}
+
+/** Lægger ét sæt til rekorderne (ændrer `r`) */
+function addToRecords(r: PersonalRecords, s: ScoredSet): void {
+  if (s.meters > 0) {
+    if (!r.longestDistance || s.meters > r.longestDistance.meters) r.longestDistance = { meters: s.meters, seconds: s.seconds, date: s.date };
+    const pace = s.seconds / s.meters;
+    if (s.seconds > 0 && (!r.fastest || pace < r.fastest.pace)) r.fastest = { meters: s.meters, seconds: s.seconds, pace, date: s.date };
+    return;
+  }
+  if (s.seconds > 0) {
+    if (!r.longestHold || s.seconds > r.longestHold.seconds) r.longestHold = { seconds: s.seconds, date: s.date };
+    return;
+  }
+  if (s.reps <= 0) return;
+  if (s.weight > 0 && (!r.heaviest || s.weight > r.heaviest.weight)) r.heaviest = { ...s };
+  const e = estimate1RM(s.weight, s.reps);
+  if (e > 0 && (!r.best1RM || e > r.best1RM.value)) r.best1RM = { value: e, ...s };
+  const key = String(s.weight);
+  if (!r.repsAtWeight[key] || s.reps > r.repsAtWeight[key].reps) r.repsAtWeight[key] = { reps: s.reps, date: s.date };
+}
+
+/** Rekordtyper et sæt slår i forhold til de hidtidige rekorder `prev` (samme regler som recordsBrokenBy) */
+function brokenKinds(prev: PersonalRecords, c: ScoredSet, kind: ExerciseKind): RecordKind[] {
+  const broken: RecordKind[] = [];
+  if (kind !== 'reps') {
+    if (kind === 'time' && prev.longestHold && c.seconds > prev.longestHold.seconds) broken.push('hold');
+    if (kind === 'distance' && prev.longestDistance && c.meters > prev.longestDistance.meters) broken.push('distance');
+    if (kind === 'distance' && c.seconds > 0 && prev.fastest && c.seconds / c.meters < prev.fastest.pace) broken.push('pace');
+    return broken;
+  }
+  if (c.weight > 0 && prev.heaviest && c.weight > prev.heaviest.weight) broken.push('heaviest');
+  const e = estimate1RM(c.weight, c.reps);
+  if (e > 0 && prev.best1RM && e > prev.best1RM.value) broken.push('1rm');
+  const atWeight = prev.repsAtWeight[String(c.weight)];
+  if (atWeight && c.reps > atWeight.reps) broken.push('reps');
+  return broken;
 }
 
 function historySets(history: Workout[], exerciseId: string, kind: ExerciseKind): ScoredSet[] {
@@ -374,21 +394,7 @@ export function recordsBrokenBy(state: AppState, exerciseId: string, set: SetEnt
     }
   }
   if (!earlier.length) return [];
-  const prev = recordsFrom(earlier);
-  const broken: RecordKind[] = [];
-  if (kind !== 'reps') {
-    const { seconds, meters } = candidate;
-    if (kind === 'time' && prev.longestHold && seconds > prev.longestHold.seconds) broken.push('hold');
-    if (kind === 'distance' && prev.longestDistance && meters > prev.longestDistance.meters) broken.push('distance');
-    if (kind === 'distance' && seconds > 0 && prev.fastest && seconds / meters < prev.fastest.pace) broken.push('pace');
-    return broken;
-  }
-  if (candidate.weight > 0 && prev.heaviest && candidate.weight > prev.heaviest.weight) broken.push('heaviest');
-  const e = estimate1RM(candidate.weight, candidate.reps);
-  if (e > 0 && prev.best1RM && e > prev.best1RM.value) broken.push('1rm');
-  const atWeight = prev.repsAtWeight[String(candidate.weight)];
-  if (atWeight && candidate.reps > atWeight.reps) broken.push('reps');
-  return broken;
+  return brokenKinds(recordsFrom(earlier), candidate, kind);
 }
 
 /** Rekorder slået i en afsluttet træning (pr. øvelse), sammenlignet med træninger før den */
@@ -1063,6 +1069,91 @@ export interface YearReview {
   favourite: { exerciseId: string; name: string; workouts: number; sets: number } | null;
   /** Måneden med mest løftet vægt (0 = januar) */
   strongestMonth: { month: number; name: string; volume: number } | null;
+  /** Rekorder 🏆 sat i året (samme optælling som under træningen) */
+  records: number;
+  /** Årets største 1RM-rekord: det største spring i estimeret 1RM (kun vægt × reps-øvelser) */
+  biggestRecord: { exerciseId: string; name: string; from: number; to: number; date: number } | null;
+  /** Flest ISO-uger i træk med mindst én træning inden for året */
+  longestWeekStreak: number;
+  /** Op til 3 øvelser med højest estimeret 1RM ved årets slutning: bedste e1RM i første træningsmåned mod hele året */
+  liftGrowth: LiftGrowth[];
+}
+
+export interface LiftGrowth {
+  exerciseId: string;
+  name: string;
+  /** Bedste e1RM i den første måned øvelsen blev trænet i året */
+  start: number;
+  /** Bedste e1RM i hele året */
+  end: number;
+  /** Fremgang i hele procent */
+  pct: number;
+}
+
+/** Rekorder sat i `year` i én gennemgang af hele historikken (ældste først) */
+function yearRecords(state: AppState, year: number): Pick<YearReview, 'records' | 'biggestRecord'> {
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const prev = new Map<string, PersonalRecords>();
+  let records = 0;
+  let biggestRecord: YearReview['biggestRecord'] = null;
+  for (const w of [...state.history].sort((a, b) => a.startedAt - b.startedAt)) {
+    const inYear = new Date(w.startedAt).getFullYear() === year;
+    const kinds = new Map<string, Set<RecordKind>>();
+    for (const we of w.exercises) {
+      const kind = exerciseKind(state, we.exerciseId);
+      for (const s of validSets(we.sets, w.startedAt, kind)) {
+        const r = prev.get(we.exerciseId);
+        if (inYear && r) {
+          const broken = brokenKinds(r, s, kind);
+          if (broken.length) {
+            const set = kinds.get(we.exerciseId) ?? new Set<RecordKind>();
+            for (const k of broken) set.add(k);
+            kinds.set(we.exerciseId, set);
+          }
+          if (broken.includes('1rm') && r.best1RM) {
+            const to = estimate1RM(s.weight, s.reps);
+            if (!biggestRecord || to - r.best1RM.value > biggestRecord.to - biggestRecord.from)
+              biggestRecord = { exerciseId: we.exerciseId, name: names.get(we.exerciseId) ?? we.exerciseId, from: r.best1RM.value, to, date: w.startedAt };
+          }
+        }
+        if (r) addToRecords(r, s);
+        else prev.set(we.exerciseId, recordsFrom([s]));
+      }
+    }
+    for (const set of kinds.values()) records += set.size;
+  }
+  return { records, biggestRecord };
+}
+
+/** Hvordan de stærkeste løft voksede i året (op til 3, højeste e1RM først) */
+function yearLiftGrowth(state: AppState, list: Workout[]): LiftGrowth[] {
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const per = new Map<string, { firstMonth: number; start: number; end: number; workouts: Set<string> }>();
+  for (const w of [...list].sort((a, b) => a.startedAt - b.startedAt)) {
+    const month = new Date(w.startedAt).getMonth();
+    for (const we of w.exercises) {
+      if (exerciseKind(state, we.exerciseId) !== 'reps') continue;
+      let best = 0;
+      for (const s of we.sets) if (isMainSet(s) && !isTimedSet(s)) best = Math.max(best, estimate1RM(num(s.weight), num(s.reps)));
+      if (best <= 0) continue;
+      const e = per.get(we.exerciseId) ?? { firstMonth: month, start: 0, end: 0, workouts: new Set<string>() };
+      if (month === e.firstMonth) e.start = Math.max(e.start, best);
+      e.end = Math.max(e.end, best);
+      e.workouts.add(w.id);
+      per.set(we.exerciseId, e);
+    }
+  }
+  return [...per.entries()]
+    .filter(([, e]) => e.workouts.size > 1)
+    .sort((a, b) => b[1].end - a[1].end)
+    .slice(0, 3)
+    .map(([exerciseId, e]) => ({
+      exerciseId,
+      name: names.get(exerciseId) ?? exerciseId,
+      start: e.start,
+      end: e.end,
+      pct: Math.round(((e.end - e.start) / e.start) * 100),
+    }));
 }
 
 /** Afsluttede træninger i et kalenderår */
@@ -1112,6 +1203,9 @@ export function yearReview(state: AppState, year: number): YearReview {
     trainingDays: days.size,
     favourite,
     strongestMonth: top > 0 ? { month, name: monthNameDa(month), volume: top } : null,
+    ...yearRecords(state, year),
+    longestWeekStreak: yearHeatmap(state.history, year).longestWeekStreak,
+    liftGrowth: yearLiftGrowth(state, list),
   };
 }
 

@@ -4005,3 +4005,72 @@ describe('dit træningsår (#307)', () => {
     expect(yearReview(loadState(old), 2026).workouts).toBe(1);
   });
 });
+
+describe('dit træningsår: rekorder, stime og fremgang (#308)', () => {
+  const ws = (weight: string, reps: string): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup: false });
+  const w = (id: string, at: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + 3_600_000,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const withHistory = (...list: Workout[]): AppState => ({ ...initialState(), history: [...list].sort((a, b) => b.startedAt - a.startedAt) });
+  const at = (y: number, m: number, d: number) => new Date(y, m, d, 12).getTime();
+
+  it('tæller kun årets rekorder, og den største er det største 1RM-spring', () => {
+    const s = withHistory(
+      w('a', at(2025, 10, 1), [['bench', [ws('80', '5')]], ['squat', [ws('100', '5')]]]),
+      w('b', at(2025, 11, 1), [['bench', [ws('85', '5')]]]), // 2025: tungeste + 1RM
+      w('c', at(2026, 1, 1), [['bench', [ws('87.5', '5')]]]), // +2,5 kg: tungeste + 1RM
+      w('d', at(2026, 3, 1), [['squat', [ws('120', '5')]]]), // +20 kg: tungeste + 1RM
+      w('e', at(2026, 4, 1), [['bench', [ws('80', '5')]]]), // ingen rekord
+    );
+    const r = yearReview(s, 2026);
+    expect(r.records).toBe(4);
+    expect(r.biggestRecord).toMatchObject({ exerciseId: 'squat', name: 'Squat', from: estimate1RM(100, 5), to: estimate1RM(120, 5) });
+    expect(yearReview(s, 2025).records).toBe(2);
+    // samme optælling som 🏆 i hver træning
+    expect(r.records).toBe(['c', 'd', 'e'].reduce((n, id) => n + recordCount(workoutRecords(s, id)), 0));
+  });
+
+  it('træning i uge 10, 11, 12 og 20 giver en stime på 3 uger', () => {
+    const week = (n: number) => new Date(2026, 0, 5 + (n - 2) * 7, 12).getTime(); // 5. jan 2026 er mandag i uge 2
+    const s = withHistory(...[10, 11, 12, 20].map((n) => w(`w${n}`, week(n), [['bench', [ws('80', '5')]]])));
+    expect([10, 11, 12, 20].map((n) => isoWeek(week(n)))).toEqual([10, 11, 12, 20]);
+    expect(yearReview(s, 2026).longestWeekStreak).toBe(3);
+  });
+
+  it('bænk 80 × 5 i januar og 100 × 5 i november vokser fra ~93 til ~117 kg (+25 %)', () => {
+    const s = withHistory(
+      w('jan', at(2026, 0, 10), [['bench', [ws('80', '5')]], ['squat', [ws('100', '5')]]]),
+      w('nov', at(2026, 10, 10), [['bench', [ws('100', '5')]]]),
+    );
+    const g = yearReview(s, 2026).liftGrowth;
+    // squat er kun trænet én gang → ingen række
+    expect(g).toHaveLength(1);
+    expect(g[0]).toMatchObject({ exerciseId: 'bench', name: 'Bænkpres', pct: 25 });
+    expect(g[0].start).toBeCloseTo(93.3, 1);
+    expect(g[0].end).toBeCloseTo(116.7, 1);
+  });
+
+  it('højst 3 løft, højeste først; tids- og distanceøvelser er udeladt', () => {
+    const plank = initialState().exercises.find((e) => e.kind === 'time');
+    const s = withHistory(
+      ...[0, 5].map((m) =>
+        w(`m${m}`, at(2026, m, 3), [
+          ['bench', [ws('80', '5')]],
+          ['squat', [ws('120', '5')]],
+          ['deadlift', [ws('150', '5')]],
+          ['ohp', [ws('50', '5')]],
+          ...(plank ? [[plank.id, [{ ...ws('', ''), seconds: '60' }]] as [string, SetEntry[]]] : []),
+        ]),
+      ),
+    );
+    expect(yearReview(s, 2026).liftGrowth.map((g) => g.exerciseId)).toEqual(['deadlift', 'squat', 'bench']);
+  });
+
+  it('et år uden træning har ingen rekorder, stime eller fremgang', () => {
+    expect(yearReview(initialState(), 2026)).toMatchObject({ records: 0, biggestRecord: null, longestWeekStreak: 0, liftGrowth: [] });
+  });
+});
