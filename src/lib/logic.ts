@@ -53,6 +53,7 @@ export function initialState(): AppState {
     recapDismissed: null,
     favorites: [],
     bodyWeight: null,
+    setTargets: { ...DEFAULT_SET_TARGETS },
     goals: [],
     program: [],
     programSkip: { after: null, n: 0 },
@@ -1271,6 +1272,62 @@ export function muscleDistribution(state: AppState, sinceMs: number): MuscleShar
   return [...out.values()];
 }
 
+/* ---------- Ugentlige sætmål pr. muskelgruppe (#300) ---------- */
+
+export const DEFAULT_SET_TARGETS: Record<Muscle, number> = { Bryst: 12, Ryg: 14, Ben: 12, Skuldre: 10, Arme: 10, Mave: 8 };
+export const SET_TARGET_MIN = 1;
+export const SET_TARGET_MAX = 40;
+
+/** Et gyldigt mål (1–40, hele sæt) eller null (slået fra) */
+export function clampSetTarget(v: number | null | undefined): number | null {
+  if (v === null) return null;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  return Math.min(SET_TARGET_MAX, Math.max(SET_TARGET_MIN, Math.round(v)));
+}
+
+/** Målene for alle muskelgrupper; manglende eller ugyldige værdier får standardmålet */
+export function setTargetsOf(state: Partial<Pick<AppState, 'setTargets'>>): Record<Muscle, number | null> {
+  const saved = (state.setTargets && typeof state.setTargets === 'object' ? state.setTargets : {}) as Partial<Record<Muscle, unknown>>;
+  const out = {} as Record<Muscle, number | null>;
+  for (const m of MUSCLES) {
+    const v = saved[m];
+    out[m] = v === null ? null : typeof v === 'number' && Number.isFinite(v) ? clampSetTarget(v) : DEFAULT_SET_TARGETS[m];
+  }
+  return out;
+}
+
+export interface WeeklySetRow {
+  muscle: Muscle;
+  /** Udførte arbejdssæt i denne uge (mandag–søndag), inkl. den aktive træning */
+  done: number;
+  target: number | null;
+  reached: boolean;
+}
+
+/** Ugens arbejdssæt pr. muskelgruppe mod målet. Opvarmning tæller aldrig; den aktive træning tæller med. */
+export function weeklySetProgress(state: AppState, now: number): WeeklySetRow[] {
+  const from = startOfWeek(now);
+  // Næste mandag (tirsdag i næste uge → ugens start), så sommertid ikke flytter grænsen
+  const nextMonday = startOfWeek(from + 8 * DAY_MS);
+  const muscleOf = new Map(state.exercises.map((e) => [e.id, e.muscle]));
+  const counts = new Map<Muscle, number>(MUSCLES.map((m) => [m, 0]));
+  const workouts = state.active ? [...state.history, state.active] : state.history;
+  for (const w of workouts) {
+    if (w.startedAt < from || w.startedAt >= nextMonday) continue;
+    for (const we of w.exercises) {
+      const m = muscleOf.get(we.exerciseId);
+      if (!m || !counts.has(m)) continue;
+      counts.set(m, counts.get(m)! + we.sets.filter(isWorkSet).length);
+    }
+  }
+  const targets = setTargetsOf(state);
+  return MUSCLES.map((m) => {
+    const done = counts.get(m) ?? 0;
+    const target = targets[m];
+    return { muscle: m, done, target, reached: target !== null && done >= target };
+  });
+}
+
 /* ---------- Restitution pr. muskelgruppe (#286) ---------- */
 
 export type RecoveryStatus = 'rested' | 'recent' | 'hard';
@@ -2297,6 +2354,7 @@ export type Action =
   | { type: 'SET_BODY_WEIGHT'; kg: number }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
+  | { type: 'SET_SET_TARGET'; muscle: Muscle; value: number | null }
   | { type: 'SKIP_PROGRAM' }
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
@@ -2770,6 +2828,12 @@ export function reducer(state: AppState, action: Action): AppState {
       return isTheme(action.theme) && action.theme !== state.theme ? { ...state, theme: action.theme } : state;
     case 'SET_LARGE_TEXT':
       return !!action.on === state.largeText ? state : { ...state, largeText: !!action.on };
+    case 'SET_SET_TARGET': {
+      if (!MUSCLES.includes(action.muscle)) return state;
+      const value = clampSetTarget(action.value);
+      const cur = setTargetsOf(state);
+      return cur[action.muscle] === value ? state : { ...state, setTargets: { ...cur, [action.muscle]: value } };
+    }
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -3068,6 +3132,7 @@ const SETTINGS = [
   'program',
   'programSkip',
   'bodyWeight',
+  'setTargets',
 ] as const;
 
 type Stamped = { id: string; updatedAt?: number };
@@ -3241,6 +3306,8 @@ export function loadState(raw: string | null): AppState {
       largeText: parsed.largeText === true,
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+      // Ugentlige sætmål fra før #300 findes ikke – standardmålene bruges
+      setTargets: setTargetsOf(parsed),
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
       lastFinishedId: null,
     } as AppState;
