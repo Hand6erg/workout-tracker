@@ -4,6 +4,7 @@ import {
   yearsWithWorkouts,
   yearReviewCardYear,
   yearReviewSlides,
+  yearShareCardLines,
   volumeComparison,
   restFor,
   lifetimeStats,
@@ -4127,5 +4128,41 @@ describe('dit træningsår: kortet og historien (#309)', () => {
     // én enkelt træning: ingen rekorder og ingen fremgang
     const one = yearReviewSlides(yearReview(withHistory(w('a', at(2026, 3, 1), [['bench', [ws('80', '5')]]])), 2026));
     expect(one.map((x) => x.id)).toEqual(['intro', 'volume', 'favourite', 'streak', 'month', 'end']);
+  });
+});
+
+describe('dit træningsår: delebillede (#310)', () => {
+  const ws = (weight: string, reps: string): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup: false });
+  const w = (id: string, at: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + 90 * 60_000,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const at = (y: number, m: number, d: number) => new Date(y, m, d, 12).getTime();
+
+  it('linjerne på billedet har årets tal med dansk formatering', () => {
+    // 1200 træninger er urealistisk, men viser tusindtalsseparator
+    const list = Array.from({ length: 1200 }, (_, i) => w(`w${i}`, at(2026, 0, 1) + i * 6 * 3_600_000, [['squat', [ws('100', '5')]]]));
+    const s: AppState = { ...initialState(), history: list.sort((a, b) => b.startedAt - a.startedAt) };
+    const card = yearShareCardLines(yearReview(s, 2026));
+    expect(card.title).toBe('Mit træningsår 2026');
+    expect(card.stats).toEqual([
+      { label: 'Træninger', value: '1.200' },
+      { label: 'Tid', value: '1800 t' },
+      { label: 'Løftet', value: '600 tons' },
+      { label: 'Længste stime', value: expect.stringMatching(/^\d+ uger$/) },
+    ]);
+    expect(card.lines[0]).toBe('❤️ Favoritøvelse: Squat');
+    expect(card.lines.at(-1)).toBe('🐋 Det svarer til 4 blåhvaler');
+    expect(card.fileName).toBe('loeft-traeningsaar-2026.png');
+  });
+
+  it('et lille år: kommatal i tons og ingen rekordlinje', () => {
+    const s: AppState = { ...initialState(), history: [w('a', at(2026, 3, 1), [['bench', [ws('80', '5'), ws('80', '5'), ws('80', '5')]]])] };
+    const card = yearShareCardLines(yearReview(s, 2026));
+    expect(card.stats.map((x) => x.value)).toEqual(['1', '1 t 30 min', '1,2 tons', '1 uge']);
+    expect(card.lines).toEqual(['❤️ Favoritøvelse: Bænkpres', '🚗 Det svarer til 1 bil']);
   });
 });

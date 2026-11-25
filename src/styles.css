@@ -625,3 +625,4 @@ button.year-cell { cursor: pointer; }
 .story-line { margin: 0; font-size: 1.05rem; }
 .story-foot { display: flex; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; }
 .story-foot > * { flex: 1; }
+.story-share { margin-top: 18px; padding: 12px 22px; }
