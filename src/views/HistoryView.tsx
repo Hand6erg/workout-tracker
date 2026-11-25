@@ -20,6 +20,8 @@ import {
   workoutVolume,
   workoutDuration,
   formatRpe,
+  actualRests,
+  formatClock,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
@@ -164,6 +166,8 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
 
 export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () => void; onOpenWorkout?: () => void }) {
   const { state, dispatch, exerciseById } = useStore();
+  // Reel pause før hvert sæt (#316) – kun træninger med tidsstempler
+  const restBefore = new Map(actualRests(w).map((r) => [r.setId, r.seconds]));
   // Gentag træningen (#150): start en ny med samme øvelser og sæt, og vis den dags tal som "Forrige"
   const repeat = () => {
     dispatch({ type: 'REPEAT_WORKOUT', workoutId: w.id, now: Date.now(), replace: true });
@@ -230,6 +234,7 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
                 {formatRpe(s.rpe) && <span className="muted"> @ RPE {formatRpe(s.rpe)}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
                 {setTagSuffix(s) && <span className="set-tag-note"> {setTagSuffix(s).trim()}</span>}
+                {restBefore.has(s.id) && <span className="rest-note"> · hvilede {formatClock(restBefore.get(s.id)!)}</span>}
               </li>
             ))}
           </ol>

@@ -237,6 +237,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .sets tr.done td:last-child { border-radius: 0 8px 8px 0; }
 .sets tr.warmup .set-no { color: var(--gold); }
 .sets tr.warmup input { color: var(--muted); }
+.sets tr.rest-row td { text-align: left; font-size: 0.75rem; color: var(--muted); padding: 0 8px 4px; }
+.detail-ex .rest-note { color: var(--muted); font-size: 0.85rem; }
 .sets tr.pr-row td { text-align: left; font-size: 0.8rem; font-weight: 600; color: var(--gold); padding: 2px 8px 6px; animation: pr-pop 0.4s ease-out; }
 .sets .stopwatch { background: var(--accent-soft); color: var(--accent); border: 0; border-radius: 8px; padding: 8px 6px; font-weight: 600; font-size: 0.8rem; white-space: nowrap; min-width: 64px; }
 .sets .stopwatch.running { background: var(--accent); color: var(--on-accent); }
