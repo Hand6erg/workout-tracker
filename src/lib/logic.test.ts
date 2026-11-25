@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  yearReview,
+  yearsWithWorkouts,
+  volumeComparison,
   restFor,
   lifetimeStats,
   mostLiftedExercises,
@@ -3936,5 +3939,69 @@ describe('ugentlige sætmål pr. muskelgruppe (#300)', () => {
     expect(loadState(JSON.stringify(old)).setTargets).toEqual(DEFAULT_SET_TARGETS);
     const odd = loadState(JSON.stringify({ ...old, setTargets: { Ryg: 99, Mave: null, Ben: 'x' } }));
     expect(odd.setTargets).toEqual({ ...DEFAULT_SET_TARGETS, Ryg: 40, Mave: null });
+  });
+});
+
+describe('dit træningsår (#307)', () => {
+  const MIN = 60_000;
+  const ws = (weight: string, reps: string, warmup = false): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup });
+  const w = (id: string, at: number, mins: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + mins * MIN,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const withHistory = (...list: Workout[]): AppState => ({ ...initialState(), history: [...list].sort((a, b) => b.startedAt - a.startedAt) });
+  const at = (y: number, m: number, d: number) => new Date(y, m, d, 12).getTime();
+
+  it('tæller træninger, timer, volumen, favoritøvelse og stærkeste måned pr. år', () => {
+    const s = withHistory(
+      w('old', at(2025, 11, 30), 60, [['squat', [ws('200', '5'), ws('200', '5')]]]),
+      w('a', at(2026, 1, 3), 60, [['bench', [ws('80', '5'), ws('80', '5')]], ['squat', [ws('100', '5'), ws('60', '5', true)]]]),
+      w('b', at(2026, 4, 10), 90, [['bench', [ws('80', '5')]], ['squat', [ws('120', '5'), ws('120', '5'), ws('120', '5')]]]),
+      w('c', at(2026, 4, 12), 30, [['bench', [ws('90', '3')]]]),
+    );
+    const r = yearReview(s, 2026);
+    expect(r.year).toBe(2026);
+    expect(r.workouts).toBe(3);
+    expect(r.durationMs).toBe(180 * MIN);
+    expect(r.volume).toBe(800 + 500 + 400 + 1800 + 270);
+    expect(r.trainingDays).toBe(3);
+    // bænk i 3 træninger, squat i 2 (selvom squat har flere sæt)
+    expect(r.favourite).toEqual({ exerciseId: 'bench', name: 'Bænkpres', workouts: 3, sets: 4 });
+    expect(r.strongestMonth).toEqual({ month: 4, name: 'maj', volume: 2470 });
+
+    const old = yearReview(s, 2025);
+    expect(old.workouts).toBe(1);
+    expect(old.volume).toBe(2000);
+    expect(old.favourite?.exerciseId).toBe('squat');
+    expect(old.strongestMonth?.name).toBe('december');
+  });
+
+  it('ved lige mange træninger vinder øvelsen med flest sæt', () => {
+    const s = withHistory(w('a', at(2026, 2, 1), 30, [['bench', [ws('80', '5')]], ['squat', [ws('100', '5'), ws('100', '5')]]]));
+    expect(yearReview(s, 2026).favourite?.exerciseId).toBe('squat');
+  });
+
+  it('sammenligner volumen med noget sjovt', () => {
+    expect(volumeComparison(21_000)).toMatchObject({ count: 4, name: 'elefanter', text: '= 4 elefanter' });
+    expect(volumeComparison(300_000)?.name).toBe('blåhvaler');
+    expect(volumeComparison(1_500)).toMatchObject({ count: 1, name: 'bil' });
+    expect(volumeComparison(60)?.name).toBe('vaskemaskine');
+    expect(volumeComparison(3)).toBeNull();
+    expect(volumeComparison(0)).toBeNull();
+  });
+
+  it('et år uden træning giver nul og ingen favorit; år er nyeste først', () => {
+    const s = withHistory(w('a', at(2024, 5, 1), 30, [['bench', [ws('80', '5')]]]), w('b', at(2026, 5, 1), 30, [['bench', [ws('80', '5')]]]));
+    expect(yearReview(s, 2025)).toMatchObject({ workouts: 0, durationMs: 0, volume: 0, trainingDays: 0, favourite: null, strongestMonth: null, comparison: null });
+    expect(yearsWithWorkouts(s)).toEqual([2026, 2024]);
+    expect(yearsWithWorkouts(initialState())).toEqual([]);
+  });
+
+  it('gamle gemte data indlæses uændret (ingen ændring i datamodellen)', () => {
+    const old = JSON.stringify({ ...initialState(), history: [w('a', at(2026, 5, 1), 30, [['bench', [ws('80', '5')]]])] });
+    expect(yearReview(loadState(old), 2026).workouts).toBe(1);
   });
 });
