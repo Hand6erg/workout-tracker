@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   yearReview,
   yearsWithWorkouts,
+  yearReviewCardYear,
+  yearReviewSlides,
   volumeComparison,
   restFor,
   lifetimeStats,
@@ -4072,5 +4074,58 @@ describe('dit træningsår: rekorder, stime og fremgang (#308)', () => {
 
   it('et år uden træning har ingen rekorder, stime eller fremgang', () => {
     expect(yearReview(initialState(), 2026)).toMatchObject({ records: 0, biggestRecord: null, longestWeekStreak: 0, liftGrowth: [] });
+  });
+});
+
+describe('dit træningsår: kortet og historien (#309)', () => {
+  const ws = (weight: string, reps: string): SetEntry => ({ id: uid(), weight, reps, rpe: '', done: true, warmup: false });
+  const w = (id: string, at: number, exercises: [string, SetEntry[]][]): Workout => ({
+    id,
+    name: id,
+    startedAt: at,
+    finishedAt: at + 3_600_000,
+    exercises: exercises.map(([exerciseId, sets]) => ({ id: uid(), exerciseId, sets })),
+  });
+  const withHistory = (...list: Workout[]): AppState => ({ ...initialState(), history: [...list].sort((a, b) => b.startedAt - a.startedAt) });
+  const at = (y: number, m: number, d: number) => new Date(y, m, d, 12).getTime();
+
+  it('kortet vises i december og januar for året med træninger, ellers ikke', () => {
+    const s = withHistory(w('a', at(2026, 2, 1), [['bench', [ws('80', '5')]]]));
+    expect(yearReviewCardYear(s, at(2026, 11, 5))).toBe(2026);
+    expect(yearReviewCardYear(s, at(2027, 0, 20))).toBe(2026);
+    expect(yearReviewCardYear(s, at(2026, 5, 1))).toBeNull();
+    expect(yearReviewCardYear(s, at(2026, 10, 30))).toBeNull();
+    expect(yearReviewCardYear(s, at(2027, 11, 5))).toBeNull(); // ingen træninger i 2027
+  });
+
+  it('"Skjul" husker året, og gamle data uden feltet indlæses', () => {
+    let s = withHistory(w('a', at(2026, 2, 1), [['bench', [ws('80', '5')]]]));
+    s = reducer(s, { type: 'HIDE_YEAR_REVIEW', year: 2026 });
+    expect(s.yearReviewHidden).toEqual([2026]);
+    expect(reducer(s, { type: 'HIDE_YEAR_REVIEW', year: 2026 })).toBe(s);
+    expect(yearReviewCardYear(s, at(2026, 11, 5))).toBeNull();
+    const old = JSON.parse(JSON.stringify(s));
+    delete old.yearReviewHidden;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.yearReviewHidden).toEqual([]);
+    expect(loaded.history).toHaveLength(1);
+    expect(loadState(JSON.stringify(s)).yearReviewHidden).toEqual([2026]);
+  });
+
+  it('historien har alle slides med data og springer tomme over', () => {
+    const s = withHistory(
+      w('jan', at(2026, 0, 10), [['bench', [ws('80', '5')]]]),
+      w('nov', at(2026, 10, 10), [['bench', [ws('100', '5')]]]),
+    );
+    const slides = yearReviewSlides(yearReview(s, 2026));
+    expect(slides.map((x) => x.id)).toEqual(['intro', 'volume', 'favourite', 'records', 'streak', 'month', 'growth', 'end']);
+    expect(slides[0]).toMatchObject({ title: 'Dit træningsår 2026', big: '2 træninger' });
+    expect(slides[2].big).toBe('Bænkpres');
+    expect(slides.find((x) => x.id === 'growth')?.lines[0]).toBe('Bænkpres: 93 kg → 117 kg (+25 %)');
+    expect(slides.at(-1)?.title).toBe('Godt gået!');
+
+    // én enkelt træning: ingen rekorder og ingen fremgang
+    const one = yearReviewSlides(yearReview(withHistory(w('a', at(2026, 3, 1), [['bench', [ws('80', '5')]]])), 2026));
+    expect(one.map((x) => x.id)).toEqual(['intro', 'volume', 'favourite', 'streak', 'month', 'end']);
   });
 });

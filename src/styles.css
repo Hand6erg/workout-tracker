@@ -599,3 +599,29 @@ button.year-cell { cursor: pointer; }
 .set-rings.compact svg { width: 26px; height: 26px; }
 .set-rings.compact .ring-text strong { font-size: 0.75rem; }
 .set-rings.compact .ring-text small { font-size: 0.72rem; }
+
+/* Dit træningsår (#309) */
+.year-card { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; border: 1px solid var(--accent-soft); background: linear-gradient(135deg, var(--accent-soft), var(--surface)); }
+.year-card-open { flex: 1; display: flex; align-items: center; gap: 12px; background: none; border: 0; color: inherit; text-align: left; padding: 0; font: inherit; cursor: pointer; min-width: 0; }
+.year-card-open > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.year-card-icon { font-size: 1.8rem; }
+.year-past { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; font-size: 0.9rem; }
+.story {
+  position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column;
+  background: radial-gradient(circle at 50% 20%, var(--accent-soft), var(--bg) 70%), var(--bg);
+  padding: calc(10px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom));
+}
+.story-progress { display: flex; gap: 4px; }
+.story-progress span { flex: 1; height: 4px; border-radius: 2px; background: var(--line); }
+.story-progress span.on { background: var(--accent); }
+.story-head { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.story-slide {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  gap: 8px; user-select: none; overflow-y: auto; max-width: 560px; width: 100%; margin: 0 auto; animation: up 0.2s ease-out;
+}
+.story-slide h2 { margin: 0; font-size: 1.2rem; color: var(--muted); font-weight: 600; }
+.story-icon { font-size: 4rem; line-height: 1; }
+.story-big { margin: 4px 0; font-size: 2.6rem; font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+.story-line { margin: 0; font-size: 1.05rem; }
+.story-foot { display: flex; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; }
+.story-foot > * { flex: 1; }

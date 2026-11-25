@@ -173,6 +173,8 @@ export interface AppState {
   largeText: boolean;
   /** Den seneste måned ("2026-10"), hvis opsummering brugeren har lukket i Historik (#168). null = ingen. */
   recapDismissed: string | null;
+  /** År, hvis "Dit træningsår"-kort brugeren har skjult i Historik (#309) */
+  yearReviewHidden: number[];
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
   favorites: string[];
   /** Kropsvægt (kg) fra Profil – bruges til kropsvægtsøvelser, når der ikke er et kropsmål (#206). null = ikke angivet. */
