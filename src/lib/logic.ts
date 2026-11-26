@@ -929,6 +929,14 @@ export function weekPlan(state: Pick<AppState, 'history' | 'trainingDays'>, now:
   };
 }
 
+/** "Du mangler 1 træning – du har 2 dage tilbage" sidst på ugen (torsdag+), når det stadig kan nås (#324) */
+export function weekPlanNudge(plan: WeekPlan): { missing: number; daysAvailable: number } | null {
+  const today = plan.days.find((d) => d.today);
+  if (!today || today.day < 3 || plan.missing <= 0) return null;
+  const daysAvailable = plan.daysLeft + (today.done ? 0 : 1);
+  return plan.missing <= daysAvailable ? { missing: plan.missing, daysAvailable } : null;
+}
+
 /** ISO-ugenummer */
 export function isoWeek(t: number): number {
   const d = new Date(startOfWeek(t));
