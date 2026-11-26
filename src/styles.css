@@ -693,3 +693,6 @@ button.year-cell { cursor: pointer; }
   text-align: left;
   color: var(--text);
 }
+.interval-bar.on-tabs { bottom: calc(var(--tabbar-h) + 8px + env(safe-area-inset-bottom)); }
+.page > .btn-secondary.wide + .btn-secondary.wide,
+.page > .btn-primary.wide + .btn-secondary.wide { margin-top: 8px; }

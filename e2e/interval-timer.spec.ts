@@ -139,3 +139,42 @@ test('EMOM gemmes på træningen og vises på opsummeringen og i Historik (#331)
   await page.getByRole('button', { name: 'Træning Push' }).click();
   await expect(page.getByRole('dialog', { name: 'Push' }).getByRole('list', { name: 'Finishers' })).toContainText('EMOM 3 min');
 });
+
+test('intervaltimer fra startskærmen gemmes som en træning i Historik (#332)', async ({ page }) => {
+  await page.getByRole('button', { name: '⏱ Intervaltimer' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Intervaltimer' });
+  await sheet.getByRole('button', { name: 'AMRAP' }).click();
+  await sheet.getByLabel('Minutter').fill('5');
+  await sheet.getByRole('button', { name: 'Start' }).click();
+
+  // Skjul: bjælken over menuen viser timeren, også på andre faner
+  await sheet.getByRole('button', { name: 'Skjul' }).click();
+  await page.getByRole('button', { name: 'Profil' }).click();
+  const bar = page.getByRole('button', { name: /Vis intervaltimer/ });
+  await expect(bar).toContainText('AMRAP');
+  await page.clock.runFor(301_000);
+  await expect(bar).toContainText('Intervaltimer færdig');
+  await bar.click();
+
+  await sheet.getByLabel('Antal runder').fill('6');
+  await sheet.getByRole('button', { name: 'Gem som træning' }).click();
+  await expect(sheet).toBeHidden();
+  await expect(bar).toBeHidden();
+
+  await page.getByRole('button', { name: 'Historik' }).click();
+  const card = page.getByRole('button', { name: 'Træning AMRAP' });
+  await expect(card).toContainText('AMRAP 5 min · 6 runder');
+  await expect(card).toContainText('5:00');
+});
+
+test('"Luk uden at gemme" kasserer en finisher fra startskærmen (#332)', async ({ page }) => {
+  await page.getByRole('button', { name: '⏱ Intervaltimer' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Intervaltimer' });
+  await sheet.getByRole('button', { name: 'Tabata' }).click();
+  await sheet.getByRole('button', { name: 'Start' }).click();
+  await page.clock.runFor(231_000);
+  await sheet.getByRole('button', { name: 'Luk uden at gemme' }).click();
+  await expect(sheet).toBeHidden();
+  await page.getByRole('button', { name: 'Historik' }).click();
+  await expect(page.getByText('Ingen træninger endnu')).toBeVisible();
+});

@@ -2835,6 +2835,7 @@ export type Action =
   | { type: 'STOP_INTERVAL' }
   | { type: 'SAVE_FINISHER'; now: number; rounds?: number | null }
   | { type: 'REMOVE_FINISHER'; finisherId: string; workoutId?: string }
+  | { type: 'SAVE_FINISHER_AS_WORKOUT'; now: number; rounds?: number | null }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
   /** Gem/ryd en testet 1RM for en øvelse (#250). `weight` mangler eller ≤ 0 = ryd */
@@ -3302,8 +3303,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_INTERVAL_CONFIG':
       return { ...state, intervalConfig: cleanIntervalConfig(action.config) };
     case 'START_INTERVAL': {
-      // Kun under en træning; indstillingerne huskes til næste gang (#330)
-      if (!state.active) return state;
+      // I træningen eller fra startskærmen (#332); indstillingerne huskes til næste gang (#330)
       const config = cleanIntervalConfig(action.config);
       return { ...state, intervalConfig: config, interval: { config, startedAt: action.now } };
     }
@@ -3315,6 +3315,14 @@ export function reducer(state: AppState, action: Action): AppState {
       const f = finisherFromRun(state.interval, action.now, action.rounds);
       const cleared = { ...state, interval: null };
       return f && state.active ? mapActive(cleared, (w) => withFinisher(w, f)) : cleared;
+    }
+    case 'SAVE_FINISHER_AS_WORKOUT': {
+      // En finisher uden træning (#332) gemmes som en kort træning med navnet på typen
+      if (!state.interval) return state;
+      const workout = finisherWorkout(state.interval, action.now, action.rounds);
+      const cleared = { ...state, interval: null };
+      if (!workout) return cleared;
+      return { ...cleared, history: [workout, ...state.history].sort((a, b) => b.startedAt - a.startedAt) };
     }
     case 'REMOVE_FINISHER': {
       const drop = (w: Workout): Workout =>
@@ -3874,10 +3882,10 @@ export function loadState(raw: string | null): AppState {
       trainingDays: cleanTrainingDays(parsed.trainingDays),
       // Ugentlige sætmål fra før #300 findes ikke – standardmålene bruges
       setTargets: setTargetsOf(parsed),
-      // Intervaltimeren fra før #330 findes ikke; en kørende timer kræver en træning i gang
+      // Intervaltimeren fra før #330 findes ikke; en kørende timer kan også køre uden træning (#332)
       intervalConfig: cleanIntervalConfig(parsed.intervalConfig ?? INTERVAL_DEFAULTS.emom),
       interval:
-        parsed.active && parsed.interval && typeof parsed.interval.startedAt === 'number'
+        parsed.interval && typeof parsed.interval.startedAt === 'number'
           ? { config: cleanIntervalConfig(parsed.interval.config), startedAt: parsed.interval.startedAt }
           : null,
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
@@ -4202,4 +4210,24 @@ export function finisherLabel(f: Finisher): string {
 
 function withFinisher(w: Workout, f: Finisher): Workout {
   return { ...w, finishers: [...(w.finishers ?? []), f] };
+}
+
+/** Navn på en træning, der kun er en finisher (#332) */
+export const FINISHER_WORKOUT_NAMES: Record<IntervalMode, string> = { emom: 'EMOM', tabata: 'Tabata', amrap: 'AMRAP' };
+
+/**
+ * En afsluttet træning uden øvelser med kun finisheren (#332). Den tæller i kalender, stime og måned som enhver
+ * anden træning, men har ingen sæt – så den rører hverken volumen eller rekorder. null = for kort til at gemme.
+ */
+export function finisherWorkout(run: IntervalRun, now: number, rounds?: number | null): Workout | null {
+  const f = finisherFromRun(run, now, rounds);
+  if (!f) return null;
+  return {
+    id: uid(),
+    name: FINISHER_WORKOUT_NAMES[f.config.mode],
+    startedAt: run.startedAt,
+    finishedAt: run.startedAt + f.seconds * 1000,
+    exercises: [],
+    finishers: [f],
+  };
 }
