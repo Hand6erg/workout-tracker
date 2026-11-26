@@ -4,6 +4,7 @@ import {
   restSummary,
   typicalRest,
   weekPlan,
+  weekPlanNudge,
   roundRestTo15,
   actualRestBefore,
   yearReview,
@@ -4292,6 +4293,16 @@ describe('ugeplan (#322)', () => {
     expect(p.missing).toBe(1);
     expect(p.todayIsTrainingDay).toBe(true);
     expect(p.daysLeft).toBe(4);
+  });
+
+  it('påminder sidst på ugen kun når det stadig kan nås (#324)', () => {
+    const s = { ...reducer(initialState(), { type: 'SET_TRAINING_DAYS', days: [0, 2, 4, 6] }), history: [w(at(0), 'a'), w(at(2), 'b')] };
+    expect(weekPlanNudge(weekPlan(s, at(2, 20)))).toBeNull(); // onsdag: for tidligt
+    expect(weekPlanNudge(weekPlan(s, at(4, 9)))).toEqual({ missing: 2, daysAvailable: 3 }); // fredag, ikke trænet endnu
+    expect(weekPlanNudge(weekPlan({ ...s, history: [...s.history, w(at(4), 'c')] }, at(4, 20)))).toEqual({ missing: 1, daysAvailable: 2 });
+    expect(weekPlanNudge(weekPlan(s, at(6, 9)))).toBeNull(); // søndag: 2 mangler, kun 1 dag
+    const done = { ...s, history: [...s.history, w(at(4), 'c'), w(at(5), 'd')] };
+    expect(weekPlanNudge(weekPlan(done, at(5, 20)))).toBeNull(); // planen er nået
   });
 
   it('ignorerer ugyldige dage og tom plan', () => {
