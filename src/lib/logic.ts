@@ -3950,3 +3950,183 @@ export function timeLeftEstimate(state: AppState, now: number): number | null {
   }
   return Math.max(1, Math.round(seconds / 60));
 }
+
+/* ---------- Intervaltimer til finishers (#329) ---------- */
+
+export type IntervalMode = 'emom' | 'tabata' | 'amrap';
+export const INTERVAL_MODES: IntervalMode[] = ['emom', 'tabata', 'amrap'];
+
+/**
+ * Indstillinger for en finisher. Alle felter findes altid (efter `cleanIntervalConfig`), men bruges efter tilstand:
+ * EMOM: `minutes` + `workSeconds` (arbejde pr. minut, 60 = hele minuttet). Tabata: `workSeconds`, `restSeconds`, `rounds`.
+ * AMRAP: `minutes`.
+ */
+export interface IntervalConfig {
+  mode: IntervalMode;
+  minutes: number;
+  workSeconds: number;
+  restSeconds: number;
+  rounds: number;
+}
+
+export const INTERVAL_DEFAULTS: Record<IntervalMode, IntervalConfig> = {
+  emom: { mode: 'emom', minutes: 10, workSeconds: 60, restSeconds: 0, rounds: 10 },
+  tabata: { mode: 'tabata', minutes: 4, workSeconds: 20, restSeconds: 10, rounds: 8 },
+  amrap: { mode: 'amrap', minutes: 12, workSeconds: 0, restSeconds: 0, rounds: 1 },
+};
+
+/** Grænser for felterne pr. tilstand: [min, max] */
+export const INTERVAL_LIMITS = {
+  minutes: [1, 60],
+  emomWorkSeconds: [10, 60],
+  workSeconds: [5, 300],
+  restSeconds: [0, 300],
+  rounds: [1, 50],
+} as const;
+
+function clampInt(v: unknown, [lo, hi]: readonly [number, number], fallback: number): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(hi, Math.max(lo, Math.round(n)));
+}
+
+/** Gør vilkårlige (gemte/indtastede) indstillinger gyldige: ukendt tilstand → EMOM, tal klemmes ind i grænserne. */
+export function cleanIntervalConfig(raw: unknown): IntervalConfig {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Partial<Record<keyof IntervalConfig, unknown>>;
+  const mode: IntervalMode = INTERVAL_MODES.includes(r.mode as IntervalMode) ? (r.mode as IntervalMode) : 'emom';
+  const d = INTERVAL_DEFAULTS[mode];
+  const minutes = clampInt(r.minutes, INTERVAL_LIMITS.minutes, d.minutes);
+  if (mode === 'emom') {
+    const workSeconds = clampInt(r.workSeconds, INTERVAL_LIMITS.emomWorkSeconds, d.workSeconds);
+    return { mode, minutes, workSeconds, restSeconds: 60 - workSeconds, rounds: minutes };
+  }
+  if (mode === 'tabata') {
+    const workSeconds = clampInt(r.workSeconds, INTERVAL_LIMITS.workSeconds, d.workSeconds);
+    const restSeconds = clampInt(r.restSeconds, INTERVAL_LIMITS.restSeconds, d.restSeconds);
+    const rounds = clampInt(r.rounds, INTERVAL_LIMITS.rounds, d.rounds);
+    const total = rounds * (workSeconds + restSeconds) - restSeconds;
+    return { mode, minutes: Math.max(1, Math.ceil(total / 60)), workSeconds, restSeconds, rounds };
+  }
+  return { mode, minutes, workSeconds: minutes * 60, restSeconds: 0, rounds: 1 };
+}
+
+export type IntervalPhase = 'work' | 'rest';
+
+interface IntervalSegment {
+  round: number;
+  phase: IntervalPhase;
+  start: number;
+  end: number;
+}
+
+/** Hele forløbet som faser i sekunder fra start. Tabata slutter på sidste arbejdsperiode (ingen pause bagefter). */
+function intervalSegments(config: IntervalConfig): IntervalSegment[] {
+  const c = cleanIntervalConfig(config);
+  const segs: IntervalSegment[] = [];
+  if (c.mode === 'amrap') return [{ round: 1, phase: 'work', start: 0, end: c.minutes * 60 }];
+  let t = 0;
+  for (let round = 1; round <= c.rounds; round++) {
+    segs.push({ round, phase: 'work', start: t, end: t + c.workSeconds });
+    t += c.workSeconds;
+    const last = round === c.rounds;
+    if (c.restSeconds > 0 && !(last && c.mode === 'tabata')) {
+      segs.push({ round, phase: 'rest', start: t, end: t + c.restSeconds });
+      t += c.restSeconds;
+    }
+  }
+  return segs;
+}
+
+/** Samlet varighed i sekunder */
+export function intervalTotalSeconds(config: IntervalConfig): number {
+  const segs = intervalSegments(config);
+  return segs[segs.length - 1].end;
+}
+
+export interface IntervalStatus {
+  round: number;
+  rounds: number;
+  phase: IntervalPhase;
+  /** Hele sekunder tilbage af den aktuelle fase (rundet op) */
+  phaseLeft: number;
+  /** Hele sekunder tilbage i alt (rundet op) */
+  totalLeft: number;
+  /** Sekunder gået siden start */
+  elapsed: number;
+  done: boolean;
+}
+
+/** Hvor er vi i forløbet? Beregnes kun ud fra tidsstempler, så den er rigtig, også efter at skærmen har været slukket. */
+export function intervalStatus(config: IntervalConfig, startedAt: number, now: number): IntervalStatus {
+  const segs = intervalSegments(config);
+  const total = segs[segs.length - 1].end;
+  const rounds = segs[segs.length - 1].round;
+  const elapsed = Math.max(0, (now - startedAt) / 1000);
+  if (elapsed >= total) {
+    const last = segs[segs.length - 1];
+    return { round: last.round, rounds, phase: last.phase, phaseLeft: 0, totalLeft: 0, elapsed: total, done: true };
+  }
+  const seg = segs.find((s) => elapsed < s.end) ?? segs[segs.length - 1];
+  return {
+    round: seg.round,
+    rounds,
+    phase: seg.phase,
+    phaseLeft: Math.ceil(seg.end - elapsed),
+    totalLeft: Math.ceil(total - elapsed),
+    elapsed,
+    done: false,
+  };
+}
+
+/** `count` = kort bip 3-2-1 før et faseskift, `phase` = ny fase starter, `end` = langt bip, finisheren er slut. */
+export type IntervalCueKind = 'count' | 'phase' | 'end';
+export interface IntervalCue {
+  /** Sekunder fra start */
+  at: number;
+  kind: IntervalCueKind;
+}
+
+/** Alle bip i forløbet, sorteret efter tid */
+export function intervalCueTimeline(config: IntervalConfig): IntervalCue[] {
+  const segs = intervalSegments(config);
+  const total = segs[segs.length - 1].end;
+  const cues: IntervalCue[] = [];
+  for (const s of segs) {
+    for (let k = 3; k >= 1; k--) {
+      const at = s.end - k;
+      if (at > s.start) cues.push({ at, kind: 'count' });
+    }
+    cues.push({ at: s.end, kind: s.end === total ? 'end' : 'phase' });
+  }
+  return cues;
+}
+
+/** Længere spring end dette mellem to tik (fx skærm slukket) giver kun det seneste bip, ikke en hel stribe. */
+export const INTERVAL_CUE_CATCHUP_S = 2;
+
+/**
+ * Hvilke bip skal gives mellem to tik? Et bip hører til tikket, hvor dets tidspunkt ligger i (prevNow, now],
+ * så intet bip gives to gange eller springes over. Efter et langt spring gives kun det seneste.
+ */
+export function intervalCues(config: IntervalConfig, startedAt: number, prevNow: number, now: number): IntervalCue[] {
+  if (now <= prevNow) return [];
+  const from = (prevNow - startedAt) / 1000;
+  const to = (now - startedAt) / 1000;
+  const due = intervalCueTimeline(config).filter((c) => c.at > from && c.at <= to);
+  if (to - from > INTERVAL_CUE_CATCHUP_S && due.length > 1) return [due[due.length - 1]];
+  return due;
+}
+
+/** Dansk tekst til en finisher, fx "EMOM 10 min", "Tabata 8 × 20/10 s", "AMRAP 12 min · 7 runder". */
+export function describeFinisher(config: IntervalConfig, rounds?: number | null): string {
+  const c = cleanIntervalConfig(config);
+  const base =
+    c.mode === 'emom'
+      ? `EMOM ${c.minutes} min`
+      : c.mode === 'tabata'
+        ? `Tabata ${c.rounds} × ${c.workSeconds}/${c.restSeconds} s`
+        : `AMRAP ${c.minutes} min`;
+  if (rounds == null || !Number.isFinite(rounds) || rounds < 0) return base;
+  const n = Math.round(rounds);
+  return `${base} · ${n} ${n === 1 ? 'runde' : 'runder'}`;
+}
