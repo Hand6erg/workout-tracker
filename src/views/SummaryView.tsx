@@ -3,6 +3,7 @@ import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, restSumma
 import { shareSummaryImage } from '../lib/shareImage';
 import { useStore } from '../lib/store';
 import { formatRest } from '../components/RestPicker';
+import { FinisherList } from '../components/IntervalTimer';
 
 /** Opsummering lige efter "Afslut" (#143) */
 export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
@@ -54,6 +55,13 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
             Længst pause: {exerciseById(rest.longest.exerciseId)?.name ?? 'Ukendt øvelse'} ({formatRest(rest.longest.seconds)})
           </small>
         </p>
+      )}
+
+      {!!w?.finishers?.length && (
+        <section className="card summary-finishers" aria-label="Finisher">
+          <h2>⏱ Finisher</h2>
+          <FinisherList finishers={w.finishers} />
+        </section>
       )}
 
       {newBadges.length > 0 && (

@@ -6,8 +6,10 @@ import type {
   Equipment,
   Exercise,
   ExerciseKind,
+  Finisher,
   IntervalConfig,
   IntervalMode,
+  IntervalRun,
   LiftGoal,
   Muscle,
   SetEntry,
@@ -2831,6 +2833,8 @@ export type Action =
   | { type: 'SET_INTERVAL_CONFIG'; config: IntervalConfig }
   | { type: 'START_INTERVAL'; config: IntervalConfig; now: number }
   | { type: 'STOP_INTERVAL' }
+  | { type: 'SAVE_FINISHER'; now: number; rounds?: number | null }
+  | { type: 'REMOVE_FINISHER'; finisherId: string; workoutId?: string }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
   /** Gem/ryd en testet 1RM for en øvelse (#250). `weight` mangler eller ≤ 0 = ryd */
@@ -3015,7 +3019,7 @@ export function reducer(state: AppState, action: Action): AppState {
           return { ...e, sets: e.sets.filter((s) => s.done || isSetFilled(s, kind)).map((s) => ({ ...s, done: true })) };
         })
         .filter((e) => e.sets.length > 0);
-      if (!exercises.length) return state; // en tom træning gemmes ikke – brug "Slet" i stedet
+      if (!exercises.length && !draft.finishers?.length) return state; // en tom træning gemmes ikke – brug "Slet" i stedet
       const saved: Workout = { ...draft, name: draft.name.trim(), exercises: normalizeSupersets(exercises) };
       const history = state.history.map((w) => (w.id === saved.id ? saved : w)).sort((a, b) => b.startedAt - a.startedAt);
       return { ...state, history, editing: null };
@@ -3055,8 +3059,12 @@ export function reducer(state: AppState, action: Action): AppState {
       return state.lastFinishedId ? { ...state, lastFinishedId: null } : state;
     case 'FINISH_WORKOUT': {
       if (!state.active) return state;
+      // En kørende finisher gemmes med (#331), hvis mindst én runde er lavet
+      const running = state.interval ? finisherFromRun(state.interval, action.now) : null;
+      const active = running ? withFinisher(state.active, running) : state.active;
+      const finishers = active.finishers ?? [];
       // Kørende stopure stoppes, så tiden kommer med
-      const exercises = state.active.exercises
+      const exercises = active.exercises
         .map((e) => ({ ...e, sets: e.sets.map((s) => stopTimer(s, action.now)) }))
         .map((e) => {
           const kind = exerciseKind(state, e.exerciseId);
@@ -3068,9 +3076,9 @@ export function reducer(state: AppState, action: Action): AppState {
           };
         })
         .filter((e) => e.sets.length > 0);
-      if (!exercises.length) return { ...state, active: null, rest: null, interval: null, lastFinishedId: null };
+      if (!exercises.length && !finishers.length) return { ...state, active: null, rest: null, interval: null, lastFinishedId: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
-      const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
+      const done: Workout = { ...endPause(active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
       return {
         ...state,
         active: null,
@@ -3301,6 +3309,22 @@ export function reducer(state: AppState, action: Action): AppState {
     }
     case 'STOP_INTERVAL':
       return state.interval ? { ...state, interval: null } : state;
+    case 'SAVE_FINISHER': {
+      // Gem den kørende finisher på træningen (#331). For kort (ingen hel runde) → intet gemmes.
+      if (!state.interval) return state;
+      const f = finisherFromRun(state.interval, action.now, action.rounds);
+      const cleared = { ...state, interval: null };
+      return f && state.active ? mapActive(cleared, (w) => withFinisher(w, f)) : cleared;
+    }
+    case 'REMOVE_FINISHER': {
+      const drop = (w: Workout): Workout =>
+        w.finishers?.some((f) => f.id === action.finisherId) ? { ...w, finishers: w.finishers.filter((f) => f.id !== action.finisherId) } : w;
+      if (!action.workoutId) return mapActive(state, drop);
+      const target = state.history.find((w) => w.id === action.workoutId);
+      if (!target) return state;
+      const next = drop(target);
+      return next === target ? state : { ...state, history: state.history.map((w) => (w === target ? next : w)) };
+    }
     case 'SKIP_REST':
       return { ...state, rest: null };
     case 'SET_REST_SECONDS':
@@ -3895,6 +3919,10 @@ export function toCsv(state: AppState): string {
         rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load, mark]);
       });
     }
+    // Finishers (#331): én række hver, med beskrivelsen som "Øvelse" og tiden i "Sek."
+    (w.finishers ?? []).forEach((f, i) => {
+      rows.push([date, w.name, finisherLabel(f), String(i + 1), '', f.rounds != null ? String(f.rounds) : '', '', String(f.seconds), '', '', 'Finisher']);
+    });
   }
   return rows.map((r) => r.map(esc).join(',')).join('\n');
 }
@@ -4139,4 +4167,39 @@ export function describeFinisher(config: IntervalConfig, rounds?: number | null)
   if (rounds == null || !Number.isFinite(rounds) || rounds < 0) return base;
   const n = Math.round(rounds);
   return `${base} · ${n} ${n === 1 ? 'runde' : 'runder'}`;
+}
+
+/* ---------- Gemte finishers (#331) ---------- */
+
+/** En stoppet AMRAP gemmes kun, hvis den har kørt mindst så længe (sekunder) */
+export const AMRAP_MIN_SAVE_SECONDS = 60;
+
+/**
+ * Finisheren, som den kørende intervaltimer svarer til ved `now`. EMOM og Tabata tæller kun hele runder
+ * (arbejdet i runden er lavet); en stoppet EMOM på 4 af 10 min gemmes som "EMOM 4 min". null = intet at gemme.
+ */
+export function finisherFromRun(run: IntervalRun, now: number, rounds?: number | null): Finisher | null {
+  const config = cleanIntervalConfig(run.config);
+  const s = intervalStatus(config, run.startedAt, now);
+  const seconds = Math.floor(s.elapsed);
+  const base = { id: uid(), seconds, at: now };
+  if (config.mode === 'amrap') {
+    if (!s.done && seconds < AMRAP_MIN_SAVE_SECONDS) return null;
+    const r = rounds != null && Number.isFinite(rounds) && rounds >= 0 ? Math.min(999, Math.round(rounds)) : undefined;
+    const minutes = s.done ? config.minutes : Math.max(1, Math.floor(seconds / 60));
+    return { ...base, config: cleanIntervalConfig({ ...config, minutes }), ...(r !== undefined ? { rounds: r } : {}) };
+  }
+  const completed = s.done ? s.rounds : s.phase === 'rest' ? s.round : s.round - 1;
+  if (completed < 1) return null;
+  const done = config.mode === 'emom' ? { ...config, minutes: completed } : { ...config, rounds: completed };
+  return { ...base, config: cleanIntervalConfig(done) };
+}
+
+/** "EMOM 10 min", "Tabata 8 × 20/10 s" eller "AMRAP 12 min · 7 runder" */
+export function finisherLabel(f: Finisher): string {
+  return describeFinisher(f.config, f.config.mode === 'amrap' ? f.rounds : null);
+}
+
+function withFinisher(w: Workout, f: Finisher): Workout {
+  return { ...w, finishers: [...(w.finishers ?? []), f] };
 }

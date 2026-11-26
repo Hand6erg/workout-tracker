@@ -81,6 +81,8 @@ export interface Workout {
   repeatOf?: string;
   /** Hvornår træningen sidst blev rettet efter den var afsluttet (til fletning mellem enheder, #91) */
   updatedAt?: number;
+  /** Finishers fra intervaltimeren (#331), fx "EMOM 10 min". Mangler i gamle data. */
+  finishers?: Finisher[];
 }
 
 export interface TemplateExercise {
@@ -153,6 +155,19 @@ export interface IntervalConfig {
   workSeconds: number;
   restSeconds: number;
   rounds: number;
+}
+
+/** En gemt finisher på en træning (#331) */
+export interface Finisher {
+  id: string;
+  /** Det, der faktisk blev lavet (en stoppet EMOM på 4 af 10 min gemmes som "EMOM 4 min") */
+  config: IntervalConfig;
+  /** AMRAP: antal runder (valgfrit) */
+  rounds?: number;
+  /** Tid brugt i sekunder */
+  seconds: number;
+  /** Hvornår den blev gemt (ms) */
+  at: number;
 }
 
 /** En kørende intervaltimer (#330). Kun på denne enhed. */

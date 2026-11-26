@@ -3,6 +3,7 @@ import { MonthCalendar } from '../components/MonthCalendar';
 import { MonthRecapCard } from '../components/MonthRecap';
 import { YearReviewSection } from '../components/YearReview';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
+import { FinisherList } from '../components/IntervalTimer';
 import {
   bestSet,
   formatDuration,
@@ -22,6 +23,7 @@ import {
   formatRpe,
   actualRests,
   formatClock,
+  finisherLabel,
 } from '../lib/logic';
 import { useStore } from '../lib/store';
 import type { Workout } from '../lib/types';
@@ -145,6 +147,11 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
                     </tr>
                   );
                 })}
+                {(w.finishers ?? []).map((f) => (
+                  <tr key={f.id} className="finisher-row">
+                    <td colSpan={2}>⏱ {finisherLabel(f)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
             {supersetGroups(w.exercises)
@@ -240,6 +247,10 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
           </ol>
         </section>
       ))}
+      <FinisherList
+        finishers={w.finishers}
+        onRemove={(finisherId) => dispatch({ type: 'REMOVE_FINISHER', workoutId: w.id, finisherId })}
+      />
     </Modal>
   );
 }

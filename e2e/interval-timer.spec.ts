@@ -95,3 +95,47 @@ test('timeren tæller rigtigt efter skærmen har været slukket og kan skjules o
   await page.clock.fastForward(200_000);
   await expect(page.getByRole('button', { name: /Vis intervaltimer/ })).toContainText('Intervaltimer færdig');
 });
+
+test('EMOM gemmes på træningen og vises på opsummeringen og i Historik (#331)', async ({ page }) => {
+  await page.getByRole('button', { name: 'Start Push' }).click();
+  const workout = page.getByRole('region', { name: 'Aktiv træning' });
+  await workout.getByRole('button', { name: '⏱ Intervaltimer' }).click();
+  const sheet = page.getByRole('dialog', { name: 'Intervaltimer' });
+  await sheet.getByRole('button', { name: 'EMOM' }).click();
+  await sheet.getByLabel('Minutter').fill('3');
+  await sheet.getByRole('button', { name: 'Start' }).click();
+  await page.clock.runFor(181_000);
+  await expect(sheet.getByText('Færdig! 💪')).toBeVisible();
+  await sheet.getByRole('button', { name: 'Gem i træningen' }).click();
+  await expect(sheet).toBeHidden();
+
+  const list = workout.getByRole('list', { name: 'Finishers' });
+  await expect(list).toContainText('EMOM 3 min');
+
+  // AMRAP stoppet efter 2 min spørger om runder
+  await workout.getByRole('button', { name: '⏱ Intervaltimer' }).click();
+  await sheet.getByRole('button', { name: 'AMRAP' }).click();
+  await sheet.getByRole('button', { name: 'Start' }).click();
+  await page.clock.runFor(125_000);
+  await sheet.getByRole('button', { name: 'Stop' }).click();
+  await sheet.getByLabel('Antal runder').fill('4');
+  await sheet.getByRole('button', { name: 'Gem i træningen' }).click();
+  await expect(list).toContainText('AMRAP 2 min · 4 runder');
+
+  // Fjern kræver bekræftelse
+  await list.getByRole('button', { name: 'Fjern' }).last().click();
+  await list.getByRole('button', { name: 'Fjern?' }).click();
+  await expect(list).not.toContainText('AMRAP');
+
+  // Træningen kan afsluttes med kun en finisher
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  await expect(summary.getByRole('region', { name: 'Finisher' })).toContainText('EMOM 3 min');
+  await summary.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Historik' }).click();
+  await expect(page.getByRole('button', { name: 'Træning Push' })).toContainText(/EMOM \d+ min/);
+  await page.getByRole('button', { name: 'Træning Push' }).click();
+  await expect(page.getByRole('dialog', { name: 'Push' }).getByRole('list', { name: 'Finishers' })).toContainText('EMOM 3 min');
+});
