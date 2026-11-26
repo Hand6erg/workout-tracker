@@ -1,3 +1,4 @@
+import { CuesSection } from '../components/CuesSection';
 import { StrengthChart } from '../components/StrengthChart';
 import { useMemo, useState } from 'react';
 import { GoalsSection } from '../components/GoalsSection';
@@ -184,6 +185,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
         </p>
         <FavoriteButton exerciseId={ex.id} big />
       </div>
+      <CuesSection exerciseId={ex.id} />
       <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
         <h3 className="section">⏱ Pause mellem sæt</h3>
         <RestControls exerciseId={ex.id} />
