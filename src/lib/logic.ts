@@ -6,6 +6,8 @@ import type {
   Equipment,
   Exercise,
   ExerciseKind,
+  IntervalConfig,
+  IntervalMode,
   LiftGoal,
   Muscle,
   SetEntry,
@@ -37,6 +39,7 @@ export function initialState(): AppState {
     editing: null,
     lastFinishedId: null,
     rest: null,
+    interval: null,
     restSeconds: 90,
     barWeight: DEFAULT_BAR,
     plates: [...DEFAULT_PLATES],
@@ -2825,6 +2828,9 @@ export type Action =
   | { type: 'SET_EDIT_TIMING'; startedAt: number; durationMin: number; now: number }
   | { type: 'ADJUST_REST'; delta: number }
   | { type: 'SKIP_REST' }
+  | { type: 'SET_INTERVAL_CONFIG'; config: IntervalConfig }
+  | { type: 'START_INTERVAL'; config: IntervalConfig; now: number }
+  | { type: 'STOP_INTERVAL' }
   | { type: 'SET_REST_SECONDS'; seconds: number }
   | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
   /** Gem/ryd en testet 1RM for en øvelse (#250). `weight` mangler eller ≤ 0 = ryd */
@@ -3044,7 +3050,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, active, rest: null, lastFinishedId: null };
     }
     case 'CANCEL_WORKOUT':
-      return { ...state, active: null, rest: null };
+      return { ...state, active: null, rest: null, interval: null };
     case 'CLOSE_SUMMARY':
       return state.lastFinishedId ? { ...state, lastFinishedId: null } : state;
     case 'FINISH_WORKOUT': {
@@ -3062,13 +3068,14 @@ export function reducer(state: AppState, action: Action): AppState {
           };
         })
         .filter((e) => e.sets.length > 0);
-      if (!exercises.length) return { ...state, active: null, rest: null, lastFinishedId: null };
+      if (!exercises.length) return { ...state, active: null, rest: null, interval: null, lastFinishedId: null };
       // Hvis en øvelse i et supersæt ikke blev lavet, kan supersættet være opløst
       const done: Workout = { ...endPause(state.active, action.now), exercises: normalizeSupersets(exercises), finishedAt: action.now };
       return {
         ...state,
         active: null,
         rest: null,
+        interval: null,
         history: [done, ...state.history],
         lastFinishedId: done.id,
         goals: markGoalsReached(state.goals ?? [], done),
@@ -3284,6 +3291,16 @@ export function reducer(state: AppState, action: Action): AppState {
       const endsAt = state.rest.endsAt + action.delta * 1000;
       return { ...state, rest: { endsAt, total: Math.max(1, state.rest.total + action.delta) } };
     }
+    case 'SET_INTERVAL_CONFIG':
+      return { ...state, intervalConfig: cleanIntervalConfig(action.config) };
+    case 'START_INTERVAL': {
+      // Kun under en træning; indstillingerne huskes til næste gang (#330)
+      if (!state.active) return state;
+      const config = cleanIntervalConfig(action.config);
+      return { ...state, intervalConfig: config, interval: { config, startedAt: action.now } };
+    }
+    case 'STOP_INTERVAL':
+      return state.interval ? { ...state, interval: null } : state;
     case 'SKIP_REST':
       return { ...state, rest: null };
     case 'SET_REST_SECONDS':
@@ -3755,8 +3772,8 @@ export function trackedReducer(state: AppState, action: Action & { at?: number }
 }
 
 /** Det, der sendes til serveren (pausetimeren og en kladde under redigering hører kun til denne enhed). */
-export function syncPayload(state: AppState): Omit<AppState, 'rest' | 'editing' | 'lastFinishedId'> {
-  const { rest: _rest, editing: _editing, lastFinishedId: _last, ...rest } = state;
+export function syncPayload(state: AppState): Omit<AppState, 'rest' | 'editing' | 'lastFinishedId' | 'interval'> {
+  const { rest: _rest, editing: _editing, lastFinishedId: _last, interval: _interval, ...rest } = state;
   return rest;
 }
 
@@ -3833,6 +3850,12 @@ export function loadState(raw: string | null): AppState {
       trainingDays: cleanTrainingDays(parsed.trainingDays),
       // Ugentlige sætmål fra før #300 findes ikke – standardmålene bruges
       setTargets: setTargetsOf(parsed),
+      // Intervaltimeren fra før #330 findes ikke; en kørende timer kræver en træning i gang
+      intervalConfig: cleanIntervalConfig(parsed.intervalConfig ?? INTERVAL_DEFAULTS.emom),
+      interval:
+        parsed.active && parsed.interval && typeof parsed.interval.startedAt === 'number'
+          ? { config: cleanIntervalConfig(parsed.interval.config), startedAt: parsed.interval.startedAt }
+          : null,
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
       lastFinishedId: null,
     } as AppState;
@@ -3953,21 +3976,8 @@ export function timeLeftEstimate(state: AppState, now: number): number | null {
 
 /* ---------- Intervaltimer til finishers (#329) ---------- */
 
-export type IntervalMode = 'emom' | 'tabata' | 'amrap';
 export const INTERVAL_MODES: IntervalMode[] = ['emom', 'tabata', 'amrap'];
-
-/**
- * Indstillinger for en finisher. Alle felter findes altid (efter `cleanIntervalConfig`), men bruges efter tilstand:
- * EMOM: `minutes` + `workSeconds` (arbejde pr. minut, 60 = hele minuttet). Tabata: `workSeconds`, `restSeconds`, `rounds`.
- * AMRAP: `minutes`.
- */
-export interface IntervalConfig {
-  mode: IntervalMode;
-  minutes: number;
-  workSeconds: number;
-  restSeconds: number;
-  rounds: number;
-}
+export type { IntervalConfig, IntervalMode };
 
 export const INTERVAL_DEFAULTS: Record<IntervalMode, IntervalConfig> = {
   emom: { mode: 'emom', minutes: 10, workSeconds: 60, restSeconds: 0, rounds: 10 },

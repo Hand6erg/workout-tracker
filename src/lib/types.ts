@@ -139,6 +139,28 @@ export interface LiftGoal {
 /** Farvetema (#293) */
 export type Theme = 'dark' | 'light' | 'system';
 
+/** Intervaltimer til finishers (#329) */
+export type IntervalMode = 'emom' | 'tabata' | 'amrap';
+
+/**
+ * Indstillinger for en finisher. Alle felter findes altid (efter `cleanIntervalConfig`), men bruges efter tilstand:
+ * EMOM: `minutes` + `workSeconds` (arbejde pr. minut, 60 = hele minuttet). Tabata: `workSeconds`, `restSeconds`, `rounds`.
+ * AMRAP: `minutes`.
+ */
+export interface IntervalConfig {
+  mode: IntervalMode;
+  minutes: number;
+  workSeconds: number;
+  restSeconds: number;
+  rounds: number;
+}
+
+/** En kørende intervaltimer (#330). Kun på denne enhed. */
+export interface IntervalRun {
+  config: IntervalConfig;
+  startedAt: number;
+}
+
 export interface AppState {
   version: 1;
   exercises: Exercise[];
@@ -150,6 +172,10 @@ export interface AppState {
   /** Træningen, der lige er afsluttet – dens opsummering vises (#142). Kun på denne enhed og nulstilles ved genindlæsning. */
   lastFinishedId?: string | null;
   rest: RestTimer | null;
+  /** Kørende intervaltimer (#330) – kun på denne enhed, ligesom pausetimeren */
+  interval?: IntervalRun | null;
+  /** Senest brugte intervaltimer-indstillinger (#330) */
+  intervalConfig?: IntervalConfig;
   restSeconds: number;
   /** Stangvægt i kg til pladeberegner og opvarmning */
   barWeight: number;

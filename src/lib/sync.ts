@@ -42,7 +42,7 @@ export interface Remote {
 export function readRemote(body: unknown): Remote | null {
   const b = body as { state?: { version?: unknown }; version?: unknown } | null;
   if (!b || !Number.isInteger(b.version) || !b.state || b.state.version !== 1) return null;
-  return { state: { ...loadState(JSON.stringify(b.state)), rest: null }, version: b.version as number };
+  return { state: { ...loadState(JSON.stringify(b.state)), rest: null, interval: null }, version: b.version as number };
 }
 
 export type PutResult =
@@ -207,7 +207,7 @@ export class SyncEngine {
       } else {
         // Ingen ventende ændringer her: serverens udgave er den nyeste
         const local = this.d.getState();
-        this.d.replaceState({ ...r.remote.state, rest: local.rest });
+        this.d.replaceState({ ...r.remote.state, rest: local.rest, interval: local.interval ?? null });
         this.skipNextChange = true;
         this.setMeta({ version: r.remote.version, savedAt: this.now() });
         this.status({ kind: 'saved', at: this.meta.savedAt! });
@@ -236,7 +236,7 @@ export class SyncEngine {
   async resolve(choice: Choice, remote: Remote): Promise<void> {
     this.choosing = false;
     if (choice === 'online') {
-      this.d.replaceState({ ...remote.state, rest: this.d.getState().rest });
+      this.d.replaceState({ ...remote.state, rest: this.d.getState().rest, interval: this.d.getState().interval ?? null });
       this.setMeta({ version: remote.version, dirty: false, savedAt: this.now() });
       this.skipNextChange = true;
       this.status({ kind: 'saved', at: this.meta.savedAt! });

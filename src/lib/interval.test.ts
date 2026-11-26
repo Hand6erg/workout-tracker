@@ -6,6 +6,10 @@ import {
   intervalCues,
   intervalStatus,
   intervalTotalSeconds,
+  initialState,
+  loadState,
+  reducer,
+  syncPayload,
   type IntervalCue,
 } from './logic';
 
@@ -97,5 +101,40 @@ describe('intervaltimer (#329)', () => {
     expect(describeFinisher(INTERVAL_DEFAULTS.tabata)).toBe('Tabata 8 × 20/10 s');
     expect(describeFinisher(cleanIntervalConfig({ mode: 'amrap', minutes: 12 }), 7)).toBe('AMRAP 12 min · 7 runder');
     expect(describeFinisher(INTERVAL_DEFAULTS.amrap, 1)).toBe('AMRAP 12 min · 1 runde');
+  });
+});
+
+describe('intervaltimer i træningen (#330)', () => {
+  const started = () => reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+
+  it('starter kun under en træning, husker indstillingerne og stoppes', () => {
+    expect(reducer(initialState(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.tabata, now: T0 }).interval ?? null).toBeNull();
+    let s = reducer(started(), { type: 'START_INTERVAL', config: { ...INTERVAL_DEFAULTS.tabata, rounds: 99 }, now: at(5) });
+    expect(s.interval).toEqual({ config: { ...INTERVAL_DEFAULTS.tabata, rounds: 50, minutes: 25 }, startedAt: at(5) });
+    expect(s.intervalConfig).toMatchObject({ mode: 'tabata', rounds: 50 });
+    s = reducer(s, { type: 'STOP_INTERVAL' });
+    expect(s.interval).toBeNull();
+    expect(s.intervalConfig?.mode).toBe('tabata');
+  });
+
+  it('stoppes, når træningen afsluttes eller annulleres', () => {
+    const s = reducer(started(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.emom, now: T0 });
+    expect(reducer(s, { type: 'CANCEL_WORKOUT' }).interval).toBeNull();
+    expect(reducer(s, { type: 'FINISH_WORKOUT', now: at(60) }).interval).toBeNull();
+  });
+
+  it('gamle data uden intervaltimer indlæses, og en kørende timer overlever genindlæsning', () => {
+    const old = { ...initialState() } as Partial<ReturnType<typeof initialState>>;
+    delete old.interval;
+    delete old.intervalConfig;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.interval).toBeNull();
+    expect(loaded.intervalConfig).toEqual(INTERVAL_DEFAULTS.emom);
+    const s = reducer(started(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.tabata, now: T0 });
+    expect(loadState(JSON.stringify(s)).interval).toEqual(s.interval);
+    // uden træning i gang ingen timer
+    expect(loadState(JSON.stringify({ ...s, active: null })).interval).toBeNull();
+    // den sendes ikke online
+    expect('interval' in syncPayload(s)).toBe(false);
   });
 });

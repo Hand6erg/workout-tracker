@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { restAlertDue, type RestAlert, type RestAlertsFired } from './logic';
+import { intervalCues, restAlertDue, type IntervalCueKind, type RestAlert, type RestAlertsFired } from './logic';
 import { useStore } from './store';
 
 /* Pausealarm (#80): vibration og bip med browserens egne funktioner. Gør ingenting, hvor de ikke findes. */
@@ -34,7 +34,7 @@ export function vibrate(pattern: number | number[]) {
   }
 }
 
-export function beep() {
+export function beep(freq = 880, seconds = 0.5) {
   const ctx = getAudio();
   if (!ctx) return;
   try {
@@ -43,14 +43,14 @@ export function beep() {
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, t);
+    osc.frequency.setValueAtTime(freq, t);
     gain.gain.setValueAtTime(0.0001, t);
     gain.gain.exponentialRampToValueAtTime(0.4, t + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + seconds);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(t);
-    osc.stop(t + 0.55);
+    osc.stop(t + seconds + 0.05);
   } catch {
     /* ikke understøttet */
   }
@@ -97,4 +97,39 @@ export function useRestAlerts() {
     const t = setInterval(check, 250);
     return () => clearInterval(t);
   }, [rest]);
+}
+
+/** Bip og vibration for intervaltimeren (#330) – samme lyd- og vibrationsindstillinger som pausealarmen */
+export function playIntervalCue(kind: IntervalCueKind, opts: { sound: boolean; vibrate: boolean }) {
+  if (kind === 'count') {
+    if (opts.vibrate) vibrate(80);
+    if (opts.sound) beep(660, 0.15);
+  } else if (kind === 'phase') {
+    if (opts.vibrate) vibrate(300);
+    if (opts.sound) beep(990, 0.4);
+  } else {
+    if (opts.vibrate) vibrate(DONE_VIBRATION);
+    if (opts.sound) beep(880, 1.2);
+  }
+}
+
+/** Giver intervaltimerens bip (3-2-1, faseskift, slut), mens den kører. Gamle bip (fx efter skærm slukket) springes over. */
+export function useIntervalCues() {
+  const { state } = useStore();
+  const settings = useRef({ sound: state.restSound, vibrate: state.restVibrate });
+  settings.current = { sound: state.restSound, vibrate: state.restVibrate };
+  const run = state.interval;
+
+  useEffect(() => {
+    if (!run) return;
+    let prev = Date.now();
+    const t = setInterval(() => {
+      const now = Date.now();
+      for (const cue of intervalCues(run.config, run.startedAt, prev, now)) {
+        if (now - (run.startedAt + cue.at * 1000) <= STALE_MS) playIntervalCue(cue.kind, settings.current);
+      }
+      prev = now;
+    }, 200);
+    return () => clearInterval(t);
+  }, [run]);
 }
