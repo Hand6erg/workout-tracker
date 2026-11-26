@@ -7,8 +7,12 @@ import {
   intervalStatus,
   intervalTotalSeconds,
   initialState,
+  finisherFromRun,
+  finisherLabel,
   loadState,
+  mergeStates,
   reducer,
+  toCsv,
   syncPayload,
   type IntervalCue,
 } from './logic';
@@ -136,5 +140,65 @@ describe('intervaltimer i træningen (#330)', () => {
     expect(loadState(JSON.stringify({ ...s, active: null })).interval).toBeNull();
     // den sendes ikke online
     expect('interval' in syncPayload(s)).toBe(false);
+  });
+});
+
+describe('finishers på træningen (#331)', () => {
+  const started = () => reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
+  const run = (config = INTERVAL_DEFAULTS.emom) => reducer(started(), { type: 'START_INTERVAL', config, now: T0 });
+
+  it('tæller kun hele runder; en stoppet EMOM gemmes med de minutter, der blev lavet', () => {
+    const emom = { config: cleanIntervalConfig({ mode: 'emom', minutes: 10 }), startedAt: T0 };
+    expect(finisherFromRun(emom, at(59), null)).toBeNull();
+    expect(finisherLabel(finisherFromRun(emom, at(250))!)).toBe('EMOM 4 min');
+    expect(finisherFromRun(emom, at(9999))).toMatchObject({ seconds: 600 });
+    expect(finisherLabel(finisherFromRun(emom, at(9999))!)).toBe('EMOM 10 min');
+    const tabata = { config: INTERVAL_DEFAULTS.tabata, startedAt: T0 };
+    // i pausen er rundens arbejde lavet
+    expect(finisherLabel(finisherFromRun(tabata, at(25))!)).toBe('Tabata 1 × 20/10 s');
+    expect(finisherLabel(finisherFromRun(tabata, at(230))!)).toBe('Tabata 8 × 20/10 s');
+    const amrap = { config: cleanIntervalConfig({ mode: 'amrap', minutes: 12 }), startedAt: T0 };
+    expect(finisherFromRun(amrap, at(30), 2)).toBeNull();
+    expect(finisherLabel(finisherFromRun(amrap, at(720), 7)!)).toBe('AMRAP 12 min · 7 runder');
+    expect(finisherLabel(finisherFromRun(amrap, at(300), 3)!)).toBe('AMRAP 5 min · 3 runder');
+    expect(finisherLabel(finisherFromRun(amrap, at(720), -2)!)).toBe('AMRAP 12 min');
+  });
+
+  it('SAVE_FINISHER gemmer på træningen og stopper timeren; REMOVE_FINISHER fjerner den', () => {
+    let s = reducer(run(), { type: 'SAVE_FINISHER', now: at(600) });
+    expect(s.interval).toBeNull();
+    expect(s.active!.finishers).toHaveLength(1);
+    expect(finisherLabel(s.active!.finishers![0])).toBe('EMOM 10 min');
+    // for kort: intet gemmes, men timeren stoppes
+    const short = reducer(run(), { type: 'SAVE_FINISHER', now: at(10) });
+    expect(short.interval).toBeNull();
+    expect(short.active!.finishers ?? []).toHaveLength(0);
+    s = reducer(s, { type: 'REMOVE_FINISHER', finisherId: s.active!.finishers![0].id });
+    expect(s.active!.finishers).toEqual([]);
+  });
+
+  it('afslut: finisheren kommer med i historikken, også uden øvelser, og en kørende timer gemmes', () => {
+    let s = reducer(run(cleanIntervalConfig({ mode: 'emom', minutes: 5 })), { type: 'FINISH_WORKOUT', now: at(185) });
+    expect(s.history).toHaveLength(1);
+    expect(s.history[0].exercises).toEqual([]);
+    expect(finisherLabel(s.history[0].finishers![0])).toBe('EMOM 3 min');
+    expect(s.lastFinishedId).toBe(s.history[0].id);
+    // fjern fra historikken
+    const id = s.history[0].finishers![0].id;
+    s = reducer(s, { type: 'REMOVE_FINISHER', workoutId: s.history[0].id, finisherId: id });
+    expect(s.history[0].finishers).toEqual([]);
+    // en tom træning uden finisher kasseres som før
+    expect(reducer(started(), { type: 'FINISH_WORKOUT', now: at(60) }).history).toHaveLength(0);
+  });
+
+  it('gamle træninger uden finishers indlæses; finishers overlever fletning og kommer med i CSV', () => {
+    const s = reducer(reducer(run(), { type: 'SAVE_FINISHER', now: at(600) }), { type: 'FINISH_WORKOUT', now: at(700) });
+    const old = JSON.parse(JSON.stringify(s));
+    delete old.history[0].finishers;
+    expect(loadState(JSON.stringify(old)).history[0].finishers).toBeUndefined();
+    expect(loadState(JSON.stringify(s)).history[0].finishers).toEqual(s.history[0].finishers);
+    const merged = mergeStates(initialState(), s);
+    expect(merged.history[0].finishers).toEqual(s.history[0].finishers);
+    expect(toCsv(s)).toContain('EMOM 10 min,1,,,,600,,,Finisher');
   });
 });

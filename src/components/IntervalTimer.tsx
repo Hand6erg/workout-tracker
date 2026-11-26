@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import {
+  AMRAP_MIN_SAVE_SECONDS,
   cleanIntervalConfig,
+  finisherLabel,
   formatDuration,
   INTERVAL_DEFAULTS,
   INTERVAL_LIMITS,
@@ -10,7 +12,8 @@ import {
   type IntervalMode,
 } from '../lib/logic';
 import { useNow, useStore } from '../lib/store';
-import { Modal } from './ui';
+import type { Finisher } from '../lib/types';
+import { ConfirmButton, Modal } from './ui';
 
 /* Intervaltimer til finishers (#330): EMOM, Tabata og AMRAP med stor nedtælling */
 
@@ -119,21 +122,38 @@ function IntervalSetup() {
 function IntervalRunning({ onClose }: { onClose: () => void }) {
   const { state, dispatch } = useStore();
   const now = useNow(true);
+  const [askRounds, setAskRounds] = useState(false);
   const run = state.interval!;
   const s = intervalStatus(run.config, run.startedAt, now);
-  const stop = () => {
-    dispatch({ type: 'STOP_INTERVAL' });
+  const amrap = run.config.mode === 'amrap';
+  // Gem på træningen (#331) – for kort (ingen hel runde) gemmes intet
+  const save = (rounds?: number | null) => {
+    dispatch({ type: 'SAVE_FINISHER', now: Date.now(), rounds });
     onClose();
   };
-  const label = run.config.mode === 'amrap' ? 'AMRAP' : `Runde ${s.round}/${s.rounds}`;
-  if (s.done) {
+  const stop = () => {
+    if (amrap && s.elapsed >= AMRAP_MIN_SAVE_SECONDS) setAskRounds(true);
+    else save();
+  };
+  const label = amrap ? 'AMRAP' : `Runde ${s.round}/${s.rounds}`;
+  if (s.done || askRounds) {
     return (
       <div className="interval-run done" role="status" aria-label="Nedtælling">
-        <p className="interval-big">Færdig! 💪</p>
-        <p className="muted">{clock(intervalTotalSeconds(run.config))} gennemført</p>
-        <button className="btn-primary wide" onClick={stop}>
-          Luk
-        </button>
+        <p className="interval-big">{s.done ? 'Færdig! 💪' : 'Stoppet'}</p>
+        <p className="muted">{clock(Math.floor(s.elapsed))} gennemført</p>
+        {amrap ? (
+          <RoundsForm onSave={save} />
+        ) : (
+          <button className="btn-primary wide" onClick={() => save()}>
+            Gem i træningen
+          </button>
+        )}
+        <ConfirmButton className="btn-ghost wide" confirmText="Kassér finisheren?" onConfirm={() => {
+          dispatch({ type: 'STOP_INTERVAL' });
+          onClose();
+        }}>
+          Luk uden at gemme
+        </ConfirmButton>
       </div>
     );
   }
@@ -152,6 +172,53 @@ function IntervalRunning({ onClose }: { onClose: () => void }) {
         Skjul
       </button>
     </div>
+  );
+}
+
+/** AMRAP: "Antal runder" før finisheren gemmes (#331) */
+function RoundsForm({ onSave }: { onSave: (rounds: number | null) => void }) {
+  const [rounds, setRounds] = useState('');
+  const n = rounds.trim() === '' ? null : Number(rounds);
+  return (
+    <form
+      className="stack"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave(n !== null && Number.isFinite(n) ? n : null);
+      }}
+    >
+      <label className="field">
+        <span>Antal runder</span>
+        <input type="number" inputMode="numeric" min={0} max={999} value={rounds} onChange={(e) => setRounds(e.target.value)} />
+      </label>
+      <button type="submit" className="btn-primary wide">
+        Gem i træningen
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Gemte finishers på en træning (#331). Med `onRemove` kan de fjernes (med bekræftelse).
+ */
+export function FinisherList({ finishers, onRemove }: { finishers?: Finisher[]; onRemove?: (id: string) => void }) {
+  if (!finishers?.length) return null;
+  return (
+    <ul className="finisher-list" aria-label="Finishers">
+      {finishers.map((f) => (
+        <li key={f.id} className="finisher-line">
+          <span>
+            <span aria-hidden>⏱ </span>
+            {finisherLabel(f)}
+          </span>
+          {onRemove && (
+            <ConfirmButton className="btn-ghost small" confirmText="Fjern?" onConfirm={() => onRemove(f.id)}>
+              Fjern
+            </ConfirmButton>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

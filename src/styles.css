@@ -665,3 +665,31 @@ button.year-cell { cursor: pointer; }
 .story-foot { display: flex; gap: 10px; max-width: 560px; width: 100%; margin: 0 auto; }
 .story-foot > * { flex: 1; }
 .story-share { margin-top: 18px; padding: 12px 22px; }
+
+/* Gemte finishers (#331) */
+.finisher-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.finisher-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  font-weight: 600;
+}
+.summary-finishers .finisher-line {
+  padding: 0;
+  background: none;
+}
+.mini .finisher-row td {
+  text-align: left;
+  color: var(--text);
+}

@@ -2,7 +2,7 @@ import { SetTargetRings } from '../components/SetTargets';
 import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { RestPicker, formatRest } from '../components/RestPicker';
-import { IntervalBar, IntervalButton } from '../components/IntervalTimer';
+import { FinisherList, IntervalBar, IntervalButton } from '../components/IntervalTimer';
 import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
@@ -104,7 +104,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         ) : (
           <ConfirmButton
             className="btn-primary"
-            confirmText={done ? 'Bekræft' : 'Intet udfyldt – kassér?'}
+            confirmText={done || w.finishers?.length ? 'Bekræft' : 'Intet udfyldt – kassér?'}
             onConfirm={() => finish(false)}
           >
             Afslut
@@ -120,6 +120,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         </p>
       )}
       <WorkoutBody top={vs?.started ? <VsLastBar vs={vs} /> : null}>
+        <FinisherList finishers={w.finishers} onRemove={(finisherId) => dispatch({ type: 'REMOVE_FINISHER', finisherId })} />
         <IntervalButton />
         <ConfirmButton className="btn-danger wide" onConfirm={() => dispatch({ type: 'CANCEL_WORKOUT' })}>
           Annullér træning
