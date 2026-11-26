@@ -185,6 +185,8 @@ export interface AppState {
   bodyWeight: number | null;
   /** Ugentligt mål for arbejdssæt pr. muskelgruppe (#300). null = slået fra for den muskel. */
   setTargets: Record<Muscle, number | null>;
+  /** Planlagte træningsdage (#322): 0 = mandag … 6 = søndag. Tom = ingen ugeplan. */
+  trainingDays: number[];
   /** Løftemål (#197) */
   goals: LiftGoal[];
   /** Program: skabelon-id'er i rækkefølge (tom = intet program, #106) */

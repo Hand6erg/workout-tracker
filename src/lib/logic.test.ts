@@ -3,6 +3,7 @@ import {
   actualRests,
   restSummary,
   typicalRest,
+  weekPlan,
   roundRestTo15,
   actualRestBefore,
   yearReview,
@@ -4271,5 +4272,50 @@ describe('reelle pauser (#315)', () => {
     expect(s.history).toHaveLength(1);
     expect(actualRests(s.history[0])).toEqual([]);
     expect(typicalRest(s, 'bench')).toBeNull();
+  });
+});
+
+describe('ugeplan (#322)', () => {
+  const at = (d: number, h = 17) => new Date(2026, 10, 16 + d, h).getTime(); // 16/11-2026 er en mandag
+  const w = (t: number, id: string) => ({ id, name: 'T', startedAt: t, finishedAt: t + 3_600_000, exercises: [] });
+
+  it('viser planlagte og trænede dage i ugen', () => {
+    let s = reducer(initialState(), { type: 'SET_TRAINING_DAYS', days: [4, 0, 2, 2] });
+    expect(s.trainingDays).toEqual([0, 2, 4]);
+    s = { ...s, history: [w(at(0), 'a'), w(at(0, 19), 'a2'), w(at(1), 'b'), w(at(-1), 'old')] };
+    const p = weekPlan(s, at(2, 9));
+    expect(p.days[0]).toMatchObject({ planned: true, done: true, today: false });
+    expect(p.days[1]).toMatchObject({ planned: false, done: true });
+    expect(p.days[2]).toMatchObject({ planned: true, done: false, today: true });
+    expect(p.plannedCount).toBe(3);
+    expect(p.doneCount).toBe(2);
+    expect(p.missing).toBe(1);
+    expect(p.todayIsTrainingDay).toBe(true);
+    expect(p.daysLeft).toBe(4);
+  });
+
+  it('ignorerer ugyldige dage og tom plan', () => {
+    const s = reducer(initialState(), { type: 'SET_TRAINING_DAYS', days: [7, -1, 1.5, 3] });
+    expect(s.trainingDays).toEqual([3]);
+    const empty = weekPlan(initialState(), at(3));
+    expect(empty.plannedCount).toBe(0);
+    expect(empty.todayIsTrainingDay).toBe(false);
+    expect(empty.missing).toBe(0);
+    expect(reducer(s, { type: 'SET_TRAINING_DAYS', days: [3] })).toBe(s);
+  });
+
+  it('gamle data uden ugeplan loader uændret', () => {
+    const old = { ...initialState(), history: [w(at(0), 'a')] } as Partial<AppState>;
+    delete old.trainingDays;
+    const s = loadState(JSON.stringify(old));
+    expect(s.trainingDays).toEqual([]);
+    expect(s.history).toHaveLength(1);
+    expect(loadState(JSON.stringify({ ...old, trainingDays: [1, 9, 'x', 1] })).trainingDays).toEqual([1]);
+  });
+
+  it('ugeplanen flettes som de andre indstillinger', () => {
+    const local = initialState();
+    const remote = { ...initialState(), trainingDays: [0, 3], settingsAt: 5 };
+    expect(mergeStates(local, remote).trainingDays).toEqual([0, 3]);
   });
 });

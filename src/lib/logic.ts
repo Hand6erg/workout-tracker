@@ -55,6 +55,7 @@ export function initialState(): AppState {
     favorites: [],
     bodyWeight: null,
     setTargets: { ...DEFAULT_SET_TARGETS },
+    trainingDays: [],
     goals: [],
     program: [],
     programSkip: { after: null, n: 0 },
@@ -862,6 +863,70 @@ export function startOfWeek(t: number): number {
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
   return d.getTime();
+}
+
+/* ---------- Ugeplan (#322) ---------- */
+
+/** Gyldige træningsdage: heltal 0–6 (mandag–søndag), sorteret og uden dubletter */
+export function cleanTrainingDays(days: unknown): number[] {
+  if (!Array.isArray(days)) return [];
+  return [...new Set(days.filter((d): d is number => Number.isInteger(d) && d >= 0 && d <= 6))].sort((a, b) => a - b);
+}
+
+export interface WeekPlanDay {
+  /** 0 = mandag … 6 = søndag */
+  day: number;
+  /** Dagens start (lokal midnat) */
+  date: number;
+  planned: boolean;
+  /** En afsluttet træning den dag */
+  done: boolean;
+  today: boolean;
+}
+
+export interface WeekPlan {
+  days: WeekPlanDay[];
+  plannedCount: number;
+  /** Træningsdage i denne uge (højst én pr. dag) */
+  doneCount: number;
+  todayIsTrainingDay: boolean;
+  /** Planlagte dage minus trænede dage, mindst 0 */
+  missing: number;
+  /** Dage efter i dag i denne uge */
+  daysLeft: number;
+}
+
+/** Ugeplanen for den aktuelle uge: planlagte og trænede dage (#322) */
+export function weekPlan(state: Pick<AppState, 'history' | 'trainingDays'>, now: number): WeekPlan {
+  const planned = new Set(cleanTrainingDays(state.trainingDays));
+  const start = startOfWeek(now);
+  const dayStarts: number[] = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(d.getDate() + i); // tåler sommertid
+    dayStarts.push(d.getTime());
+  }
+  const dayOf = (t: number) => {
+    for (let i = 6; i >= 0; i--) if (t >= dayStarts[i]) return i;
+    return -1;
+  };
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  const doneDays = new Set<number>();
+  for (const w of state.history) {
+    if (!w.finishedAt || w.startedAt < start || w.startedAt >= end.getTime()) continue;
+    doneDays.add(dayOf(w.startedAt));
+  }
+  const todayIdx = dayOf(now);
+  const days = dayStarts.map((date, day) => ({ day, date, planned: planned.has(day), done: doneDays.has(day), today: day === todayIdx }));
+  return {
+    days,
+    plannedCount: planned.size,
+    doneCount: doneDays.size,
+    todayIsTrainingDay: planned.has(todayIdx),
+    missing: Math.max(0, planned.size - doneDays.size),
+    daysLeft: 6 - todayIdx,
+  };
 }
 
 /** ISO-ugenummer */
@@ -2769,6 +2834,7 @@ export type Action =
   | { type: 'SET_LARGE_TEXT'; on: boolean }
   /** Kropsvægt i kg (#206). 0, negativ eller ugyldig = ikke angivet. */
   | { type: 'SET_BODY_WEIGHT'; kg: number }
+  | { type: 'SET_TRAINING_DAYS'; days: number[] }
   | { type: 'TOGGLE_FAVORITE'; exerciseId: string }
   | { type: 'SET_PROGRAM'; templateIds: string[] }
   | { type: 'SET_SET_TARGET'; muscle: Muscle; value: number | null }
@@ -3268,6 +3334,11 @@ export function reducer(state: AppState, action: Action): AppState {
       const cur = setTargetsOf(state);
       return cur[action.muscle] === value ? state : { ...state, setTargets: { ...cur, [action.muscle]: value } };
     }
+    case 'SET_TRAINING_DAYS': {
+      const days = cleanTrainingDays(action.days);
+      const cur = state.trainingDays ?? [];
+      return days.length === cur.length && days.every((d, i) => d === cur[i]) ? state : { ...state, trainingDays: days };
+    }
     case 'SET_BODY_WEIGHT': {
       const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
@@ -3572,6 +3643,7 @@ const SETTINGS = [
   'programSkip',
   'bodyWeight',
   'setTargets',
+  'trainingDays',
 ] as const;
 
 type Stamped = { id: string; updatedAt?: number };
@@ -3749,6 +3821,8 @@ export function loadState(raw: string | null): AppState {
         : [],
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+      // Ugeplanen fra før #322 findes ikke – ingen planlagte dage
+      trainingDays: cleanTrainingDays(parsed.trainingDays),
       // Ugentlige sætmål fra før #300 findes ikke – standardmålene bruges
       setTargets: setTargetsOf(parsed),
       // Opsummeringen hører kun til øjeblikket efter "Afslut" – den lukkes ved genindlæsning (#142)
