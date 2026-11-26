@@ -14,6 +14,10 @@ import {
   reducer,
   toCsv,
   syncPayload,
+  monthRecap,
+  personalRecords,
+  weekStreak,
+  workoutSummary,
   type IntervalCue,
 } from './logic';
 
@@ -112,7 +116,8 @@ describe('intervaltimer i træningen (#330)', () => {
   const started = () => reducer(initialState(), { type: 'START_WORKOUT', now: T0 });
 
   it('starter kun under en træning, husker indstillingerne og stoppes', () => {
-    expect(reducer(initialState(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.tabata, now: T0 }).interval ?? null).toBeNull();
+    // fra startskærmen uden træning (#332)
+    expect(reducer(initialState(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.tabata, now: T0 }).interval?.startedAt).toBe(T0);
     let s = reducer(started(), { type: 'START_INTERVAL', config: { ...INTERVAL_DEFAULTS.tabata, rounds: 99 }, now: at(5) });
     expect(s.interval).toEqual({ config: { ...INTERVAL_DEFAULTS.tabata, rounds: 50, minutes: 25 }, startedAt: at(5) });
     expect(s.intervalConfig).toMatchObject({ mode: 'tabata', rounds: 50 });
@@ -136,8 +141,8 @@ describe('intervaltimer i træningen (#330)', () => {
     expect(loaded.intervalConfig).toEqual(INTERVAL_DEFAULTS.emom);
     const s = reducer(started(), { type: 'START_INTERVAL', config: INTERVAL_DEFAULTS.tabata, now: T0 });
     expect(loadState(JSON.stringify(s)).interval).toEqual(s.interval);
-    // uden træning i gang ingen timer
-    expect(loadState(JSON.stringify({ ...s, active: null })).interval).toBeNull();
+    // også uden træning i gang (#332)
+    expect(loadState(JSON.stringify({ ...s, active: null })).interval).toEqual(s.interval);
     // den sendes ikke online
     expect('interval' in syncPayload(s)).toBe(false);
   });
@@ -200,5 +205,36 @@ describe('finishers på træningen (#331)', () => {
     const merged = mergeStates(initialState(), s);
     expect(merged.history[0].finishers).toEqual(s.history[0].finishers);
     expect(toCsv(s)).toContain('EMOM 10 min,1,,,,600,,,Finisher');
+  });
+});
+
+describe('finisher fra startskærmen (#332)', () => {
+  const standalone = (config = INTERVAL_DEFAULTS.tabata) => reducer(initialState(), { type: 'START_INTERVAL', config, now: T0 });
+
+  it('"Gem som træning" laver en afsluttet træning med kun finisheren', () => {
+    const s = reducer(standalone(), { type: 'SAVE_FINISHER_AS_WORKOUT', now: at(300) });
+    expect(s.interval).toBeNull();
+    expect(s.active).toBeNull();
+    expect(s.history).toHaveLength(1);
+    const w = s.history[0];
+    expect(w).toMatchObject({ name: 'Tabata', startedAt: T0, finishedAt: at(230), exercises: [] });
+    expect(finisherLabel(w.finishers![0])).toBe('Tabata 8 × 20/10 s');
+    // for kort: intet gemmes
+    expect(reducer(standalone(), { type: 'SAVE_FINISHER_AS_WORKOUT', now: at(5) }).history).toHaveLength(0);
+    // AMRAP med runder
+    const amrap = reducer(standalone(cleanIntervalConfig({ mode: 'amrap', minutes: 10 })), { type: 'SAVE_FINISHER_AS_WORKOUT', now: at(600), rounds: 9 });
+    expect(amrap.history[0].name).toBe('AMRAP');
+    expect(finisherLabel(amrap.history[0].finishers![0])).toBe('AMRAP 10 min · 9 runder');
+  });
+
+  it('tæller som træning i stime og måned uden at ødelægge volumen og rekorder', () => {
+    let s = reducer(standalone(), { type: 'SAVE_FINISHER_AS_WORKOUT', now: at(300) });
+    s = { ...s, weeklyGoal: 1 };
+    const d = new Date(T0);
+    expect(monthRecap(s, d.getFullYear(), d.getMonth()).workouts).toBe(1);
+    expect(weekStreak(s, 1, at(400))).toMatchObject({ weeks: 1, thisWeek: 1 });
+    expect(workoutSummary(s, s.history[0].id)).toMatchObject({ volume: 0, sets: 0, recordCount: 0 });
+    expect(personalRecords(s, s.exercises[0].id)).toBeTruthy();
+    expect(toCsv(s)).toContain('Tabata 8 × 20/10 s');
   });
 });

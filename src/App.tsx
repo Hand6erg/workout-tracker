@@ -9,6 +9,7 @@ import { ExercisesView } from './views/ExercisesView';
 import { HistoryView } from './views/HistoryView';
 import { ProfileView } from './views/ProfileView';
 import { StartView } from './views/StartView';
+import { IntervalBar } from './components/IntervalTimer';
 import { SummaryView } from './views/SummaryView';
 import { UndoBar } from './components/UndoBar';
 
@@ -64,6 +65,7 @@ export default function App() {
       </main>
 
       {state.active && !workoutOpen && <MiniBar onOpen={() => setWorkoutOpen(true)} />}
+      {!state.active && <IntervalBar onTabs />}
 
       <nav className="tabbar" aria-label="Hovedmenu">
         {TABS.map((t) => (

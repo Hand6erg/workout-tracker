@@ -1,3 +1,4 @@
+import { IntervalButton } from '../components/IntervalTimer';
 import { RecoveryCard } from '../components/RecoveryCard';
 import { SetTargetRings } from '../components/SetTargets';
 import { WeekPlanCard } from '../components/TrainingDays';
@@ -63,6 +64,8 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
           Start tom træning
         </button>
       )}
+
+      {!state.active && <IntervalButton />}
 
       <WeekPlanCard />
       <SetTargetRings />

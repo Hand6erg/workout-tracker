@@ -126,9 +126,16 @@ function IntervalRunning({ onClose }: { onClose: () => void }) {
   const run = state.interval!;
   const s = intervalStatus(run.config, run.startedAt, now);
   const amrap = run.config.mode === 'amrap';
+  // Uden træning i gang (startskærmen, #332) gemmes finisheren som sin egen træning
+  const standalone = !state.active;
+  const saveText = standalone ? 'Gem som træning' : 'Gem i træningen';
   // Gem på træningen (#331) – for kort (ingen hel runde) gemmes intet
   const save = (rounds?: number | null) => {
-    dispatch({ type: 'SAVE_FINISHER', now: Date.now(), rounds });
+    dispatch({ type: standalone ? 'SAVE_FINISHER_AS_WORKOUT' : 'SAVE_FINISHER', now: Date.now(), rounds });
+    onClose();
+  };
+  const discard = () => {
+    dispatch({ type: 'STOP_INTERVAL' });
     onClose();
   };
   const stop = () => {
@@ -142,18 +149,21 @@ function IntervalRunning({ onClose }: { onClose: () => void }) {
         <p className="interval-big">{s.done ? 'Færdig! 💪' : 'Stoppet'}</p>
         <p className="muted">{clock(Math.floor(s.elapsed))} gennemført</p>
         {amrap ? (
-          <RoundsForm onSave={save} />
+          <RoundsForm onSave={save} saveText={saveText} />
         ) : (
           <button className="btn-primary wide" onClick={() => save()}>
-            Gem i træningen
+            {saveText}
           </button>
         )}
-        <ConfirmButton className="btn-ghost wide" confirmText="Kassér finisheren?" onConfirm={() => {
-          dispatch({ type: 'STOP_INTERVAL' });
-          onClose();
-        }}>
-          Luk uden at gemme
-        </ConfirmButton>
+        {standalone ? (
+          <button className="btn-ghost wide" onClick={discard}>
+            Luk uden at gemme
+          </button>
+        ) : (
+          <ConfirmButton className="btn-ghost wide" confirmText="Kassér finisheren?" onConfirm={discard}>
+            Luk uden at gemme
+          </ConfirmButton>
+        )}
       </div>
     );
   }
@@ -176,7 +186,7 @@ function IntervalRunning({ onClose }: { onClose: () => void }) {
 }
 
 /** AMRAP: "Antal runder" før finisheren gemmes (#331) */
-function RoundsForm({ onSave }: { onSave: (rounds: number | null) => void }) {
+function RoundsForm({ onSave, saveText }: { onSave: (rounds: number | null) => void; saveText: string }) {
   const [rounds, setRounds] = useState('');
   const n = rounds.trim() === '' ? null : Number(rounds);
   return (
@@ -192,7 +202,7 @@ function RoundsForm({ onSave }: { onSave: (rounds: number | null) => void }) {
         <input type="number" inputMode="numeric" min={0} max={999} value={rounds} onChange={(e) => setRounds(e.target.value)} />
       </label>
       <button type="submit" className="btn-primary wide">
-        Gem i træningen
+        {saveText}
       </button>
     </form>
   );
@@ -222,8 +232,11 @@ export function FinisherList({ finishers, onRemove }: { finishers?: Finisher[]; 
   );
 }
 
-/** Lille bjælke i træningen, mens timeren kører og vinduet er skjult. Tryk åbner den igen. */
-export function IntervalBar() {
+/**
+ * Lille bjælke, mens timeren kører og vinduet er skjult. Tryk åbner den igen.
+ * `onTabs`: uden træning i gang vises den over menuen nederst (#332).
+ */
+export function IntervalBar({ onTabs = false }: { onTabs?: boolean }) {
   const { state } = useStore();
   const now = useNow(!!state.interval);
   const [open, setOpen] = useState(false);
@@ -235,7 +248,7 @@ export function IntervalBar() {
     : `${run.config.mode === 'amrap' ? 'AMRAP' : `Runde ${s.round}/${s.rounds}`} · ${PHASE_TEXT[s.phase]} · ${clock(s.phaseLeft)}`;
   return (
     <>
-      <button className={`interval-bar ${s.done ? 'done' : s.phase}${state.rest ? ' above-rest' : ''}`} onClick={() => setOpen(true)} aria-label={`Vis intervaltimer: ${text}`}>
+      <button className={`interval-bar ${s.done ? 'done' : s.phase}${onTabs ? ' on-tabs' : state.rest ? ' above-rest' : ''}`} onClick={() => setOpen(true)} aria-label={`Vis intervaltimer: ${text}`}>
         ⏱ {text}
       </button>
       {open && <IntervalSheet onClose={() => setOpen(false)} />}
