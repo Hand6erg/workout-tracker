@@ -308,6 +308,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .theme-setting { margin-bottom: 14px; font-size: 0.95rem; }
 .theme-setting .seg { margin: 8px 0 0; }
 .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.week-days { gap: 4px; margin-bottom: 14px; }
+.week-days button { min-width: 0; padding: 10px 0; font-size: 0.8rem; }
+.week-days button[aria-pressed='true'] { background: var(--accent); color: var(--on-accent); }
 .hbars { list-style: none; margin: 0; padding: 12px 14px; display: grid; gap: 10px; }
 .hbars li { display: grid; grid-template-columns: 64px 1fr 76px; align-items: center; gap: 10px; font-size: 0.9rem; }
 .hbars .track { height: 10px; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
