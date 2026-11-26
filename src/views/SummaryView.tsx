@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
+import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, restSummary, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
 import { shareSummaryImage } from '../lib/shareImage';
 import { useStore } from '../lib/store';
+import { formatRest } from '../components/RestPicker';
 
 /** Opsummering lige efter "Afslut" (#143) */
 export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
-  const { state } = useStore();
+  const { state, exerciseById } = useStore();
   const [sharing, setSharing] = useState(false);
   const s = state.lastFinishedId ? workoutSummary(state, state.lastFinishedId) : null;
   if (!s) return null;
   const pct = s.volumeChangePct;
   const newBadges = milestonesUnlockedBy(state, s.workoutId);
+  const w = state.history.find((h) => h.id === s.workoutId);
+  const rest = w ? restSummary(w, state) : null;
 
   return (
     <section className="page summary" aria-label="Opsummering">
@@ -39,6 +42,17 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
       {pct !== null && (
         <p className={`summary-change ${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}`} role="status">
           {volumeChangeText(pct)}
+        </p>
+      )}
+
+      {rest && rest.count >= 2 && (
+        <p className="card summary-rest" aria-label="Pauser">
+          <span>
+            ⏱ Gns. pause <strong>{formatRest(rest.average)}</strong> <span className="muted">(planlagt {formatRest(rest.planned)})</span>
+          </span>
+          <small className="muted">
+            Længst pause: {exerciseById(rest.longest.exerciseId)?.name ?? 'Ukendt øvelse'} ({formatRest(rest.longest.seconds)})
+          </small>
         </p>
       )}
 

@@ -1,4 +1,4 @@
-import { formatDuration, MAX_REST, restInfo, type RestSource } from '../lib/logic';
+import { formatDuration, MAX_REST, restInfo, roundRestTo15, typicalRest, type RestSource } from '../lib/logic';
 import { useStore } from '../lib/store';
 import { Modal } from './ui';
 
@@ -19,6 +19,7 @@ const QUICK = [60, 90, 120, 180];
 export function RestControls({ exerciseId }: { exerciseId: string }) {
   const { state, dispatch } = useStore();
   const { seconds, source } = restInfo(state, exerciseId);
+  const typical = typicalRest(state, exerciseId);
   const set = (s: number) => dispatch({ type: 'SET_EXERCISE_REST', exerciseId, seconds: Math.max(0, Math.min(MAX_REST, s)) });
   return (
     <>
@@ -34,6 +35,18 @@ export function RestControls({ exerciseId }: { exerciseId: string }) {
         </button>
       </div>
       <p className="muted rest-picker-source">{SOURCE_TEXT[source]}</p>
+      {typical !== null && (
+        <p className="rest-typical">
+          <span>
+            Du hviler typisk <strong>{formatRest(typical)}</strong>
+          </span>
+          {roundRestTo15(typical) !== seconds && (
+            <button className="chip on" onClick={() => set(roundRestTo15(typical))}>
+              Brug {formatRest(roundRestTo15(typical))}
+            </button>
+          )}
+        </p>
+      )}
       <div className="chips rest-picker-quick" role="group" aria-label="Hurtige valg">
         {QUICK.map((q) => (
           <button key={q} className={`chip ${source === 'own' && seconds === q ? 'on' : ''}`} onClick={() => set(q)}>
