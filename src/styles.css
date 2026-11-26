@@ -159,6 +159,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .kpis strong { font-size: 1.4rem; }
 .lifetime { margin-bottom: 8px; }
 .lifetime .section { margin-top: 0; }
+.cues { margin-bottom: 8px; }
+.cues .section { margin-top: 0; }
+.cues-list { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.cues-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .lifetime-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(68px, 1fr)); gap: 8px; margin: 10px 0 0; }
 .lifetime-grid div { display: grid; gap: 2px; }
 .lifetime-grid dt { color: var(--muted); font-size: 0.8rem; }
