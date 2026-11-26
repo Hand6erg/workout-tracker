@@ -128,7 +128,11 @@ import {
   SET_WORK_SECONDS,
   weeklySetProgress,
   DEFAULT_SET_TARGETS,
+  exerciseCues,
+  cleanCues,
 } from './logic';
+import { BUILT_IN_CUES } from './cues';
+import { SEED_EXERCISES } from './seed';
 import type { AppState, SetEntry, Workout } from './types';
 
 const T0 = new Date('2026-11-15T10:00:00').getTime();
@@ -4328,5 +4332,64 @@ describe('ugeplan (#322)', () => {
     const local = initialState();
     const remote = { ...initialState(), trainingDays: [0, 3], settingsAt: 5 };
     expect(mergeStates(local, remote).trainingDays).toEqual([0, 3]);
+  });
+});
+
+describe('teknik-tips (#337)', () => {
+  const withCustom = () =>
+    reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'my-ex', name: 'Hip thrust', muscle: 'Ben', equipment: 'Stang' });
+
+  it('hver indbygget øvelse har 3–4 korte tips', () => {
+    for (const ex of SEED_EXERCISES) {
+      const cues = BUILT_IN_CUES[ex.id];
+      expect(cues, ex.id).toBeDefined();
+      expect(cues.length, ex.id).toBeGreaterThanOrEqual(3);
+      expect(cues.length, ex.id).toBeLessThanOrEqual(4);
+      for (const c of cues) {
+        expect(c.trim().length, `${ex.id}: ${c}`).toBeGreaterThan(0);
+        expect(c.length, `${ex.id}: ${c}`).toBeLessThanOrEqual(40);
+      }
+    }
+    expect(exerciseCues(initialState(), 'bench')).toContain('Fødderne plantet i gulvet');
+    expect(exerciseCues(initialState(), 'ukendt')).toEqual([]);
+  });
+
+  it('SET_EXERCISE_CUES gemmer trimmet tekst på en egen øvelse, og tom tekst fjerner den', () => {
+    let s = withCustom();
+    expect(exerciseCues(s, 'my-ex')).toEqual([]);
+    s = reducer(s, { type: 'SET_EXERCISE_CUES', exerciseId: 'my-ex', cues: '  Skuldre på bænken \n\n  Pres gennem hælene  \n' });
+    const ex = s.exercises.find((e) => e.id === 'my-ex')!;
+    expect(ex.cues).toBe('Skuldre på bænken\nPres gennem hælene');
+    expect(exerciseCues(s, 'my-ex')).toEqual(['Skuldre på bænken', 'Pres gennem hælene']);
+    expect(reducer(s, { type: 'SET_EXERCISE_CUES', exerciseId: 'my-ex', cues: 'Skuldre på bænken\nPres gennem hælene' })).toBe(s);
+    s = reducer(s, { type: 'SET_EXERCISE_CUES', exerciseId: 'my-ex', cues: '   \n ' });
+    expect('cues' in s.exercises.find((e) => e.id === 'my-ex')!).toBe(false);
+    expect(exerciseCues(s, 'my-ex')).toEqual([]);
+  });
+
+  it('indbyggede øvelser kan ikke få egne tips', () => {
+    const s = initialState();
+    expect(reducer(s, { type: 'SET_EXERCISE_CUES', exerciseId: 'bench', cues: 'Hej' })).toBe(s);
+    expect(cleanCues('x'.repeat(2000)).length).toBeLessThanOrEqual(600);
+  });
+
+  it('ændringen stemples og overlever fletning og backup', () => {
+    const phone = withCustom();
+    const pc = trackedReducer(phone, { type: 'SET_EXERCISE_CUES', exerciseId: 'my-ex', cues: 'Hagen ind', at: 5000 });
+    expect(pc.exercises.find((e) => e.id === 'my-ex')).toMatchObject({ cues: 'Hagen ind', updatedAt: 5000 });
+    const merged = mergeStates(phone, pc);
+    expect(exerciseCues(merged, 'my-ex')).toEqual(['Hagen ind']);
+    const cleared = trackedReducer(pc, { type: 'SET_EXERCISE_CUES', exerciseId: 'my-ex', cues: '', at: 6000 });
+    expect(exerciseCues(mergeStates(pc, cleared), 'my-ex')).toEqual([]);
+    expect(exerciseCues(loadState(JSON.stringify(pc)), 'my-ex')).toEqual(['Hagen ind']);
+  });
+
+  it('gamle gemte data uden tips indlæses uændret', () => {
+    const old = withCustom();
+    const raw = JSON.stringify(old);
+    const s = loadState(raw);
+    expect(s.exercises).toEqual(old.exercises);
+    expect(s.exercises.every((e) => e.cues === undefined)).toBe(true);
+    expect(exerciseCues(s, 'squat').length).toBeGreaterThan(0);
   });
 });

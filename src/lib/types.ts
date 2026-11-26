@@ -22,6 +22,8 @@ export interface Exercise {
   updatedAt?: number;
   /** Testet 1RM i kg (#250). Mangler = brug den estimerede 1RM fra historikken */
   testedOneRM?: number;
+  /** Egne teknik-tips til en egen øvelse (#337), ét tip pr. linje. Mangler = ingen */
+  cues?: string;
 }
 
 export interface SetEntry {
