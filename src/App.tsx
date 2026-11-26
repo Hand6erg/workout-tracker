@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDuration, IS_STAGING, resolveTheme, workoutDuration } from './lib/logic';
 import type { Theme } from './lib/types';
-import { useRestAlerts } from './lib/alerts';
+import { useIntervalCues, useRestAlerts } from './lib/alerts';
 import { useWakeLock } from './lib/wakeLock';
 import { useNow, useStore } from './lib/store';
 import { ActiveWorkout, WorkoutEditor } from './views/ActiveWorkout';
@@ -28,6 +28,7 @@ export default function App() {
   const showWorkout = !!state.active && workoutOpen;
   const summaryOpen = !!state.lastFinishedId && !state.active;
   useRestAlerts();
+  useIntervalCues();
   useWakeLock();
   useTheme(state.theme);
   useLargeText(state.largeText);

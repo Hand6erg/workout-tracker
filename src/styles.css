@@ -272,6 +272,29 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .rest.done { background: var(--ok); color: var(--on-accent); padding: 14px 16px; }
 .rest.done .btn-ghost { color: var(--on-accent); }
 
+/* Intervaltimer (#330) */
+.segmented { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 4px; padding: 4px; background: var(--surface-2); border-radius: 12px; margin-bottom: 8px; }
+.segmented button { padding: 10px 6px; border-radius: 9px; font-weight: 700; color: var(--muted); }
+.segmented button.on { background: var(--accent); color: var(--on-accent); }
+.interval-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 0 10px; margin-top: 10px; }
+.interval-fields input { width: 100%; min-width: 0; box-sizing: border-box; }
+.interval-total { margin: 0; color: var(--muted); }
+.interval-total strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.interval-run { text-align: center; padding: 8px 0; border-radius: var(--radius); }
+.interval-run p { margin: 4px 0; }
+.interval-round { font-size: 1.1rem; font-weight: 700; }
+.interval-phase { font-size: 1.4rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.interval-run.rest .interval-phase { color: var(--ok); }
+.interval-big { font-size: clamp(4rem, 24vw, 7rem); font-weight: 800; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.interval-run.done .interval-big { font-size: 2.6rem; color: var(--ok); }
+.interval-bar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); max-width: 616px; margin: 0 auto;
+  padding: 12px 14px; border-radius: 14px; background: var(--accent); color: var(--on-accent); font-weight: 700;
+  font-variant-numeric: tabular-nums; z-index: 21; box-shadow: 0 8px 24px var(--shadow-strong); text-align: center;
+}
+.interval-bar.rest, .interval-bar.done { background: var(--ok); }
+.interval-bar.above-rest { bottom: calc(76px + env(safe-area-inset-bottom)); }
+
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: var(--backdrop); z-index: 30; display: flex; align-items: flex-end; justify-content: center; }
 .modal {
