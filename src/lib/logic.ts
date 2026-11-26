@@ -1,4 +1,5 @@
 import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
+import { BUILT_IN_CUES } from './cues';
 import { MAX_TEMPLATE_REPS, MUSCLES } from './types';
 import type {
   AppState,
@@ -2840,6 +2841,8 @@ export type Action =
   | { type: 'SET_EXERCISE_REST'; exerciseId: string; seconds?: number }
   /** Gem/ryd en testet 1RM for en øvelse (#250). `weight` mangler eller ≤ 0 = ryd */
   | { type: 'SET_TESTED_1RM'; exerciseId: string; weight?: number }
+  /** Egne teknik-tips på en egen øvelse (#337). Tom tekst = fjern */
+  | { type: 'SET_EXERCISE_CUES'; exerciseId: string; cues: string }
   | { type: 'SET_BAR_WEIGHT'; weight: number }
   | { type: 'SET_WEEKLY_GOAL'; goal: number }
   | { type: 'SET_SHOW_HINTS'; on: boolean }
@@ -3359,6 +3362,16 @@ export function reducer(state: AppState, action: Action): AppState {
       const updated: Exercise = weight === undefined ? base : { ...base, testedOneRM: weight };
       return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
     }
+    case 'SET_EXERCISE_CUES': {
+      const ex = state.exercises.find((e) => e.id === action.exerciseId);
+      if (!ex || !ex.custom) return state;
+      const text = cleanCues(action.cues);
+      const cues = text || undefined;
+      if (cues === ex.cues) return state;
+      const { cues: _old, ...base } = ex;
+      const updated: Exercise = cues === undefined ? base : { ...base, cues };
+      return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
+    }
     case 'ADD_MEASUREMENT': {
       const pos = (n?: number) => (n !== undefined && Number.isFinite(n) && n > 0 ? n : undefined);
       const m = { id: action.id, date: action.date, weight: pos(action.weight), bodyFat: pos(action.bodyFat), waist: pos(action.waist) };
@@ -3814,6 +3827,34 @@ export function hasOwnData(state: AppState): boolean {
   return (
     state.history.length > 0 || !!state.active || state.exercises.some((e) => e.custom) || state.bodyLog.length > 0
   );
+}
+
+/* ---------- Teknik-tips (#337) ---------- */
+
+export const MAX_CUES_LENGTH = 600;
+
+/** Rydder en tekst med egne tips: trimmer hver linje, fjerner tomme linjer og begrænser længden. */
+export function cleanCues(text: string): string {
+  return String(text ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, MAX_CUES_LENGTH)
+    .trim();
+}
+
+/** Tips der skal vises for en øvelse: de indbyggede, eller en egen øvelses tekst delt i linjer. Tom liste = intet. */
+export function exerciseCues(state: AppState, exerciseId: string): string[] {
+  const ex = state.exercises.find((e) => e.id === exerciseId);
+  if (!ex) return [];
+  if (ex.custom) return typeof ex.cues === 'string' ? cleanCues(ex.cues).split('\n').filter(Boolean) : [];
+  return BUILT_IN_CUES[ex.id] ?? [];
+}
+
+/** Har øvelsen egne tips, der kan redigeres? (kun egne øvelser) */
+export function canEditCues(state: AppState, exerciseId: string): boolean {
+  return !!state.exercises.find((e) => e.id === exerciseId)?.custom;
 }
 
 /* ---------- Gem/indlæs ---------- */
