@@ -3,6 +3,7 @@ import {
   actualRests,
   restSummary,
   typicalRest,
+  roundRestTo15,
   actualRestBefore,
   yearReview,
   yearsWithWorkouts,
@@ -4244,6 +4245,13 @@ describe('reelle pauser (#315)', () => {
     expect(typicalRest(s, 'bench')).toBeNull(); // kun 2 pauser
     s = reducer(benchWorkout(s, [0, 150_000]), { type: 'FINISH_WORKOUT', now: T0 + 300_000 });
     expect(typicalRest(s, 'bench')).toBe(120); // median af 100, 120, 150
+  });
+
+  it('afrunder den typiske pause til 15 s (#317)', () => {
+    expect(roundRestTo15(127)).toBe(120);
+    expect(roundRestTo15(143)).toBe(150);
+    expect(roundRestTo15(7)).toBe(0);
+    expect(roundRestTo15(5000)).toBe(600);
   });
 
   it('gamle træninger uden tidsstempler loader og giver ingen pauser', () => {

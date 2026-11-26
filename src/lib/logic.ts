@@ -2058,6 +2058,11 @@ export function typicalRest(state: AppState, exerciseId: string): number | null 
   return Math.round(xs.length % 2 ? xs[mid] : (xs[mid - 1] + xs[mid]) / 2);
 }
 
+/** Pausetid afrundet til nærmeste 15 s inden for 0–MAX_REST, til "Brug 2:30" på øvelsessiden (#317) */
+export function roundRestTo15(seconds: number): number {
+  return Math.max(0, Math.min(MAX_REST, Math.round(seconds / 15) * 15));
+}
+
 /* ---------- Forslag til progression ---------- */
 
 export interface ProgressionHint {
