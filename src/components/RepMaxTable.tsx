@@ -1,4 +1,4 @@
-import { formatWeight, isStrongRepMax, repMaxTable } from '../lib/logic';
+import { formatWeight, isStrongRepMax, repMaxesBeaten, repMaxTable } from '../lib/logic';
 import { useStore, useUnit } from '../lib/store';
 
 const shortDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: '2-digit' });
@@ -15,12 +15,19 @@ export function RepMaxTable({ exerciseId }: { exerciseId: string }) {
       <ul className="repmax-list">
         {rows.map((r) => {
           const strong = isStrongRepMax(r);
+          // 🏆 når rækken blev slået i den træning, der nu holder rekorden (#356)
+          const beaten = !!r.best && repMaxesBeaten(state, r.best.workoutId, exerciseId).includes(r.reps);
           return (
             <li key={r.reps} className="repmax-row" aria-label={`${r.reps} reps: ${r.best ? formatWeight(r.best.weight, unit) : 'intet endnu'}`}>
               <span className="repmax-reps">{r.reps}RM</span>
               <span className="repmax-best">
                 <strong>{r.best ? formatWeight(r.best.weight, unit) : '–'}</strong>
-                {r.best && <small className="muted">{shortDate.format(r.best.date)}</small>}
+                {r.best && (
+                  <small className="muted">
+                    {beaten && <span role="img" aria-label="Slået rekord">🏆 </span>}
+                    {shortDate.format(r.best.date)}
+                  </small>
+                )}
                 {strong && <span className="repmax-strong">stærk</span>}
               </span>
               <span className="muted repmax-est">{r.estimated > 0 ? `est. ${formatWeight(r.estimated, unit)}` : ''}</span>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatDuration, formatWeight, milestonesUnlockedBy, RECORD_NAMES, restSummary, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
+import { formatDuration, formatWeight, milestonesUnlockedBy, RECORD_NAMES, repMaxLine, restSummary, workoutRepMaxes, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
 import { shareSummaryImage } from '../lib/shareImage';
 import { useStore, useUnit } from '../lib/store';
 import { formatRest } from '../components/RestPicker';
@@ -16,6 +16,7 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
   const newBadges = milestonesUnlockedBy(state, s.workoutId);
   const w = state.history.find((h) => h.id === s.workoutId);
   const rest = w ? restSummary(w, state) : null;
+  const repMaxes = workoutRepMaxes(state, s.workoutId);
 
   return (
     <section className="page summary" aria-label="Opsummering">
@@ -102,6 +103,16 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
               <li key={r.exerciseId}>
                 <strong>{r.name}</strong> <span className="muted">– {r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}</span>
               </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {repMaxes.length > 0 && (
+        <section className="card" aria-label="Nye rep-maks">
+          <ul className="summary-records repmax-lines">
+            {repMaxes.map((r) => (
+              <li key={r.exerciseId}>{repMaxLine(r, unit)}</li>
             ))}
           </ul>
         </section>

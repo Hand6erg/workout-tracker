@@ -4473,3 +4473,36 @@ export function repMaxesBeaten(state: AppState, workoutId: string, exerciseId: s
 export function isStrongRepMax(row: RepMaxRow): boolean {
   return !!row.best && row.estimated > 0 && row.best.weight > row.estimated;
 }
+
+export interface WorkoutRepMax {
+  exerciseId: string;
+  name: string;
+  /** Det højeste rep-antal, træningen slog (fx 5 → "Ny 5RM") */
+  reps: number;
+  /** Den nye bedste vægt for så mange reps (kg) */
+  weight: number;
+}
+
+/**
+ * Nye rep-maks i en afsluttet træning (#356): én linje pr. øvelse med det højeste slåede rep-antal,
+ * så ét tungt sæt ikke giver fem linjer.
+ */
+export function workoutRepMaxes(state: AppState, workoutId: string): WorkoutRepMax[] {
+  const w = state.history.find((x) => x.id === workoutId);
+  if (!w) return [];
+  const names = new Map(state.exercises.map((e) => [e.id, e.name]));
+  const out: WorkoutRepMax[] = [];
+  for (const exerciseId of [...new Set(w.exercises.map((e) => e.exerciseId))]) {
+    const beaten = repMaxesBeaten(state, workoutId, exerciseId);
+    if (!beaten.length) continue;
+    const reps = beaten[beaten.length - 1];
+    const weight = repMaxSets(state, [w], exerciseId).reduce((m, s) => (s.reps >= reps ? Math.max(m, s.weight) : m), 0);
+    out.push({ exerciseId, name: names.get(exerciseId) ?? exerciseId, reps, weight });
+  }
+  return out;
+}
+
+/** "🏆 Ny 5RM i Squat: 105 kg" (#356) */
+export function repMaxLine(r: WorkoutRepMax, unit: WeightUnit = 'kg'): string {
+  return `🏆 Ny ${r.reps}RM i ${r.name}: ${formatWeight(r.weight, unit)}`;
+}

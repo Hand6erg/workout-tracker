@@ -14,6 +14,8 @@ import {
   isBodyweightReps,
   recapToShow,
   recordCount,
+  repMaxLine,
+  workoutRepMaxes,
   searchHistory,
   supersetGroups,
   workoutRecords,
@@ -184,6 +186,7 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
     onOpenWorkout?.();
   };
   const [saved, setSaved] = useState(false);
+  const repMaxes = workoutRepMaxes(state, w.id);
 
   return (
     <Modal
@@ -232,6 +235,13 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
         </button>
       )}
       {w.note && <p className="workout-note-full">📝 {w.note}</p>}
+      {repMaxes.length > 0 && (
+        <ul className="summary-records repmax-lines" aria-label="Nye rep-maks">
+          {repMaxes.map((r) => (
+            <li key={r.exerciseId}>{repMaxLine(r, unit)}</li>
+          ))}
+        </ul>
+      )}
       {w.exercises.map((e) => (
         <section key={e.id} className="detail-ex">
           <h3>{exerciseById(e.exerciseId)?.name}</h3>
