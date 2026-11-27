@@ -38,6 +38,10 @@ import {
   type VsStatus,
   type WorkoutChange,
   bodyweightText,
+  formatWeight,
+  toDisplay,
+  weightFromInput,
+  weightInputText,
   bodyWeightOn,
   isBodyweightReps,
   formatRpe,
@@ -46,7 +50,7 @@ import {
   SET_TAGS,
   formatRepRange,
 } from '../lib/logic';
-import type { SetTag } from '../lib/types';
+import type { SetTag, WeightUnit } from '../lib/types';
 import { useNow, useStore } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
 
@@ -341,13 +345,15 @@ function VsMark({ status }: { status: VsStatus }) {
 }
 
 /** "+320 kg vs. sidst" – løbende forskel mod sidste gang samme skabelon blev lavet (#176) */
-function vsBarText(diffKg: number): string {
+function vsBarText(diffKg: number, unit: WeightUnit = 'kg'): string {
   if (diffKg === 0) return 'Som sidst';
   const sign = diffKg > 0 ? '+' : '−';
-  return `${sign}${Math.abs(diffKg).toLocaleString('da-DK', { maximumFractionDigits: 1 })} kg vs. sidst`;
+  const v = Math.abs(unit === 'lb' ? toDisplay(diffKg, 'lb') : diffKg);
+  return `${sign}${v.toLocaleString('da-DK', { maximumFractionDigits: 1 })} ${unit} vs. sidst`;
 }
 
 function VsLastBar({ vs }: { vs: VsLastTime }) {
+  const unit = useStore().state.unit ?? 'kg';
   const [open, setOpen] = useState(false);
   const tone = vs.diffKg > 0 ? 'up' : vs.diffKg < 0 ? 'down' : 'same';
   return (
@@ -355,12 +361,12 @@ function VsLastBar({ vs }: { vs: VsLastTime }) {
       <button
         type="button"
         className={`vs-bar ${tone}`}
-        aria-label={`Mod sidst: ${vsBarText(vs.diffKg)}. Vis pr. øvelse`}
+        aria-label={`Mod sidst: ${vsBarText(vs.diffKg, unit)}. Vis pr. øvelse`}
         aria-haspopup="dialog"
         data-testid="vs-bar"
         onClick={() => setOpen(true)}
       >
-        {vsBarText(vs.diffKg)}
+        {vsBarText(vs.diffKg, unit)}
       </button>
       {open && <VsLastSheet vs={vs} onClose={() => setOpen(false)} />}
     </>
@@ -401,11 +407,11 @@ function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
 }
 
 /** "Forrige"-kolonnen i samme format som sættet */
-function prevText(p: SetEntry, kind: ExerciseKind, bodyweight = false): string {
-  if (bodyweight && kind === 'reps') return `${bodyweightText(p.weight)}×${p.reps}`;
+function prevText(p: SetEntry, kind: ExerciseKind, bodyweight = false, unit: WeightUnit = 'kg'): string {
+  if (bodyweight && kind === 'reps') return `${bodyweightText(p.weight, unit)}×${p.reps}`;
   if (kind === 'time') return p.seconds ? `${num(p.seconds)} sek.` : '–';
   if (kind === 'distance') return p.meters ? `${p.meters.replace('.', ',')} m${p.seconds ? ` · ${formatClock(num(p.seconds))}` : ''}` : '–';
-  return `${p.weight || 0}×${p.reps}`;
+  return `${weightInputText(p.weight, unit) || 0}×${p.reps}`;
 }
 
 /** Felt til en tid som m:ss. Mens man skriver, vises teksten som skrevet; sættet gemmer sekunder. */
@@ -438,7 +444,45 @@ function ClockInput({
   );
 }
 
-function recordText(kinds: RecordKind[], weight: string, bodyweight = false): string {
+/**
+ * Vægtfelt (#345): sættet gemmer kg, men feltet viser og tager imod den valgte enhed.
+ * Mens man skriver, vises teksten som skrevet; ændres vægten udefra (fx et forslag), vises den gemte værdi.
+ */
+function WeightInput({
+  label,
+  weight,
+  unit,
+  placeholder,
+  inputMode,
+  onChange,
+}: {
+  label: string;
+  weight: string;
+  unit: WeightUnit;
+  placeholder: string;
+  inputMode: 'text' | 'decimal';
+  onChange: (kg: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (draft !== null && weightFromInput(draft, unit) !== weight) setDraft(null);
+  }, [weight, unit]);
+  return (
+    <input
+      inputMode={inputMode}
+      aria-label={label}
+      placeholder={placeholder}
+      value={draft ?? weightInputText(weight, unit)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(weightFromInput(e.target.value, unit));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+function recordText(kinds: RecordKind[], weight: string, bodyweight = false, unit: WeightUnit = 'kg'): string {
   const names = kinds.map((k) =>
     k === 'heaviest'
       ? 'tungeste vægt'
@@ -450,7 +494,7 @@ function recordText(kinds: RecordKind[], weight: string, bodyweight = false): st
             ? 'længste distance'
             : k === 'pace'
               ? 'hurtigste tid'
-              : `flest reps på ${bodyweight ? bodyweightText(weight) : `${num(weight) || 0} kg`}`,
+              : `flest reps på ${bodyweight ? bodyweightText(weight, unit) : formatWeight(num(weight), unit)}`,
   );
   return `Ny rekord: ${names.join(', ')}`;
 }
@@ -526,11 +570,13 @@ function TimedHintButton({ weId, timed }: { weId: string; timed: NonNullable<Pro
 
 function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
   const { send: dispatch } = useWorkout();
+  const unit = useStore().state.unit ?? 'kg';
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
   // Kropsvægtsøvelser (#209): "@ KV +10" og "prøv KV −17,5"
-  const w = (n: number) => (hint.bodyweight ? bodyweightText(String(n)) : `${kgText(n)} kg`);
+  const w = (n: number) =>
+    hint.bodyweight ? bodyweightText(String(n), unit) : unit === 'lb' ? formatWeight(n, 'lb') : `${kgText(n)} kg`;
   // RPE (#238): forklar hvorfor forslaget blev ændret, fx "(RPE 10)"
   const rpeText = hint.rpe !== undefined ? ` (RPE ${formatRpe(String(hint.rpe))})` : '';
   const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}${rpeText}`;
@@ -634,6 +680,8 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const isBarbell = ex?.equipment === 'Stang';
   // Kropsvægtsøvelse (#208): vægtfeltet er ekstra vægt (+10) eller assistance (−20)
   const bw = isBodyweightReps(state, we.exerciseId);
+  // Enhed (#345): sæt gemmes i kg, men vises og indtastes i kg eller lb
+  const unit: WeightUnit = state.unit ?? 'kg';
   const bwMissing = bw && bodyWeightOn(state, w.startedAt) === null;
   const all = w.exercises;
   const pos = all.findIndex((e) => e.id === we.id);
@@ -763,7 +811,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
             <th>Forrige</th>
             {kind === 'reps' && (
               <>
-                <th>{bw ? '+kg' : 'kg'}</th>
+                <th>{bw ? `+${unit}` : unit}</th>
                 <th>Reps</th>
                 {showRpe && <th>RPE</th>}
               </>
@@ -816,7 +864,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                     />
                   )}
                 </td>
-                <td className="prev">{p ? prevText(p, kind, bw) : '–'}</td>
+                <td className="prev">{p ? prevText(p, kind, bw, unit) : '–'}</td>
                 {kind === 'time' && (
                   <>
                     <td>
@@ -873,12 +921,13 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 {kind === 'reps' && (
                 <>
                 <td>
-                  <input
+                  <WeightInput
                     inputMode={bw ? 'text' : 'decimal'}
-                    aria-label={`${bw ? 'Ekstra vægt' : 'Vægt'} ${what} ${i + 1}`}
-                    placeholder={p?.weight || (bw ? 'KV' : '')}
-                    value={s.weight}
-                    onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight: e.target.value } })}
+                    label={`${bw ? 'Ekstra vægt' : 'Vægt'} ${what} ${i + 1}`}
+                    unit={unit}
+                    placeholder={(p && weightInputText(p.weight, unit)) || (bw ? 'KV' : '')}
+                    weight={s.weight}
+                    onChange={(weight) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight } })}
                   />
                 </td>
                 <td>
@@ -920,10 +969,10 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
               {records.length > 0 && (
                 <tr className="pr-row">
                   <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>
-                    <span role="img" aria-label={recordText(records, s.weight, bw)}>
+                    <span role="img" aria-label={recordText(records, s.weight, bw, unit)}>
                       🏆
                     </span>{' '}
-                    {recordText(records, s.weight, bw)}
+                    {recordText(records, s.weight, bw, unit)}
                   </td>
                 </tr>
               )}

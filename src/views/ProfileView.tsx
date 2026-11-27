@@ -88,6 +88,17 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
           ))}
         </div>
       </div>
+      <div className="theme-setting">
+        <span id="unit-label">Enhed</span>
+        <div className="seg" role="group" aria-labelledby="unit-label">
+          {(['kg', 'lb'] as const).map((u) => (
+            <button key={u} type="button" aria-pressed={state.unit === u} onClick={() => dispatch({ type: 'SET_UNIT', unit: u })}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <p className="muted unit-note">Dine sæt gemmes altid i kg, så du kan skifte frem og tilbage uden at ændre din log.</p>
+      </div>
       <label className="toggle">
         <input
           type="checkbox"

@@ -242,6 +242,27 @@ export function formatWeight(kg: number, unit: WeightUnit = 'kg'): string {
   return unit === 'lb' ? `${displayNumber(toDisplay(kg, 'lb'))} lb` : formatKg(kg);
 }
 
+/**
+ * Teksten i vægtfeltet i træningen (#345). Sættet gemmer kg; med lb vises vægten omregnet (225),
+ * og en kg-værdi gemt fra pund (102.0582) vises afrundet (102,1). Almindelige kg-indtastninger vises som skrevet.
+ */
+export function weightInputText(kg: string, unit: WeightUnit): string {
+  const t = kg.trim();
+  if (!t) return '';
+  if (unit === 'kg' && !/[.,]\d{3,}$/.test(t)) return kg;
+  const n = parseFloat(t.replace(',', '.'));
+  return Number.isFinite(n) ? displayNumber(toDisplay(n, unit)) : kg;
+}
+
+/** Det man skriver i vægtfeltet som kg-tekst til sættet (#345): kg gemmes som skrevet, lb omregnes. */
+export function weightFromInput(text: string, unit: WeightUnit): string {
+  if (unit === 'kg') return text;
+  const t = text.trim();
+  if (!t) return '';
+  const n = parseFloat(t.replace(',', '.'));
+  return Number.isFinite(n) ? String(fromDisplay(n, 'lb')) : text;
+}
+
 /** Sekunder som m:ss (fx 125 → "2:05") */
 export function formatClock(seconds: number): string {
   const t = Math.max(0, Math.round(seconds));
