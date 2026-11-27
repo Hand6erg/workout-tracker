@@ -2888,6 +2888,8 @@ export type WorkoutChange =
   | { type: 'ADD_SET'; weId: string }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number; seconds?: number; meters?: number }
+  /** "Let uge" (#361): fyld de tomme arbejdssæt med den lette vægt (kg-tekst) og markér træningen som let uge */
+  | { type: 'APPLY_DELOAD'; weId: string; weight: string; reps: number }
   | { type: 'REMOVE_SET'; weId: string; setId: string }
   | { type: 'UPDATE_SET'; weId: string; setId: string; patch: Partial<Omit<SetEntry, 'id'>> }
   | { type: 'TOGGLE_SET'; weId: string; setId: string; now: number }
@@ -3283,6 +3285,18 @@ export function reducer(state: AppState, action: Action): AppState {
           ),
         })),
       );
+    case 'APPLY_DELOAD':
+      return mapActive(state, (w) => ({
+        ...mapExercise(w, action.weId, (e) => ({
+          ...e,
+          sets: e.sets.map((s) =>
+            s.warmup || s.done || isDropSet(s) || s.weight.trim()
+              ? s
+              : { ...s, weight: action.weight, reps: s.reps || (action.reps > 0 ? String(action.reps) : '') },
+          ),
+        })),
+        deload: true,
+      }));
     case 'ADD_WARMUP_SETS':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => {
@@ -4538,6 +4552,8 @@ interface StallSession {
   topWeight: number;
   /** Reps i alt på hovedsæt med topvægten */
   topReps: number;
+  /** Reps i første sæt med topvægten */
+  firstTopReps: number;
 }
 
 /**
@@ -4562,6 +4578,7 @@ function stallSessions(state: Pick<AppState, 'history' | 'exercises'>, exerciseI
       e1rm: Math.max(...sets.map((s) => estimate1RM(num(s.weight), num(s.reps)))),
       topWeight,
       topReps: sets.filter((s) => num(s.weight) === topWeight).reduce((n, s) => n + num(s.reps), 0),
+      firstTopReps: num(sets.find((s) => num(s.weight) === topWeight)!.reps),
     });
   }
   return out.sort((a, b) => a.date - b.date);
@@ -4581,6 +4598,8 @@ export interface StalledExercise {
   sessions: number;
   /** Seneste topvægt (kg) */
   lastWeight: number;
+  /** Reps i første sæt med topvægten sidste gang */
+  lastReps: number;
   /** Forslag til en let uge: ~90 % af seneste topvægt, rundet til 2,5 kg (1 kg for håndvægte) */
   lightWeight: number;
 }
@@ -4612,6 +4631,7 @@ export function exerciseStall(state: Pick<AppState, 'history' | 'exercises'>, ex
     best,
     sessions: list.length - bestIdx,
     lastWeight,
+    lastReps: list[list.length - 1].firstTopReps,
     lightWeight: roundToStep(lastWeight * DELOAD_FACTOR, step),
   };
 }
@@ -4643,4 +4663,24 @@ export function cleanStallDismissed(raw: unknown): Record<string, StallDismissal
     if (d && typeof d.best === 'number' && typeof d.sessions === 'number') out[id] = { best: d.best, sessions: d.sessions };
   }
   return out;
+}
+
+/**
+ * Vægten til "Let uge" som kg-tekst til sættet (#361). Med kg: den foreslåede lette vægt (fx "90", "92,5").
+ * Med lb: ~90 % af seneste topvægt rundet til 5 lb, gemt i kg som når man skriver i lb.
+ */
+export function deloadWeightInput(stall: Pick<StalledExercise, 'lightWeight' | 'lastWeight'>, unit: WeightUnit = 'kg'): string {
+  if (unit === 'kg') return String(stall.lightWeight).replace('.', ',');
+  const lb = Math.round((toDisplay(stall.lastWeight, 'lb') * DELOAD_FACTOR) / 5) * 5;
+  return weightFromInput(String(lb), 'lb');
+}
+
+/** Den lette vægt som tekst i den valgte enhed: "90 kg" eller "200 lb" */
+export function deloadWeightText(stall: Pick<StalledExercise, 'lightWeight' | 'lastWeight'>, unit: WeightUnit = 'kg'): string {
+  return formatWeight(num(deloadWeightInput(stall, unit)), unit);
+}
+
+/** "Bænkpres står stille (4 træninger) – prøv en let uge med 90 kg" (#361) */
+export function stallText(stall: StalledExercise, unit: WeightUnit = 'kg'): string {
+  return `${stall.name} står stille (${stall.sessions} træninger) – prøv en let uge med ${deloadWeightText(stall, unit)}`;
 }

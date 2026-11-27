@@ -22,6 +22,10 @@ import {
   num,
   previousSetsFor,
   progressionHint,
+  exerciseStall,
+  isStallDismissed,
+  deloadWeightInput,
+  deloadWeightText,
   restFor,
   recordsBrokenBy,
   supersetGroups,
@@ -609,6 +613,29 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   );
 }
 
+/** "Står stille – prøv en let uge" med "Let uge"-knap (#361). Skjules, hvis påmindelsen er skjult på startskærmen. */
+function StallHint({ we }: { we: WorkoutExercise }) {
+  const { base: state, send: dispatch } = useWorkout();
+  const stall = exerciseStall(state, we.exerciseId);
+  if (!stall || isStallDismissed(state, we.exerciseId)) return null;
+  const unit = state.unit ?? 'kg';
+  const weightText = deloadWeightText(stall, unit);
+  return (
+    <div className="stall-hint" role="group" aria-label={`Står stille: ${stall.name}`}>
+      <span>
+        Står stille i {stall.sessions} træninger – prøv en let uge med {weightText}
+      </span>
+      <button
+        className="btn-secondary small"
+        aria-label={`Let uge: udfyld ${stall.name} med ${weightText}`}
+        onClick={() => dispatch({ type: 'APPLY_DELOAD', weId: we.id, weight: deloadWeightInput(stall, unit), reps: stall.lastReps })}
+      >
+        Let uge
+      </button>
+    </div>
+  );
+}
+
 const TAG_ORDER: SetTag[] = ['drop', 'failure', 'amrap'];
 
 /** Menu fra sæt-nummeret (#244): opvarmning, drop-sæt, til failure, AMRAP, fjern mærke, tilføj drop-sæt og slet */
@@ -789,6 +816,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </p>
       )}
       {hint && <HintButton weId={we.id} hint={hint} />}
+      {!edit && <StallHint we={we} />}
       {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}
       {noteOpen && (
         <textarea

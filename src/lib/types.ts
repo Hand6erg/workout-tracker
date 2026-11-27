@@ -85,6 +85,8 @@ export interface Workout {
   updatedAt?: number;
   /** Finishers fra intervaltimeren (#331), fx "EMOM 10 min". Mangler i gamle data. */
   finishers?: Finisher[];
+  /** Let uge (#361): træningen blev lavet med lettere vægt efter "Let uge". Mangler i gamle data. */
+  deload?: boolean;
 }
 
 export interface TemplateExercise {
