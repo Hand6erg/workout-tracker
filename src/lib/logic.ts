@@ -852,7 +852,8 @@ export function vsLastTime(state: AppState, workout: Workout | null): VsLastTime
   return { previousId: prev.id, previousDate: prev.startedAt, diffKg: Math.round(diffKg * 100) / 100, started, rows };
 }
 
-function vsValueText(n: number, unit: VsLastRow['unit']): string {
+function vsValueText(n: number, unit: VsLastRow['unit'], weightUnit: WeightUnit = 'kg'): string {
+  if (unit === 'kg' && weightUnit === 'lb') return `${toDisplay(n, 'lb').toLocaleString('da-DK', { maximumFractionDigits: 1 })} lb`;
   const v = (Math.round(n * 10) / 10).toLocaleString('da-DK', { maximumFractionDigits: 1 });
   return unit === 'sek' ? `${v} sek.` : `${v} ${unit}`;
 }
@@ -861,10 +862,10 @@ function vsValueText(n: number, unit: VsLastRow['unit']): string {
  * Teksten i "Mod sidst"-oversigten for én øvelse (#177): denne gang / sidst.
  * Ikke lavet sidst → "Ny i dag". Ikke startet endnu → "–" denne gang og hele sidste gang.
  */
-export function vsRowCells(row: VsLastRow): { now: string; last: string } {
-  const now = row.doneSets ? vsValueText(row.now, row.unit) : '–';
+export function vsRowCells(row: VsLastRow, weightUnit: WeightUnit = 'kg'): { now: string; last: string } {
+  const now = row.doneSets ? vsValueText(row.now, row.unit, weightUnit) : '–';
   if (row.last === null || row.lastTotal === null) return { now, last: 'Ny i dag' };
-  return { now, last: vsValueText(row.doneSets ? row.last : row.lastTotal, row.unit) };
+  return { now, last: vsValueText(row.doneSets ? row.last : row.lastTotal, row.unit, weightUnit) };
 }
 const MONTHS_DA = ['januar', 'februar', 'marts', 'april', 'maj', 'juni', 'juli', 'august', 'september', 'oktober', 'november', 'december'];
 
@@ -895,7 +896,7 @@ export interface ShareCard {
 }
 
 /** Teksten til delebilledet af en opsummering (#144) – ren funktion, så den kan testes */
-export function shareCardLines(s: WorkoutSummary): ShareCard {
+export function shareCardLines(s: WorkoutSummary, unit: WeightUnit = 'kg'): ShareCard {
   const d = new Date(s.startedAt);
   const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   return {
@@ -904,13 +905,13 @@ export function shareCardLines(s: WorkoutSummary): ShareCard {
     title: s.name,
     stats: [
       { label: 'Tid', value: formatDuration(s.durationMs) },
-      { label: 'Volumen', value: formatKg(s.volume) },
+      { label: 'Volumen', value: formatWeight(s.volume, unit) },
       { label: 'Sæt', value: `${s.sets} sæt` },
       { label: 'Rekorder', value: String(s.recordCount) },
     ],
     change: volumeChangeText(s.volumeChangePct),
     records: [
-      ...(s.goals ?? []).map((g) => `🎯 Mål nået: ${g.name} ${formatKg(g.weight)} × ${g.reps}`),
+      ...(s.goals ?? []).map((g) => `🎯 Mål nået: ${g.name} ${formatWeight(g.weight, unit)} × ${g.reps}`),
       ...s.records.map((r) => `🏆 ${r.name} – ${r.kinds.map((k) => RECORD_NAMES[k]).join(', ')}`),
     ],
     fileName: `loeft-${iso}.png`,
@@ -1377,7 +1378,7 @@ export interface YearSlide {
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString('da-DK')} ${n === 1 ? one : many}`;
 
 /** Sliderne i "Dit træningsår"-historien (#309). Slides uden data springes over. */
-export function yearReviewSlides(r: YearReview): YearSlide[] {
+export function yearReviewSlides(r: YearReview, unit: WeightUnit = 'kg'): YearSlide[] {
   const slides: YearSlide[] = [
     {
       id: 'intro',
@@ -1392,7 +1393,7 @@ export function yearReviewSlides(r: YearReview): YearSlide[] {
       id: 'volume',
       icon: r.comparison?.icon ?? '🏋️',
       title: 'Du løftede i alt',
-      big: formatTons(r.volume),
+      big: formatTons(r.volume, unit),
       lines: r.comparison ? [`Det svarer til ${r.comparison.text.replace(/^= /, '')}`] : [],
     });
   if (r.favourite)
@@ -1410,7 +1411,7 @@ export function yearReviewSlides(r: YearReview): YearSlide[] {
       title: 'Nye rekorder',
       big: plural(r.records, 'rekord', 'rekorder'),
       lines: r.biggestRecord
-        ? [`Største spring: ${r.biggestRecord.name}`, `${formatKg(r.biggestRecord.from)} → ${formatKg(r.biggestRecord.to)} (est. 1RM)`]
+        ? [`Største spring: ${r.biggestRecord.name}`, `${formatWeight(r.biggestRecord.from, unit)} → ${formatWeight(r.biggestRecord.to, unit)} (est. 1RM)`]
         : [],
     });
   if (r.longestWeekStreak > 0)
@@ -1427,7 +1428,7 @@ export function yearReviewSlides(r: YearReview): YearSlide[] {
       icon: '📅',
       title: 'Din stærkeste måned',
       big: r.strongestMonth.name,
-      lines: [`${formatTons(r.strongestMonth.volume)} løftet`],
+      lines: [`${formatTons(r.strongestMonth.volume, unit)} løftet`],
     });
   if (r.liftGrowth.length)
     slides.push({
@@ -1435,7 +1436,7 @@ export function yearReviewSlides(r: YearReview): YearSlide[] {
       icon: '📈',
       title: 'Sådan voksede dine løft',
       big: `+${r.liftGrowth[0].pct} %`,
-      lines: r.liftGrowth.map((g) => `${g.name}: ${formatKg(Math.round(g.start))} → ${formatKg(Math.round(g.end))} (+${g.pct} %)`),
+      lines: r.liftGrowth.map((g) => `${g.name}: ${formatWeight(Math.round(g.start), unit)} → ${formatWeight(Math.round(g.end), unit)} (+${g.pct} %)`),
     });
   slides.push({
     id: 'end',
@@ -1456,14 +1457,14 @@ export interface YearShareCard {
 }
 
 /** Teksten til delebilledet "Mit træningsår" (#310) – ren funktion, så den kan testes */
-export function yearShareCardLines(r: YearReview): YearShareCard {
+export function yearShareCardLines(r: YearReview, unit: WeightUnit = 'kg'): YearShareCard {
   return {
     app: 'Løft',
     title: `Mit træningsår ${r.year}`,
     stats: [
       { label: 'Træninger', value: r.workouts.toLocaleString('da-DK') },
       { label: 'Tid', value: formatTotalTime(r.durationMs) },
-      { label: 'Løftet', value: formatTons(r.volume) },
+      { label: 'Løftet', value: formatTons(r.volume, unit) },
       { label: 'Længste stime', value: plural(r.longestWeekStreak, 'uge', 'uger') },
     ],
     lines: [
@@ -2427,7 +2428,8 @@ export function mostLiftedExercises(state: AppState, n = 3): MostLiftedRow[] {
 }
 
 /** Samlet vægt på dansk (#272): under 1000 kg → "850 kg", ellers "86,4 tons" */
-export function formatTons(kg: number): string {
+export function formatTons(kg: number, unit: WeightUnit = 'kg'): string {
+  if (unit === 'lb') return `${Math.round(toDisplay(kg, 'lb')).toLocaleString('da-DK')} lb`;
   if (kg < 1000) return `${Math.round(kg).toLocaleString('da-DK')} kg`;
   const t = Math.round(kg / 100) / 10;
   return `${t.toLocaleString('da-DK', { maximumFractionDigits: 1 })} ${t === 1 ? 'ton' : 'tons'}`;
@@ -2520,16 +2522,17 @@ export function exerciseProgress(
  * Teksten under styrkegrafen når man trykker på et punkt (#215),
  * fx "12. nov. · 100 kg × 5 · est. 1RM 116,7 kg". Rekorder får "🏆 rekord" til sidst.
  */
-export function describeProgressPoint(p: ProgressPoint, kind: ExerciseKind, metric: ProgressMetric): string {
+export function describeProgressPoint(p: ProgressPoint, kind: ExerciseKind, metric: ProgressMetric, unit: WeightUnit = 'kg'): string {
   const date = new Date(p.date).toLocaleDateString('da-DK', { day: 'numeric', month: 'short' });
   const num = (n: number) => (Math.round(n * 10) / 10).toLocaleString('da-DK', { maximumFractionDigits: 1 });
+  const w = (kg: number) => `${num(unit === 'lb' ? toDisplay(kg, 'lb') : kg)} ${unit}`;
   const parts = [date];
   if (kind === 'time') parts.push(`${num(p.value)} sek.`);
   else if (kind === 'distance') parts.push(`${num(p.value)} m`);
-  else if (metric === 'volume' || !p.set) parts.push(`volumen ${num(p.value)} kg`);
+  else if (metric === 'volume' || !p.set) parts.push(`volumen ${w(p.value)}`);
   else {
-    parts.push(`${num(p.set.weight)} kg × ${p.set.reps}`);
-    if (metric === '1rm') parts.push(`est. 1RM ${num(p.value)} kg`);
+    parts.push(`${w(p.set.weight)} × ${p.set.reps}`);
+    if (metric === '1rm') parts.push(`est. 1RM ${w(p.value)}`);
   }
   if (p.record) parts.push('🏆 rekord');
   return parts.join(' · ');

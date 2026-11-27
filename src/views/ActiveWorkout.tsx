@@ -51,7 +51,7 @@ import {
   formatRepRange,
 } from '../lib/logic';
 import type { SetTag, WeightUnit } from '../lib/types';
-import { useNow, useStore } from '../lib/store';
+import { useNow, useStore, useUnit } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
 
 /**
@@ -375,6 +375,7 @@ function VsLastBar({ vs }: { vs: VsLastTime }) {
 
 /** Oversigt pr. øvelse: denne gang / sidst (#177) */
 function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
+  const unit = useUnit();
   const date = new Date(vs.previousDate).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long' });
   return (
     <Modal title="Mod sidst" onClose={onClose}>
@@ -390,7 +391,7 @@ function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
         </thead>
         <tbody>
           {vs.rows.map((r) => {
-            const c = vsRowCells(r);
+            const c = vsRowCells(r, unit);
             return (
               <tr key={r.weId} aria-label={r.name}>
                 <th scope="row">{r.name}</th>

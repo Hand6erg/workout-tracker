@@ -7,7 +7,7 @@ import { FinisherList } from '../components/IntervalTimer';
 import {
   bestSet,
   formatDuration,
-  formatKg,
+  formatWeight,
   formatSet,
   setTagSuffix,
   historyTemplates,
@@ -25,7 +25,7 @@ import {
   formatClock,
   finisherLabel,
 } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 import type { Workout } from '../lib/types';
 
 /** Statuslinje under søgning/filter, fx "2 træninger med \"squat\" fra Ben" */
@@ -38,6 +38,7 @@ function statusText(n: number, q: string, template?: string): string {
 const dateFmt = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
 export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
+  const unit = useUnit();
   const { state, dispatch, exerciseById } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const open = state.history.find((w) => w.id === openId);
@@ -121,7 +122,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
               <span>⏱ {formatDuration(workoutDuration(w, w.startedAt))}</span>
-              <span>🏋️ {formatKg(workoutVolume(withLoads(state, w)))}</span>
+              <span>🏋️ {formatWeight(workoutVolume(withLoads(state, w)), unit)}</span>
               {count > 0 && (
                 <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>
               )}
@@ -143,7 +144,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
                           </span>
                         )}
                       </td>
-                      <td className="muted">{b ? formatSet(b, isBodyweightReps(state, e.exerciseId)) : ''}</td>
+                      <td className="muted">{b ? formatSet(b, isBodyweightReps(state, e.exerciseId), unit) : ''}</td>
                     </tr>
                   );
                 })}
@@ -172,6 +173,7 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
 }
 
 export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClose: () => void; onOpenWorkout?: () => void }) {
+  const unit = useUnit();
   const { state, dispatch, exerciseById } = useStore();
   // Reel pause før hvert sæt (#316) – kun træninger med tidsstempler
   const restBefore = new Map(actualRests(w).map((r) => [r.setId, r.seconds]));
@@ -237,7 +239,7 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
           <ol>
             {e.sets.map((s) => (
               <li key={s.id}>
-                {formatSet(s, isBodyweightReps(state, e.exerciseId))}
+                {formatSet(s, isBodyweightReps(state, e.exerciseId), unit)}
                 {formatRpe(s.rpe) && <span className="muted"> @ RPE {formatRpe(s.rpe)}</span>}
                 {s.warmup && <span className="muted"> (opvarmning)</span>}
                 {setTagSuffix(s) && <span className="set-tag-note"> {setTagSuffix(s).trim()}</span>}

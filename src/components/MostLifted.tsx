@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { formatTons, mostLiftedExercises } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 import { ExerciseDetail } from '../views/ExercisesView';
 
 /** "Mest løftede øvelser" i Profil (#274): top 3 efter samlet løftet vægt */
 export function MostLifted() {
+  const unit = useUnit();
   const { state } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const rows = mostLiftedExercises(state, 3);
@@ -24,7 +25,7 @@ export function MostLifted() {
                 <strong>{r.name}</strong>
                 <small className="muted">{r.workouts === 1 ? '1 træning' : `${r.workouts} træninger`}</small>
               </span>
-              <span className="ml-total">{formatTons(r.volumeKg)}</span>
+              <span className="ml-total">{formatTons(r.volumeKg, unit)}</span>
             </button>
           </li>
         ))}

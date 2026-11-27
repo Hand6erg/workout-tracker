@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, restSummary, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
+import { formatDuration, formatWeight, milestonesUnlockedBy, RECORD_NAMES, restSummary, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
 import { shareSummaryImage } from '../lib/shareImage';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 import { formatRest } from '../components/RestPicker';
 import { FinisherList } from '../components/IntervalTimer';
 
 /** Opsummering lige efter "Afslut" (#143) */
 export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
+  const unit = useUnit();
   const { state, exerciseById } = useStore();
   const [sharing, setSharing] = useState(false);
   const s = state.lastFinishedId ? workoutSummary(state, state.lastFinishedId) : null;
@@ -28,7 +29,7 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         </div>
         <div className="summary-stat">
           <span className="muted">Volumen</span>
-          <strong>{formatKg(s.volume)}</strong>
+          <strong>{formatWeight(s.volume, unit)}</strong>
         </div>
         <div className="summary-stat">
           <span className="muted">Sæt</span>
@@ -86,7 +87,7 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
           <ul className="summary-records">
             {s.goals.map((g) => (
               <li key={g.goalId}>
-                <strong>{g.name}</strong> <span>{formatKg(g.weight)} × {g.reps}</span>
+                <strong>{g.name}</strong> <span>{formatWeight(g.weight, unit)} × {g.reps}</span>
               </li>
             ))}
           </ul>
@@ -112,7 +113,7 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         onClick={async () => {
           setSharing(true);
           try {
-            await shareSummaryImage(shareCardLines(s));
+            await shareSummaryImage(shareCardLines(s, unit));
           } finally {
             setSharing(false);
           }

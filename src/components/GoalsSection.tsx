@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { etaText, formatKg, goalEta, goalOnTrack, goalProgress, goalsOverview, uid } from '../lib/logic';
-import { useStore } from '../lib/store';
-import type { LiftGoal } from '../lib/types';
+import { etaText, formatWeight, fromDisplay, goalEta, goalOnTrack, goalProgress, goalsOverview, uid } from '../lib/logic';
+import { useStore, useUnit } from '../lib/store';
+import type { LiftGoal, WeightUnit } from '../lib/types';
 import { ExerciseDetail } from '../views/ExercisesView';
 import { ConfirmButton } from './ui';
 
 const longDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** "100 kg × 1" */
-export function goalLabel(g: Pick<LiftGoal, 'weight' | 'reps'>): string {
-  return `${formatKg(g.weight)} × ${g.reps}`;
+export function goalLabel(g: Pick<LiftGoal, 'weight' | 'reps'>, unit: WeightUnit = 'kg'): string {
+  return `${formatWeight(g.weight, unit)} × ${g.reps}`;
 }
 
 /** Løftemål på øvelsessiden (#199): sæt et mål, se fremskridt og tempo */
@@ -54,11 +54,12 @@ export function GoalsSection({ exerciseId }: { exerciseId: string }) {
 }
 
 function GoalRow({ goal }: { goal: LiftGoal }) {
+  const unit = useUnit();
   const { state, dispatch } = useStore();
   const now = Date.now();
   const p = goalProgress(state, goal.id);
   if (!p) return null;
-  const label = goalLabel(goal);
+  const label = goalLabel(goal, unit);
   const eta = goal.achievedAt ? null : goalEta(state, goal.id, now);
   const onTrack = goal.achievedAt ? null : goalOnTrack(state, goal.id, now);
   return (
@@ -74,7 +75,7 @@ function GoalRow({ goal }: { goal: LiftGoal }) {
         <small className="goal-ok">✓ Nået {longDate.format(goal.achievedAt)}</small>
       ) : (
         <small className="muted">
-          Nu: {formatKg(Math.round(p.current * 10) / 10)} e1RM
+          Nu: {formatWeight(Math.round(p.current * 10) / 10, unit)} e1RM
           {eta !== null && <> · I dette tempo: {etaText(eta, now)}</>}
           {goal.targetDate ? <> · Mål: {longDate.format(goal.targetDate)}</> : null}
         </small>
@@ -90,6 +91,7 @@ function GoalRow({ goal }: { goal: LiftGoal }) {
 }
 
 function GoalForm({ exerciseId, onDone }: { exerciseId: string; onDone: () => void }) {
+  const unit = useUnit();
   const { dispatch } = useStore();
   const [kg, setKg] = useState('');
   const [reps, setReps] = useState('1');
@@ -101,7 +103,7 @@ function GoalForm({ exerciseId, onDone }: { exerciseId: string; onDone: () => vo
   const save = () => {
     if (!valid) return;
     const targetDate = date ? new Date(`${date}T12:00:00`).getTime() : undefined;
-    dispatch({ type: 'ADD_GOAL', id: uid(), exerciseId, weight, reps: r, targetDate, now: Date.now() });
+    dispatch({ type: 'ADD_GOAL', id: uid(), exerciseId, weight: fromDisplay(weight, unit), reps: r, targetDate, now: Date.now() });
     onDone();
   };
 
@@ -109,8 +111,8 @@ function GoalForm({ exerciseId, onDone }: { exerciseId: string; onDone: () => vo
     <div className="goal-form">
       <div className="goal-fields">
         <label className="field">
-          Mål-vægt (kg)
-          <input inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value)} placeholder="100" autoFocus />
+          Mål-vægt ({unit})
+          <input inputMode="decimal" value={kg} onChange={(e) => setKg(e.target.value)} placeholder={unit === 'lb' ? '225' : '100'} autoFocus />
         </label>
         <label className="field">
           Reps
@@ -135,6 +137,7 @@ function GoalForm({ exerciseId, onDone }: { exerciseId: string; onDone: () => vo
 
 /** "🎯 Mål" i Profil (#200): alle mål på tværs af øvelser – tryk for at åbne øvelsen */
 export function ProfileGoals() {
+  const unit = useUnit();
   const { state } = useStore();
   const [openId, setOpenId] = useState<string | null>(null);
   const [showReached, setShowReached] = useState(false);
@@ -150,7 +153,7 @@ export function ProfileGoals() {
       {open.length > 0 && (
         <ul className="goal-list">
           {open.map(({ goal, pct }) => {
-            const label = `${name(goal.exerciseId)} ${goalLabel(goal)}`;
+            const label = `${name(goal.exerciseId)} ${goalLabel(goal, unit)}`;
             const eta = goalEta(state, goal.id, now);
             const current = goalProgress(state, goal.id)!.current;
             return (
@@ -159,14 +162,14 @@ export function ProfileGoals() {
                   <span className="row-between">
                     <strong>{name(goal.exerciseId)}</strong>
                     <span className="muted">
-                      {goalLabel(goal)} · {pct} %
+                      {goalLabel(goal, unit)} · {pct} %
                     </span>
                   </span>
                   <span className="goal-bar" role="progressbar" aria-label={`Fremskridt mod ${label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
                     <span style={{ width: `${pct}%` }} />
                   </span>
                   <small className="muted">
-                    Nu: {formatKg(Math.round(current * 10) / 10)} e1RM
+                    Nu: {formatWeight(Math.round(current * 10) / 10, unit)} e1RM
                     {eta !== null && <> · I dette tempo: {etaText(eta, now)}</>}
                   </small>
                 </button>
@@ -183,11 +186,11 @@ export function ProfileGoals() {
           {showReached && (
             <ul className="goal-list">
               {reached.map((g) => (
-                <li key={g.id} aria-label={`Nået mål ${name(g.exerciseId)} ${goalLabel(g)}`}>
+                <li key={g.id} aria-label={`Nået mål ${name(g.exerciseId)} ${goalLabel(g, unit)}`}>
                   <button className="goal-row reached goal-link" onClick={() => setOpenId(g.exerciseId)}>
                     <span className="row-between">
                       <strong>{name(g.exerciseId)}</strong>
-                      <span className="muted">{goalLabel(g)}</span>
+                      <span className="muted">{goalLabel(g, unit)}</span>
                     </span>
                     <small className="goal-ok">✓ Nået {longDate.format(g.achievedAt!)}</small>
                   </button>

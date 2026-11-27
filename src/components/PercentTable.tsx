@@ -1,17 +1,18 @@
 import { useState } from 'react';
-import { exerciseKind, formatKg, formatPlates, isBodyweight, num, percentTable, tableOneRM } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { exerciseKind, formatWeight, fromDisplay, weightInputText, formatPlates, isBodyweight, num, percentTable, tableOneRM } from '../lib/logic';
+import { useStore, useUnit } from '../lib/store';
 
 /**
  * "Procenttabel" på øvelsessiden (#251): træningsvægte 95 %–50 % af 1RM, tryk for skiver pr. side.
  * Man kan skrive en testet 1RM, som så bruges i stedet for estimatet (#252).
  */
 export function PercentTable({ exerciseId }: { exerciseId: string }) {
+  const unit = useUnit();
   const { state, dispatch } = useStore();
   const ex = state.exercises.find((e) => e.id === exerciseId);
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<number | null>(null);
-  const [tested, setTested] = useState(ex?.testedOneRM ? String(ex.testedOneRM).replace('.', ',') : '');
+  const [tested, setTested] = useState(ex?.testedOneRM ? weightInputText(String(ex.testedOneRM), unit).replace('.', ',') : '');
   if (!ex || exerciseKind(state, exerciseId) !== 'reps' || isBodyweight(state, exerciseId)) return null;
   const rows = percentTable(state, exerciseId);
   const base = tableOneRM(state, exerciseId);
@@ -19,7 +20,7 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
   const onTested = (v: string) => {
     setTested(v);
     const w = num(v);
-    dispatch({ type: 'SET_TESTED_1RM', exerciseId, weight: w > 0 ? w : undefined });
+    dispatch({ type: 'SET_TESTED_1RM', exerciseId, weight: w > 0 ? fromDisplay(w, unit) : undefined });
   };
 
   return (
@@ -32,10 +33,10 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
         <>
           <div className="pct-tested">
             <label className="field">
-              Testet 1RM (kg)
+              Testet 1RM ({unit})
               <input
                 inputMode="decimal"
-                placeholder={base?.source === 'estimated' ? `Est. ${formatKg(base.oneRM)}` : 'Fx 120'}
+                placeholder={base?.source === 'estimated' ? `Est. ${formatWeight(base.oneRM, unit)}` : 'Fx 120'}
                 value={tested}
                 onChange={(e) => onTested(e.target.value)}
               />
@@ -51,7 +52,7 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
           ) : (
             <>
               <p className="muted pct-base">
-                Bygger på: {base.source === 'tested' ? 'testet 1RM' : 'estimeret 1RM'} ({formatKg(base.oneRM)})
+                Bygger på: {base.source === 'tested' ? 'testet 1RM' : 'estimeret 1RM'} ({formatWeight(base.oneRM, unit)})
               </p>
               <ul className="pct-list">
                 {rows.map((r) => {
@@ -60,12 +61,12 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
                     <li key={r.pct}>
                       <button
                         className={`pct-row ${on ? 'on' : ''}`}
-                        aria-label={`${r.pct} % – ${formatKg(r.weight)}`}
+                        aria-label={`${r.pct} % – ${formatWeight(r.weight, unit)}`}
                         aria-expanded={on}
                         onClick={() => setPicked(on ? null : r.pct)}
                       >
                         <span className="pct-pct">{r.pct} %</span>
-                        <strong>{formatKg(r.weight)}</strong>
+                        <strong>{formatWeight(r.weight, unit)}</strong>
                       </button>
                       {on && <p className="pct-plates">{formatPlates(r.weight, state.barWeight, state.plates)}</p>}
                     </li>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { yearReview, yearReviewCardYear, yearReviewSlides, yearShareCardLines, yearsWithWorkouts } from '../lib/logic';
 import { shareYearImage } from '../lib/shareImage';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 
 /** "Dit træningsår"-kortet i Historik (dec–jan) og "Tidligere år"-links (#309) */
 export function YearReviewSection({ now }: { now: number }) {
@@ -48,9 +48,10 @@ export function YearReviewSection({ now }: { now: number }) {
 
 /** Fuldskærms-historien med 6–8 slides (#309) */
 export function YearStory({ year, onClose }: { year: number; onClose: () => void }) {
+  const unit = useUnit();
   const { state } = useStore();
   const review = useMemo(() => yearReview(state, year), [state, year]);
-  const slides = useMemo(() => yearReviewSlides(review), [review]);
+  const slides = useMemo(() => yearReviewSlides(review, unit), [review, unit]);
   const [i, setI] = useState(0);
   const touch = useRef<{ x: number; y: number } | null>(null);
   const last = slides.length - 1;
@@ -117,7 +118,7 @@ export function YearStory({ year, onClose }: { year: number; onClose: () => void
           </p>
         ))}
         {i === last && (
-          <button className="btn-primary story-share" onClick={() => void shareYearImage(yearShareCardLines(review))}>
+          <button className="btn-primary story-share" onClick={() => void shareYearImage(yearShareCardLines(review, unit))}>
             <span aria-hidden>📤</span> Del mit år
           </button>
         )}

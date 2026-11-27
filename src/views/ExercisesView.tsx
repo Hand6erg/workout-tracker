@@ -11,7 +11,7 @@ import {
   formatRpe,
   exerciseKind,
   formatClock,
-  formatKg,
+  formatWeight,
   formatSet,
   setTagSuffix,
   isBodyweightReps,
@@ -20,7 +20,7 @@ import {
   uid,
   type PersonalRecords,
 } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type Muscle } from '../lib/types';
 
 const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
@@ -162,6 +162,7 @@ function NewExercise({ onClose }: { onClose: () => void }) {
 
 /** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
 export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
+  const unit = useUnit();
   const { state } = useStore();
   const hist = exerciseHistory(state.history, ex.id, state);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
@@ -203,7 +204,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
             {kind === 'reps' ? (
               <div>
                 <small>Est. 1RM</small>
-                <strong data-testid="best-1rm">{formatKg(best)}</strong>
+                <strong data-testid="best-1rm">{formatWeight(best, unit)}</strong>
               </div>
             ) : (
               <div>
@@ -227,11 +228,11 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
                   <strong>{shortDate.format(h.date)}</strong>
                   <small>
                     {h.sets
-                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id)) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : '') + setTagSuffix(s))
+                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id), unit) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : '') + setTagSuffix(s))
                       .join(' · ')}
                   </small>
                 </span>
-                <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
+                <span className="muted">{kind === 'reps' ? formatWeight(h.best1RM, unit) : fmt(bestOf(h))}</span>
               </li>
             ))}
           </ul>
@@ -242,11 +243,12 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
 }
 
 function Records({ records }: { records: PersonalRecords }) {
+  const unit = useUnit();
   const reps = Object.entries(records.repsAtWeight)
     .map(([w, r]) => ({ weight: Number(w), ...r }))
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 5);
-  const kg = (n: number) => (n > 0 ? formatKg(n) : 'Kropsvægt');
+  const kg = (n: number) => (n > 0 ? formatWeight(n, unit) : 'Kropsvægt');
   return (
     <section aria-label="Rekorder">
       <h3 className="section">🏆 Rekorder</h3>
@@ -292,7 +294,7 @@ function Records({ records }: { records: PersonalRecords }) {
                 <small>{shortDate.format(records.heaviest.date)}</small>
               </span>
               <span>
-                {formatKg(records.heaviest.weight)} × {records.heaviest.reps}
+                {formatWeight(records.heaviest.weight, unit)} × {records.heaviest.reps}
               </span>
             </li>
           )}
@@ -301,10 +303,10 @@ function Records({ records }: { records: PersonalRecords }) {
               <span>
                 <strong>Bedste est. 1RM</strong>
                 <small>
-                  {formatKg(records.best1RM.weight)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
+                  {formatWeight(records.best1RM.weight, unit)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
                 </small>
               </span>
-              <span>{formatKg(records.best1RM.value)}</span>
+              <span>{formatWeight(records.best1RM.value, unit)}</span>
             </li>
           )}
           {reps.map((r) => (
