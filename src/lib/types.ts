@@ -201,6 +201,10 @@ export interface AppState {
   barWeight: number;
   /** Skivestørrelser man har adgang til (kg) */
   plates: number[];
+  /** Stangvægt i lb, når enheden er lb (#347). Kg-indstillingen ovenfor røres ikke. */
+  barWeightLb: number;
+  /** Skivestørrelser i lb, når enheden er lb (#347) */
+  platesLb: number[];
   /** Kropsmål, nyeste først */
   bodyLog: BodyMeasurement[];
   /** Mål for antal træninger pr. uge (til stime) */

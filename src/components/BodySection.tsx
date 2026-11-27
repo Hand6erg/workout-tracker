@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { num, uid } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { fromDisplay, num, toDisplay, uid } from '../lib/logic';
+import { useStore, useUnit } from '../lib/store';
+import type { WeightUnit } from '../lib/types';
 import { LineChart } from './LineChart';
 import { ConfirmButton, Empty } from './ui';
 import type { BodyMeasurement } from '../lib/types';
@@ -20,12 +21,14 @@ const METRICS: { key: Metric; label: string; unit: string }[] = [
   { key: 'waist', label: 'Talje', unit: 'cm' },
 ];
 
-function BodyChart({ log }: { log: BodyMeasurement[] }) {
+function BodyChart({ log, unit }: { log: BodyMeasurement[]; unit: WeightUnit }) {
   const [metric, setMetric] = useState<Metric>('weight');
-  const meta = METRICS.find((m) => m.key === metric)!;
+  const base = METRICS.find((m) => m.key === metric)!;
+  // Vægt vises i den valgte enhed (#347); fedt og talje er uændrede
+  const meta = metric === 'weight' ? { ...base, unit } : base;
   const points = log
     .filter((m) => m[metric] !== undefined)
-    .map((m) => ({ t: m.date, value: m[metric] as number }))
+    .map((m) => ({ t: m.date, value: metric === 'weight' ? toDisplay(m.weight as number, unit) : (m[metric] as number) }))
     .sort((a, b) => a.t - b.t);
   const fmt = (n: number) => dec(Math.round(n * 10) / 10);
   const first = points[0];
@@ -66,6 +69,7 @@ function BodyChart({ log }: { log: BodyMeasurement[] }) {
 /** Kropsmål under Profil: registrér og se målinger */
 export function BodySection() {
   const { state, dispatch } = useStore();
+  const unit = useUnit();
   const [date, setDate] = useState(todayInput);
   const [weight, setWeight] = useState('');
   const [fat, setFat] = useState('');
@@ -79,7 +83,7 @@ export function BodySection() {
       type: 'ADD_MEASUREMENT',
       id: uid(),
       date: new Date(y, m - 1, d, 12).getTime(),
-      weight: num(weight) || undefined,
+      weight: num(weight) > 0 ? fromDisplay(num(weight), unit) : undefined,
       bodyFat: num(fat) || undefined,
       waist: num(waist) || undefined,
     });
@@ -98,7 +102,7 @@ export function BodySection() {
         </label>
         <div className="body-grid">
           <label className="field">
-            Vægt (kg)
+            Vægt ({unit})
             <input inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} />
           </label>
           <label className="field">
@@ -114,7 +118,7 @@ export function BodySection() {
           Gem måling
         </button>
       </div>
-      {state.bodyLog.length > 0 && <BodyChart log={state.bodyLog} />}
+      {state.bodyLog.length > 0 && <BodyChart log={state.bodyLog} unit={unit} />}
       {!state.bodyLog.length ? (
         <Empty>Ingen målinger endnu.</Empty>
       ) : (
@@ -125,7 +129,7 @@ export function BodySection() {
                 <strong>{dateFmt.format(m.date)}</strong>
                 <small>
                   {[
-                    m.weight !== undefined && `${dec(m.weight)} kg`,
+                    m.weight !== undefined && `${dec(unit === 'lb' ? toDisplay(m.weight, unit) : Math.round(m.weight * 100) / 100)} ${unit}`,
                     m.bodyFat !== undefined && `${dec(m.bodyFat)} % fedt`,
                     m.waist !== undefined && `talje ${dec(m.waist)} cm`,
                   ]

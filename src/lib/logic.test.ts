@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   actualRests,
+  nearestLoadableKg,
+  platesText,
+  warmupSetsFor,
+  plateSetup,
+  DEFAULT_PLATES_LB,
   toDisplay,
   fromDisplay,
   weightInputText,
@@ -2725,7 +2730,7 @@ describe('kropsvægt til kropsvægtsøvelser (#206)', () => {
     const s = initialState();
     expect(s.bodyWeight).toBeNull();
     const set = reducer(s, { type: 'SET_BODY_WEIGHT', kg: 81.25 });
-    expect(set.bodyWeight).toBe(81.3);
+    expect(set.bodyWeight).toBe(81.25); // gemmes præcist, så lb-værdier bevares (#347)
     expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: 0 }).bodyWeight).toBeNull();
     expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: NaN }).bodyWeight).toBeNull();
     expect(reducer(set, { type: 'SET_BODY_WEIGHT', kg: -5 }).bodyWeight).toBeNull();
@@ -4500,5 +4505,67 @@ describe('pund uden for træningen (#346)', () => {
     expect(lb).toBe(kg);
     expect(lb.split('\n')[0]).toContain('Vægt (kg)');
     expect(lb).toContain('Bænkpres,1,102.0583,5,');
+  });
+});
+
+describe('lb-skiver og -stang (#347)', () => {
+  const lb = (n: number) => fromDisplay(n, 'lb');
+
+  it('225 lb = 45 lb stang + 45 + 45 pr. side', () => {
+    const s = initialState();
+    expect(platesText(lb(225), s, 'lb')).toBe('45 + 45 pr. side');
+    expect(platesText(lb(135), s, 'lb')).toBe('45 pr. side');
+    expect(plateSetup(s, 'lb')).toEqual({ bar: 45, plates: DEFAULT_PLATES_LB });
+    // kg er uændret
+    expect(platesText(100, s, 'kg')).toBe('25 + 15 pr. side');
+  });
+
+  it('nærmeste vægt med lb-skiver runder til 5 lb', () => {
+    const s = initialState();
+    expect(toDisplay(nearestLoadableKg(lb(227), s, 'lb'), 'lb')).toBe(225);
+    expect(toDisplay(nearestLoadableKg(lb(233), s, 'lb'), 'lb')).toBe(235);
+    expect(toDisplay(nearestLoadableKg(lb(30), s, 'lb'), 'lb')).toBe(45);
+  });
+
+  it('opvarmning i lb bruger lb-stangen og spring på 5 lb', () => {
+    const s = initialState();
+    const sets = warmupSetsFor(lb(225), s, 'lb').map((w) => [toDisplay(w.weight, 'lb'), w.reps]);
+    expect(sets).toEqual([
+      [45, 10],
+      [90, 5],
+      [135, 3],
+      [180, 2],
+    ]);
+  });
+
+  it('stang og skiver ændres for den valgte enhed, uden at røre den anden', () => {
+    let s = reducer(initialState(), { type: 'SET_UNIT', unit: 'lb' });
+    s = reducer(s, { type: 'SET_BAR_WEIGHT', weight: 35 });
+    s = reducer(s, { type: 'TOGGLE_PLATE', plate: 35 });
+    expect(s.barWeightLb).toBe(35);
+    expect(s.platesLb).not.toContain(35);
+    expect(s.barWeight).toBe(20);
+    expect(s.plates).toContain(15);
+    s = reducer(s, { type: 'SET_UNIT', unit: 'kg' });
+    s = reducer(s, { type: 'SET_BAR_WEIGHT', weight: 15 });
+    expect(s.barWeight).toBe(15);
+    expect(s.barWeightLb).toBe(35);
+  });
+
+  it('gamle stang- og skiveindstillinger indlæses uændret som kg', () => {
+    const old = { ...initialState(), barWeight: 15, plates: [20, 10, 5] } as Record<string, unknown>;
+    delete old.barWeightLb;
+    delete old.platesLb;
+    const s = loadState(JSON.stringify(old));
+    expect(s.barWeight).toBe(15);
+    expect(s.plates).toEqual([20, 10, 5]);
+    expect(s.barWeightLb).toBe(45);
+    expect(s.platesLb).toEqual(DEFAULT_PLATES_LB);
+  });
+
+  it('kropsvægt 180 lb gemmes præcist og vises som 81,6 kg', () => {
+    const s = reducer(initialState(), { type: 'SET_BODY_WEIGHT', kg: lb(180) });
+    expect(toDisplay(s.bodyWeight!, 'lb')).toBe(180);
+    expect(toDisplay(s.bodyWeight!, 'kg')).toBe(81.6);
   });
 });

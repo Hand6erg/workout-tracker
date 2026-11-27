@@ -118,3 +118,46 @@ test('med lb vises Historik, volumen, rekorder og mål i lb – og mål skifter 
   detail = await openBench(page);
   await expect(detail.getByRole('region', { name: 'Mål' }).getByRole('listitem', { name: 'Mål 142,9 kg × 1' })).toBeVisible();
 });
+
+test('med lb bruger procenttabellen lb-skiver, og kropsvægt 180 lb vises som 81,6 kg (#347)', async ({ page }) => {
+  await page.goto('./');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await setUnit(page, 'lb');
+
+  // Stangvægt vises i lb
+  const bar = page.getByRole('region', { name: 'Stang' }).getByLabel('Stangvægt');
+  await expect(bar).toHaveValue('45');
+  await expect(bar.locator('option', { hasText: '45 lb' })).toHaveCount(1);
+
+  // Kropsvægt i lb
+  const bw = page.getByLabel('Kropsvægt (lb)');
+  await bw.fill('180');
+
+  // Procenttabel: testet 1RM 250 lb → 90 % = 225 lb = 45 + 45 pr. side
+  await page.getByRole('navigation').getByRole('button', { name: /Øvelser/ }).click();
+  await page.getByRole('button', { name: /^Bænkpres/ }).first().click();
+  const detail = page.getByRole('dialog', { name: 'Bænkpres' });
+  const table = detail.getByRole('region', { name: 'Procenttabel' });
+  await table.getByRole('button', { name: /Procenttabel/ }).click();
+  await table.getByLabel('Testet 1RM (lb)').fill('250');
+  const row = table.getByRole('button', { name: '90 % – 225 lb' });
+  await row.click();
+  await expect(table).toContainText('45 + 45 pr. side');
+  await row.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/lb-plates.png' });
+  await detail.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  // Kropsmål i lb
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const body = page.getByRole('region', { name: 'Kropsmål' });
+  await body.getByLabel('Vægt (lb)').fill('200');
+  await body.getByRole('button', { name: 'Gem måling' }).click();
+  await expect(body.getByRole('list', { name: 'Målinger' })).toContainText('200 lb');
+
+  // Skift til kg: kropsvægten er 81,6 kg, målingen 90,72 kg, og kg-stangen er uændret 20 kg
+  await setUnit(page, 'kg');
+  await expect(page.getByLabel('Kropsvægt (kg)')).toHaveValue('81,6');
+  await expect(body.getByRole('list', { name: 'Målinger' })).toContainText('90,72 kg');
+  await expect(page.getByRole('region', { name: 'Stang' }).getByLabel('Stangvægt')).toHaveValue('20');
+});

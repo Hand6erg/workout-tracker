@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { exerciseKind, formatWeight, fromDisplay, weightInputText, formatPlates, isBodyweight, num, percentTable, tableOneRM } from '../lib/logic';
+import { exerciseKind, formatWeight, fromDisplay, weightInputText, platesText, isBodyweight, num, percentTable, tableOneRM } from '../lib/logic';
 import { useStore, useUnit } from '../lib/store';
 
 /**
@@ -14,7 +14,7 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [tested, setTested] = useState(ex?.testedOneRM ? weightInputText(String(ex.testedOneRM), unit).replace('.', ',') : '');
   if (!ex || exerciseKind(state, exerciseId) !== 'reps' || isBodyweight(state, exerciseId)) return null;
-  const rows = percentTable(state, exerciseId);
+  const rows = percentTable(state, exerciseId, unit);
   const base = tableOneRM(state, exerciseId);
 
   const onTested = (v: string) => {
@@ -68,7 +68,7 @@ export function PercentTable({ exerciseId }: { exerciseId: string }) {
                         <span className="pct-pct">{r.pct} %</span>
                         <strong>{formatWeight(r.weight, unit)}</strong>
                       </button>
-                      {on && <p className="pct-plates">{formatPlates(r.weight, state.barWeight, state.plates)}</p>}
+                      {on && <p className="pct-plates">{platesText(r.weight, state, unit)}</p>}
                     </li>
                   );
                 })}
