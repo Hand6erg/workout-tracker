@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   actualRests,
+  toDisplay,
+  fromDisplay,
+  formatWeight,
   restSummary,
   typicalRest,
   weekPlan,
@@ -4391,5 +4394,46 @@ describe('teknik-tips (#337)', () => {
     expect(s.exercises).toEqual(old.exercises);
     expect(s.exercises.every((e) => e.cues === undefined)).toBe(true);
     expect(exerciseCues(s, 'squat').length).toBeGreaterThan(0);
+  });
+});
+
+describe('pund (#344)', () => {
+  it('omregner kg ↔ lb og afrunder visningen til 0,1', () => {
+    expect(toDisplay(100, 'lb')).toBe(220.5);
+    expect(toDisplay(100, 'kg')).toBe(100);
+    expect(formatWeight(100, 'lb')).toBe('220,5 lb');
+    expect(formatWeight(102.5, 'kg')).toBe('102,5 kg');
+    expect(fromDisplay(80, 'kg')).toBe(80);
+  });
+
+  it('hele og halve pund kommer tilbage som samme tal', () => {
+    for (let lb = 0.5; lb <= 1000; lb += 0.5) {
+      expect(toDisplay(fromDisplay(lb, 'lb'), 'lb')).toBe(lb);
+    }
+    expect(formatWeight(fromDisplay(225, 'lb'), 'lb')).toBe('225 lb');
+  });
+
+  it('formatSet viser pund, og kg er uændret', () => {
+    const set = { id: 's', weight: String(fromDisplay(225, 'lb')), reps: '5', done: true, rpe: '' };
+    expect(formatSet(set, false, 'lb')).toBe('225 lb × 5');
+    const kg = { id: 'k', weight: '102.5', reps: '5', done: true, rpe: '' };
+    expect(formatSet(kg)).toBe('102,5 kg × 5');
+    expect(formatSet(kg, false, 'kg')).toBe('102,5 kg × 5');
+    expect(formatSet({ id: 'r', weight: '', reps: '12', done: true, rpe: '' }, false, 'lb')).toBe('12 reps');
+    expect(formatSet({ id: 'b', weight: '10', reps: '8', done: true, rpe: '' }, true, 'lb')).toBe('KV +22 × 8');
+  });
+
+  it('SET_UNIT ændrer indstillingen, stempler settingsAt, og gamle data læses som kg', () => {
+    const s0 = initialState();
+    expect(s0.unit).toBe('kg');
+    const s1 = reducer(s0, { type: 'SET_UNIT', unit: 'lb' });
+    expect(s1.unit).toBe('lb');
+    expect(stampChanges(s0, s1, 1234).settingsAt).toBe(1234);
+    expect(reducer(s1, { type: 'SET_UNIT', unit: 'lb' })).toBe(s1);
+    expect(loadState(JSON.stringify(s1)).unit).toBe('lb');
+    const old = JSON.parse(JSON.stringify(s0));
+    delete old.unit;
+    expect(loadState(JSON.stringify(old)).unit).toBe('kg');
+    expect(loadState(JSON.stringify({ ...old, unit: 'stone' })).unit).toBe('kg');
   });
 });

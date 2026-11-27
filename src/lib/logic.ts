@@ -16,6 +16,7 @@ import type {
   SetEntry,
   SetTag,
   Theme,
+  WeightUnit,
   Template,
   TemplateExercise,
   Workout,
@@ -53,6 +54,7 @@ export function initialState(): AppState {
     restVibrate: true,
     keepAwake: true,
     showRpe: true,
+    unit: 'kg',
     showTimeLeft: true,
     theme: 'dark',
     largeText: false,
@@ -206,6 +208,40 @@ export function formatKg(n: number): string {
   return `${Math.round(n * 10) / 10} kg`.replace('.', ',');
 }
 
+/* ---------- Pund (#344): data er altid i kg ---------- */
+
+/** 1 lb i kg (international definition) */
+export const KG_PER_LB = 0.45359237;
+
+export function isWeightUnit(v: unknown): v is WeightUnit {
+  return v === 'kg' || v === 'lb';
+}
+
+/** En vægt i kg vist i den valgte enhed, afrundet til 0,1 (fx 100 kg → 220,5 lb) */
+export function toDisplay(kg: number, unit: WeightUnit): number {
+  const v = unit === 'lb' ? kg / KG_PER_LB : kg;
+  return Math.round(v * 10) / 10;
+}
+
+/**
+ * En vægt indtastet i den valgte enhed som kg til gemning. Pund gemmes med 4 decimaler,
+ * så fx 225 lb vises som 225 lb igen (102,0582 kg).
+ */
+export function fromDisplay(value: number, unit: WeightUnit): number {
+  if (unit === 'kg') return value;
+  return Math.round(value * KG_PER_LB * 10000) / 10000;
+}
+
+/** Tal med dansk komma og uden ",0" (fx 102.5 → "102,5", 225 → "225") */
+function displayNumber(n: number): string {
+  return String(Math.round(n * 10) / 10).replace('.', ',');
+}
+
+/** En vægt i kg som tekst i den valgte enhed: "102,5 kg" eller "225 lb" */
+export function formatWeight(kg: number, unit: WeightUnit = 'kg'): string {
+  return unit === 'lb' ? `${displayNumber(toDisplay(kg, 'lb'))} lb` : formatKg(kg);
+}
+
 /** Sekunder som m:ss (fx 125 → "2:05") */
 export function formatClock(seconds: number): string {
   const t = Math.max(0, Math.round(seconds));
@@ -235,10 +271,10 @@ function stopTimer(s: SetEntry, now: number): SetEntry {
  * Vægtfeltet for en kropsvægtsøvelse som tekst (#208): "KV" (ingen ekstra), "KV +10" (vægtbælte)
  * eller "KV −20" (assistance).
  */
-export function bodyweightText(weight: string): string {
+export function bodyweightText(weight: string, unit: WeightUnit = 'kg'): string {
   const extra = num(weight);
   if (!extra) return 'KV';
-  const abs = String(Math.abs(extra)).replace('.', ',');
+  const abs = unit === 'lb' ? displayNumber(toDisplay(Math.abs(extra), 'lb')) : String(Math.abs(extra)).replace('.', ',');
   return `KV ${extra > 0 ? '+' : '\u2212'}${abs}`;
 }
 
@@ -246,15 +282,16 @@ export function bodyweightText(weight: string): string {
  * Sættet som tekst. Typen følger de udfyldte felter, så gamle sæt (kun reps) vises som før.
  * `bodyweight` = kropsvægtsøvelse: vises som "KV +10 × 8" (#208).
  */
-export function formatSet(s: SetEntry, bodyweight = false): string {
+export function formatSet(s: SetEntry, bodyweight = false, unit: WeightUnit = 'kg'): string {
   if ((s.meters ?? '').trim()) {
     const sec = num(s.seconds ?? '');
     return `${s.meters!.trim().replace('.', ',')} m${sec > 0 ? ` · ${formatClock(sec)}` : ''}`;
   }
   if ((s.seconds ?? '').trim() && !s.reps.trim()) return `${num(s.seconds!)} sek.`;
-  if (bodyweight) return `${bodyweightText(s.weight)} × ${s.reps}`;
+  if (bodyweight) return `${bodyweightText(s.weight, unit)} × ${s.reps}`;
   const w = num(s.weight);
-  return w ? `${s.weight.replace('.', ',')} kg × ${s.reps}` : `${s.reps} reps`;
+  if (!w) return `${s.reps} reps`;
+  return unit === 'lb' ? `${formatWeight(w, 'lb')} × ${s.reps}` : `${s.weight.replace('.', ',')} kg × ${s.reps}`;
 }
 
 /** Mærke-tekst efter et sæt i Historik og på øvelsessiden (#245), fx " (drop-sæt)". Tom for almindelige sæt. */
@@ -2850,6 +2887,7 @@ export type Action =
   | { type: 'SET_REST_VIBRATE'; on: boolean }
   | { type: 'SET_KEEP_AWAKE'; on: boolean }
   | { type: 'SET_SHOW_RPE'; on: boolean }
+  | { type: 'SET_UNIT'; unit: WeightUnit }
   | { type: 'SET_SHOW_TIME_LEFT'; on: boolean }
   /** Farvetema (#293). Ukendte værdier ignoreres. */
   | { type: 'SET_THEME'; theme: Theme }
@@ -3392,6 +3430,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, keepAwake: action.on };
     case 'SET_SHOW_RPE':
       return { ...state, showRpe: action.on };
+    case 'SET_UNIT':
+      return isWeightUnit(action.unit) && action.unit !== state.unit ? { ...state, unit: action.unit } : state;
     case 'SET_SHOW_TIME_LEFT':
       return { ...state, showTimeLeft: action.on };
     case 'SET_THEME':
@@ -3705,6 +3745,7 @@ const SETTINGS = [
   'restVibrate',
   'keepAwake',
   'showRpe',
+  'unit',
   'showTimeLeft',
   'recapDismissed',
   'yearReviewHidden',
@@ -3908,6 +3949,8 @@ export function loadState(raw: string | null): AppState {
       bodyWeight: typeof parsed.bodyWeight === 'number' && parsed.bodyWeight > 0 ? parsed.bodyWeight : null,
       // RPE-indstillingen fra før #237 findes ikke – feltet var altid vist
       showRpe: typeof parsed.showRpe === 'boolean' ? parsed.showRpe : true,
+      // Vægtenheden fra før #344 findes ikke – alt var i kg
+      unit: isWeightUnit(parsed.unit) ? parsed.unit : 'kg',
       showTimeLeft: typeof parsed.showTimeLeft === 'boolean' ? parsed.showTimeLeft : true,
       // Tema fra før #293 findes ikke – appen var altid mørk
       theme: isTheme(parsed.theme) ? parsed.theme : 'dark',
