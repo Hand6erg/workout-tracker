@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  exerciseStall,
+  stalledExercises,
+  isStallDismissed,
   actualRests,
   repMaxTable,
   repMaxesBeaten,
@@ -4633,5 +4636,92 @@ describe('rep-maks-tabel (#354)', () => {
     expect(isStrongRepMax(rows.find((r) => r.reps === 5)!)).toBe(false);
     expect(isStrongRepMax(rows.find((r) => r.reps === 8)!)).toBe(false);
     expect(isStrongRepMax({ reps: 5, best: { weight: 105, reps: 5, date: 1, workoutId: 'w' }, estimated: 100 })).toBe(true);
+  });
+});
+
+describe('står stille (#360)', () => {
+  const set = (w: number, r: number, extra: Partial<AppState['history'][number]['exercises'][number]['sets'][number]> = {}) =>
+    ({ id: uid(), weight: String(w), reps: String(r), done: true, ...extra }) as AppState['history'][number]['exercises'][number]['sets'][number];
+  const wk = (n: number, sets: ReturnType<typeof set>[], exerciseId = 'bench') => ({
+    id: `w${n}`,
+    name: 'Bryst',
+    startedAt: n * 86400000,
+    finishedAt: n * 86400000 + 3600000,
+    exercises: [{ id: `e${n}`, exerciseId, sets }],
+  });
+  const stateWith = (...workouts: ReturnType<typeof wk>[]): AppState => ({ ...initialState(), history: [...workouts].reverse() });
+  const flat = (n: number) => Array.from({ length: n }, (_, i) => wk(i + 1, [set(40, 10, { warmup: true }), set(100, 5), set(100, 5), set(100, 5)]));
+
+  it('4 træninger med bænkpres 100 kg × 5 uden ny bedste → står stille, let uge 90 kg', () => {
+    const s = stateWith(...flat(4));
+    const st = exerciseStall(s, 'bench');
+    expect(st).toMatchObject({ exerciseId: 'bench', name: 'Bænkpres', sessions: 4, lastWeight: 100, lightWeight: 90 });
+    expect(st!.best).toBe(estimate1RM(100, 5));
+    expect(stalledExercises(s).map((x) => x.exerciseId)).toEqual(['bench']);
+  });
+
+  it('ny bedste e1RM i en af de seneste 3 → står ikke stille; under 4 træninger → står ikke stille', () => {
+    const w = flat(4);
+    w[2] = wk(3, [set(102.5, 5)]);
+    expect(exerciseStall(stateWith(...w), 'bench')).toBeNull();
+    expect(exerciseStall(stateWith(...flat(3)), 'bench')).toBeNull();
+  });
+
+  it('samme topvægt og færre reps hver gang → står stille, selv om der var en ny bedste for nylig', () => {
+    const s = stateWith(wk(1, [set(90, 5)]), wk(2, [set(100, 6), set(100, 6)]), wk(3, [set(100, 6), set(100, 5)]), wk(4, [set(100, 5), set(100, 4)]));
+    const st = exerciseStall(s, 'bench');
+    expect(st).not.toBeNull();
+    expect(st!.sessions).toBe(3);
+  });
+
+  it('opvarmning og drop-sæt tæller ikke; let uge rundes til 2,5 kg (1 kg for håndvægte)', () => {
+    const w = flat(4);
+    w[3] = wk(4, [set(100, 5), set(150, 10, { warmup: true }), set(130, 8, { tag: 'drop' })]);
+    expect(exerciseStall(stateWith(...w), 'bench')?.lightWeight).toBe(90);
+    const odd = Array.from({ length: 4 }, (_, i) => wk(i + 1, [set(87.5, 5)]));
+    expect(exerciseStall(stateWith(...odd), 'bench')?.lightWeight).toBe(80); // 78,75 → 80
+    const db = initialState().exercises.find((e) => e.equipment === 'Håndvægt')!;
+    const dbw = Array.from({ length: 4 }, (_, i) => wk(i + 1, [set(27, 8)], db.id));
+    expect(exerciseStall(stateWith(...dbw), db.id)?.lightWeight).toBe(24); // 24,3 → 24
+  });
+
+  it('kropsvægts- og tidsøvelser står aldrig stille', () => {
+    const bw = initialState().exercises.find((e) => e.equipment === 'Kropsvægt' && (e.kind ?? 'reps') === 'reps')!;
+    const w = Array.from({ length: 5 }, (_, i) => wk(i + 1, [set(0, 8)], bw.id));
+    expect(exerciseStall(stateWith(...w), bw.id)).toBeNull();
+  });
+
+  it('"Skjul" skjuler den; ny bedste eller 3 træninger mere får den frem igen', () => {
+    let s = stateWith(...flat(4));
+    s = reducer(s, { type: 'DISMISS_STALL', exerciseId: 'bench' });
+    expect(s.stallDismissed.bench).toEqual({ best: estimate1RM(100, 5), sessions: 4 });
+    expect(isStallDismissed(s, 'bench')).toBe(true);
+    expect(stalledExercises(s)).toEqual([]);
+    // 2 træninger mere uden fremgang: stadig skjult; den 3. får den frem igen
+    const more = (n: number) => ({ ...s, history: [...flat(4 + n)].reverse() });
+    expect(stalledExercises(more(2))).toEqual([]);
+    expect(stalledExercises(more(3)).map((x) => x.exerciseId)).toEqual(['bench']);
+    // Ny bedste e1RM, og bagefter står den stille igen → vises
+    const again = [...flat(4), wk(5, [set(105, 5)]), ...[6, 7, 8].map((n) => wk(n, [set(100, 5)]))];
+    expect(stalledExercises({ ...s, history: again.reverse() }).map((x) => x.exerciseId)).toEqual(['bench']);
+  });
+
+  it('"Skjul" følger med i synk-indstillingerne', () => {
+    const s = trackedReducer(stateWith(...flat(4)), { type: 'DISMISS_STALL', exerciseId: 'bench', at: 5000 });
+    expect(s.settingsAt).toBe(5000);
+    const merged = mergeStates(stateWith(...flat(4)), s);
+    expect(merged.stallDismissed.bench).toBeDefined();
+  });
+
+  it('gamle data uden feltet indlæses med de samme træninger', () => {
+    const s = stateWith(...flat(4));
+    const old = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+    delete old.stallDismissed;
+    const loaded = loadState(JSON.stringify(old));
+    expect(loaded.history).toEqual(s.history);
+    expect(loaded.stallDismissed).toEqual({});
+    expect(loadState(JSON.stringify({ ...old, stallDismissed: { bench: { best: 'x' }, squat: { best: 100, sessions: 4 } } })).stallDismissed).toEqual({
+      squat: { best: 100, sessions: 4 },
+    });
   });
 });

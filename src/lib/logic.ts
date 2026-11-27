@@ -15,6 +15,7 @@ import type {
   Muscle,
   SetEntry,
   SetTag,
+  StallDismissal,
   Theme,
   WeightUnit,
   Template,
@@ -67,6 +68,7 @@ export function initialState(): AppState {
     largeText: false,
     recapDismissed: null,
     yearReviewHidden: [],
+    stallDismissed: {},
     favorites: [],
     bodyWeight: null,
     setTargets: { ...DEFAULT_SET_TARGETS },
@@ -2980,6 +2982,8 @@ export type Action =
   | { type: 'DELETE_GOAL'; goalId: string }
   | { type: 'DISMISS_RECAP'; key: string }
   | { type: 'HIDE_YEAR_REVIEW'; year: number }
+  /** Skjul "står stille"-påmindelsen for en øvelse (#360) */
+  | { type: 'DISMISS_STALL'; exerciseId: string }
   | { type: 'MERGE_REMOTE'; remote: AppState }
   /** Fortryd den seneste sletning (#221) – oplysningerne kommer fra `lastDeletion` */
   | { type: 'UNDO_DELETE'; deletion: Deletion };
@@ -3533,6 +3537,12 @@ export function reducer(state: AppState, action: Action): AppState {
       const hidden = state.yearReviewHidden ?? [];
       return hidden.includes(action.year) ? state : { ...state, yearReviewHidden: [...hidden, action.year] };
     }
+    case 'DISMISS_STALL': {
+      const sessions = stallSessions(state, action.exerciseId);
+      if (!sessions.length) return state;
+      const best = Math.max(...sessions.map((x) => x.e1rm));
+      return { ...state, stallDismissed: { ...(state.stallDismissed ?? {}), [action.exerciseId]: { best, sessions: sessions.length } } };
+    }
     case 'ADD_GOAL': {
       const weight = Math.round(action.weight * 100) / 100;
       const reps = Math.round(action.reps);
@@ -3831,6 +3841,7 @@ const SETTINGS = [
   'showTimeLeft',
   'recapDismissed',
   'yearReviewHidden',
+  'stallDismissed',
   'favorites',
   'program',
   'programSkip',
@@ -4048,6 +4059,8 @@ export function loadState(raw: string | null): AppState {
       yearReviewHidden: Array.isArray(parsed.yearReviewHidden)
         ? parsed.yearReviewHidden.filter((y): y is number => Number.isInteger(y))
         : [],
+      // Skjulte "står stille"-påmindelser fra før #360 findes ikke
+      stallDismissed: cleanStallDismissed(parsed.stallDismissed),
       // Løftemål fra før #197 findes ikke
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
       // Ugeplanen fra før #322 findes ikke – ingen planlagte dage
@@ -4505,4 +4518,129 @@ export function workoutRepMaxes(state: AppState, workoutId: string): WorkoutRepM
 /** "🏆 Ny 5RM i Squat: 105 kg" (#356) */
 export function repMaxLine(r: WorkoutRepMax, unit: WeightUnit = 'kg'): string {
   return `🏆 Ny ${r.reps}RM i ${r.name}: ${formatWeight(r.weight, unit)}`;
+}
+
+/* ---------- Står stille / let uge (#360) ---------- */
+
+/** Mindst så mange træninger med øvelsen, før den kan "stå stille" */
+export const STALL_MIN_SESSIONS = 4;
+/** Så mange af de seneste træninger skal være uden fremgang */
+export const STALL_WINDOW = 3;
+/** En let uge er ca. 90 % af den seneste topvægt */
+export const DELOAD_FACTOR = 0.9;
+
+interface StallSession {
+  workoutId: string;
+  date: number;
+  /** Bedste estimerede 1RM i træningen */
+  e1rm: number;
+  /** Tungeste hovedsæt */
+  topWeight: number;
+  /** Reps i alt på hovedsæt med topvægten */
+  topReps: number;
+}
+
+/**
+ * Træningerne med en vægt × reps-øvelse, ældste først. Kun hovedsæt (ikke opvarmning eller drop-sæt)
+ * med vægt og reps tæller. Kropsvægtsøvelser og tids-/distanceøvelser har ingen.
+ */
+function stallSessions(state: Pick<AppState, 'history' | 'exercises'>, exerciseId: string): StallSession[] {
+  const ex = state.exercises.find((e) => e.id === exerciseId);
+  if (!ex || (ex.kind ?? 'reps') !== 'reps' || ex.equipment === 'Kropsvægt') return [];
+  const out: StallSession[] = [];
+  for (const w of state.history) {
+    if (!w.finishedAt) continue;
+    const sets = w.exercises
+      .filter((we) => we.exerciseId === exerciseId)
+      .flatMap((we) => we.sets)
+      .filter((s) => isMainSet(s) && num(s.weight) > 0 && num(s.reps) > 0);
+    if (!sets.length) continue;
+    const topWeight = Math.max(...sets.map((s) => num(s.weight)));
+    out.push({
+      workoutId: w.id,
+      date: w.startedAt,
+      e1rm: Math.max(...sets.map((s) => estimate1RM(num(s.weight), num(s.reps)))),
+      topWeight,
+      topReps: sets.filter((s) => num(s.weight) === topWeight).reduce((n, s) => n + num(s.reps), 0),
+    });
+  }
+  return out.sort((a, b) => a.date - b.date);
+}
+
+/** Vægt rundet til nærmeste skridt (2,5 kg, 1 kg for håndvægte) */
+function roundToStep(kg: number, step: number): number {
+  return Math.round(Math.round(kg / step) * step * 100) / 100;
+}
+
+export interface StalledExercise {
+  exerciseId: string;
+  name: string;
+  /** Bedste estimerede 1RM (kg) */
+  best: number;
+  /** Antal træninger uden ny bedste e1RM (inkl. den, der satte den) */
+  sessions: number;
+  /** Seneste topvægt (kg) */
+  lastWeight: number;
+  /** Forslag til en let uge: ~90 % af seneste topvægt, rundet til 2,5 kg (1 kg for håndvægte) */
+  lightWeight: number;
+}
+
+/**
+ * Står øvelsen stille? (#360) Mindst 4 træninger, og enten
+ * - ingen af de seneste 3 slog den bedste e1RM fra før dem, eller
+ * - de seneste 3 var med samme topvægt og færre reps hver gang.
+ * Skjulte påmindelser tælles ikke med her – se `stalledExercises`.
+ */
+export function exerciseStall(state: Pick<AppState, 'history' | 'exercises'>, exerciseId: string): StalledExercise | null {
+  const list = stallSessions(state, exerciseId);
+  if (list.length < STALL_MIN_SESSIONS) return null;
+  const recent = list.slice(-STALL_WINDOW);
+  const before = list.slice(0, -STALL_WINDOW);
+  const bestBefore = Math.max(...before.map((x) => x.e1rm));
+  const noNewBest = recent.every((x) => x.e1rm <= bestBefore);
+  const fewerReps =
+    recent.every((x) => x.topWeight === recent[0].topWeight) && recent.every((x, i) => i === 0 || x.topReps < recent[i - 1].topReps);
+  if (!noNewBest && !fewerReps) return null;
+  const best = Math.max(...list.map((x) => x.e1rm));
+  const bestIdx = list.findIndex((x) => x.e1rm === best);
+  const ex = state.exercises.find((e) => e.id === exerciseId)!;
+  const lastWeight = list[list.length - 1].topWeight;
+  const step = ex.equipment === 'Håndvægt' ? 1 : 2.5;
+  return {
+    exerciseId,
+    name: ex.name,
+    best,
+    sessions: list.length - bestIdx,
+    lastWeight,
+    lightWeight: roundToStep(lastWeight * DELOAD_FACTOR, step),
+  };
+}
+
+/** Er påmindelsen skjult? Den kommer igen ved en ny bedste e1RM eller 3 træninger mere end da den blev skjult. */
+export function isStallDismissed(state: Pick<AppState, 'history' | 'exercises' | 'stallDismissed'>, exerciseId: string): boolean {
+  const d = state.stallDismissed?.[exerciseId];
+  if (!d) return false;
+  const list = stallSessions(state, exerciseId);
+  const best = list.length ? Math.max(...list.map((x) => x.e1rm)) : 0;
+  return best <= d.best && list.length < d.sessions + STALL_WINDOW;
+}
+
+/** Øvelser, der står stille og ikke er skjult – længst stillestående først (#360) */
+export function stalledExercises(state: Pick<AppState, 'history' | 'exercises' | 'stallDismissed'>): StalledExercise[] {
+  const ids = new Set(state.history.flatMap((w) => w.exercises.map((we) => we.exerciseId)));
+  return [...ids]
+    .map((id) => exerciseStall(state, id))
+    .filter((s): s is StalledExercise => s !== null && !isStallDismissed(state, s.exerciseId))
+    .sort((a, b) => b.sessions - a.sessions || a.name.localeCompare(b.name, 'da'));
+}
+
+/** Rens gemte skjulte påmindelser (gamle data har ingen) */
+export function cleanStallDismissed(raw: unknown): Record<string, StallDismissal> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, StallDismissal> = {};
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const d = v as Partial<StallDismissal> | null;
+    if (d && typeof d.best === 'number' && typeof d.sessions === 'number') out[id] = { best: d.best, sessions: d.sessions };
+  }
+  return out;
 }
