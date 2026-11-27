@@ -1,6 +1,7 @@
 import { IntervalButton } from '../components/IntervalTimer';
 import { RecoveryCard } from '../components/RecoveryCard';
 import { SetTargetRings } from '../components/SetTargets';
+import { StallCard } from '../components/StallCard';
 import { WeekPlanCard } from '../components/TrainingDays';
 import { ConfirmButton, Empty } from '../components/ui';
 import { formatTemplateLine, nextInProgram, supersetGroups, templateDurationEstimate, templateReady } from '../lib/logic';
@@ -69,6 +70,7 @@ export function StartView({ onOpenWorkout }: { onOpenWorkout: () => void }) {
 
       <WeekPlanCard />
       <SetTargetRings />
+      {!state.active && <StallCard />}
 
       <h2 className="section">Skabeloner</h2>
       {!state.templates.length && <Empty>Ingen skabeloner endnu. Gem en træning som skabelon fra Historik.</Empty>}

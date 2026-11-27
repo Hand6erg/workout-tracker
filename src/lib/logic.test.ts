@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  deloadWeightInput,
+  deloadWeightText,
+  stallText,
   exerciseStall,
   stalledExercises,
   isStallDismissed,
@@ -4723,5 +4726,56 @@ describe('står stille (#360)', () => {
     expect(loadState(JSON.stringify({ ...old, stallDismissed: { bench: { best: 'x' }, squat: { best: 100, sessions: 4 } } })).stallDismissed).toEqual({
       squat: { best: 100, sessions: 4 },
     });
+  });
+});
+
+describe('let uge (#361)', () => {
+  const set = (w: string, r: string, extra: Partial<AppState['history'][number]['exercises'][number]['sets'][number]> = {}) =>
+    ({ id: uid(), weight: w, reps: r, rpe: '', done: false, ...extra }) as AppState['history'][number]['exercises'][number]['sets'][number];
+  const withActive = (sets: ReturnType<typeof set>[]): AppState => ({
+    ...initialState(),
+    active: { id: 'a', name: 'Bryst', startedAt: 1, exercises: [{ id: 'we1', exerciseId: 'bench', sets }, { id: 'we2', exerciseId: 'squat', sets: [set('', '')] }] },
+  });
+
+  it('"Let uge" fylder kun tomme arbejdssæt og sætter deload-flaget', () => {
+    const s = withActive([
+      set('40', '10', { warmup: true }),
+      set('100', '5', { done: true }),
+      set('', ''),
+      set('', '3'),
+      set('95', ''),
+      set('', '', { tag: 'drop' }),
+    ]);
+    const next = reducer(s, { type: 'APPLY_DELOAD', weId: 'we1', weight: '90', reps: 5 });
+    const sets = next.active!.exercises[0].sets;
+    expect(sets.map((x) => [x.weight, x.reps])).toEqual([
+      ['40', '10'],
+      ['100', '5'],
+      ['90', '5'],
+      ['90', '3'],
+      ['95', ''],
+      ['', ''],
+    ]);
+    expect(next.active!.deload).toBe(true);
+    // Andre øvelser røres ikke
+    expect(next.active!.exercises[1].sets[0].weight).toBe('');
+  });
+
+  it('deload-flaget bevares, når træningen afsluttes', () => {
+    let s = reducer(withActive([set('', '')]), { type: 'APPLY_DELOAD', weId: 'we1', weight: '90', reps: 5 });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: 'we1', setId: s.active!.exercises[0].sets[0].id, now: 2 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: 3 });
+    expect(s.history[0].deload).toBe(true);
+    // gamle træninger uden flaget indlæses uændret
+    const old = { ...initialState(), history: [{ id: 'o', name: 'x', startedAt: 1, finishedAt: 2, exercises: [] }] };
+    expect(loadState(JSON.stringify(old)).history[0]).toEqual(old.history[0]);
+  });
+
+  it('let vægt i kg og lb, og teksten til kortet', () => {
+    const stall = { exerciseId: 'bench', name: 'Bænkpres', best: 116.7, sessions: 4, lastWeight: 100, lastReps: 5, lightWeight: 90 };
+    expect(deloadWeightInput(stall)).toBe('90');
+    expect(deloadWeightInput({ ...stall, lightWeight: 92.5 })).toBe('92,5');
+    expect(deloadWeightText(stall, 'lb')).toBe('200 lb'); // 220,5 lb × 0,9 = 198,4 → 200
+    expect(stallText(stall)).toBe('Bænkpres står stille (4 træninger) – prøv en let uge med 90 kg');
   });
 });
