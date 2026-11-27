@@ -51,3 +51,33 @@ test('rep-maks-tabel på øvelsessiden: 100 kg × 5 fylder 1-, 3- og 5RM (#355)'
   await expect(plank).toBeVisible();
   await expect(plank.getByRole('region', { name: 'Rep-maks' })).toHaveCount(0);
 });
+
+test('"Ny 5RM i Squat" på opsummeringen og i Historik (#356)', async ({ page }) => {
+  await page.goto('./');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+
+  // Første gang er ingen rep-maks
+  await logSquat(page, '100', '5');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  await expect(summary).toBeVisible();
+  await expect(summary.getByRole('region', { name: 'Nye rep-maks' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  await logSquat(page, '105', '5');
+  const lines = summary.getByRole('region', { name: 'Nye rep-maks' });
+  await expect(lines).toHaveText('🏆 Ny 5RM i Squat: 105 kg');
+  await lines.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/rep-max-summary.png' });
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  // Samme linje i Historik
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await page.getByRole('button', { name: /^Træning/ }).first().click();
+  await expect(page.getByRole('dialog').getByRole('list', { name: 'Nye rep-maks' })).toContainText('Ny 5RM i Squat: 105 kg');
+  await page.getByRole('dialog').getByRole('button', { name: 'Luk', exact: true }).click();
+
+  // 🏆 på 5RM-rækken på øvelsessiden
+  const detail = await openExercise(page, 'Squat');
+  await expect(detail.getByRole('listitem', { name: '5 reps: 105 kg' }).getByRole('img', { name: 'Slået rekord' })).toBeVisible();
+});

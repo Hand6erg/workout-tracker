@@ -4,6 +4,8 @@ import {
   repMaxTable,
   repMaxesBeaten,
   isStrongRepMax,
+  workoutRepMaxes,
+  repMaxLine,
   nearestLoadableKg,
   platesText,
   warmupSetsFor,
@@ -4615,6 +4617,14 @@ describe('rep-maks-tabel (#354)', () => {
     expect(repMaxTable(base(), 'plank')).toEqual([]);
     const s = base();
     expect(loadState(JSON.stringify(s)).history).toEqual(s.history);
+  });
+
+  it('workoutRepMaxes: kun det højeste slåede rep-antal pr. øvelse, med linjen "Ny 5RM" (#356)', () => {
+    const s = { ...initialState(), history: [wk('w1', 1000, [set(100, 5)]), wk('w2', 2000, [set(105, 5), set(80, 8, true)])] };
+    // 105×5 slår 1-, 2-, 3- og 5RM, men kun 5RM vises
+    expect(workoutRepMaxes(s, 'w2')).toEqual([{ exerciseId: 'bench', name: 'Bænkpres', reps: 5, weight: 105 }]);
+    expect(workoutRepMaxes(s, 'w1')).toEqual([]);
+    expect(repMaxLine(workoutRepMaxes(s, 'w2')[0])).toBe('🏆 Ny 5RM i Bænkpres: 105 kg');
   });
 
   it('"stærk" når det faktiske sæt er over estimatet (#355)', () => {
