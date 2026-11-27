@@ -3,6 +3,8 @@ import {
   actualRests,
   toDisplay,
   fromDisplay,
+  weightInputText,
+  weightFromInput,
   formatWeight,
   restSummary,
   typicalRest,
@@ -4435,5 +4437,29 @@ describe('pund (#344)', () => {
     delete old.unit;
     expect(loadState(JSON.stringify(old)).unit).toBe('kg');
     expect(loadState(JSON.stringify({ ...old, unit: 'stone' })).unit).toBe('kg');
+  });
+});
+
+describe('vægtfeltet i pund (#345)', () => {
+  it('lb indtastes som kg og vises som samme tal igen', () => {
+    const kg = weightFromInput('225', 'lb');
+    expect(kg).toBe('102.0583');
+    expect(weightInputText(kg, 'lb')).toBe('225');
+    expect(weightInputText(kg, 'kg')).toBe('102,1');
+    expect(weightInputText(weightFromInput('132,5', 'lb'), 'lb')).toBe('132,5');
+  });
+
+  it('kg-indtastninger gemmes og vises som skrevet', () => {
+    expect(weightFromInput('102,5', 'kg')).toBe('102,5');
+    expect(weightInputText('102,5', 'kg')).toBe('102,5');
+    expect(weightInputText('100', 'kg')).toBe('100');
+    expect(weightInputText('100', 'lb')).toBe('220,5');
+  });
+
+  it('tomme felter og kropsvægt-assistance (−) virker i begge enheder', () => {
+    expect(weightFromInput('', 'lb')).toBe('');
+    expect(weightInputText('', 'lb')).toBe('');
+    expect(weightInputText(weightFromInput('-45', 'lb'), 'lb')).toBe('-45');
+    expect(weightFromInput('abc', 'lb')).toBe('abc');
   });
 });
