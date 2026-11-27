@@ -704,3 +704,11 @@ button.year-cell { cursor: pointer; }
 .page > .btn-secondary.wide + .btn-secondary.wide,
 .page > .btn-primary.wide + .btn-secondary.wide { margin-top: 8px; }
 .unit-note { margin: 6px 0 0; font-size: 0.8rem; }
+
+/* Rep-maks-tabel (#355) */
+.repmax-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.repmax-row { display: grid; grid-template-columns: 3.4rem 1fr auto; align-items: center; gap: 8px; background: var(--surface); border-radius: 10px; padding: 8px 12px; min-width: 0; }
+.repmax-reps { color: var(--muted); font-variant-numeric: tabular-nums; }
+.repmax-best { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; min-width: 0; }
+.repmax-est { font-size: 0.85rem; white-space: nowrap; }
+.repmax-strong { font-size: 0.75rem; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; }
