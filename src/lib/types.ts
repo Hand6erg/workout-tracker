@@ -143,6 +143,9 @@ export interface LiftGoal {
 /** Farvetema (#293) */
 export type Theme = 'dark' | 'light' | 'system';
 
+/** Vægtenhed (#344). Data gemmes altid i kg – enheden ændrer kun visning og indtastning. */
+export type WeightUnit = 'kg' | 'lb';
+
 /** Intervaltimer til finishers (#329) */
 export type IntervalMode = 'emom' | 'tabata' | 'amrap';
 
@@ -212,6 +215,8 @@ export interface AppState {
   keepAwake: boolean;
   /** Vis RPE-feltet i træningen (#237). Loggede RPE-værdier beholdes, når det er slået fra. */
   showRpe: boolean;
+  /** Vægtenhed (#344): 'kg' (standard) eller 'lb'. Loggen gemmes altid i kg. */
+  unit: WeightUnit;
   /** "ca. 15 min tilbage" i den aktive træning (#281) */
   showTimeLeft: boolean;
   /** Farvetema (#293): mørk (standard), lys eller følg telefonen. Gælder kun denne enhed. */
