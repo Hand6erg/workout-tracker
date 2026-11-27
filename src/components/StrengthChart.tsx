@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { describeProgressPoint, exerciseKind, exerciseProgress, formatKg, type ProgressMetric, type ProgressRange } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { describeProgressPoint, exerciseKind, exerciseProgress, formatWeight, type ProgressMetric, type ProgressRange } from '../lib/logic';
+import { useStore, useUnit } from '../lib/store';
 import { LineChart } from './LineChart';
 
 const RANGES: { id: ProgressRange; label: string }[] = [
@@ -17,6 +17,7 @@ const METRICS: { id: ProgressMetric; label: string }[] = [
 
 /** Styrkegraf på øvelsessiden (#214): udvikling pr. træning med valg af måling og interval */
 export function StrengthChart({ exerciseId }: { exerciseId: string }) {
+  const unit = useUnit();
   const { state } = useStore();
   const kind = exerciseKind(state, exerciseId);
   const [metric, setMetric] = useState<ProgressMetric>('1rm');
@@ -26,12 +27,12 @@ export function StrengthChart({ exerciseId }: { exerciseId: string }) {
   const metricName =
     kind === 'time' ? 'Længste hold' : kind === 'distance' ? 'Længste distance' : METRICS.find((m) => m.id === metric)!.label;
   const format = (n: number) =>
-    kind === 'time' ? `${Math.round(n)} sek.` : kind === 'distance' ? `${String(Math.round(n * 10) / 10).replace('.', ',')} m` : formatKg(n);
+    kind === 'time' ? `${Math.round(n)} sek.` : kind === 'distance' ? `${String(Math.round(n * 10) / 10).replace('.', ',')} m` : formatWeight(n, unit);
   // Aksen viser kun tal, så de kan være i venstre margen
   const axis = (n: number) => (n >= 10000 ? `${String(Math.round(n / 100) / 10).replace('.', ',')}k` : String(Math.round(n)));
   const newest = points[points.length - 1];
   const shownMetric: ProgressMetric = kind === 'reps' ? metric : '1rm';
-  const labels = points.map((p) => describeProgressPoint(p, kind, shownMetric));
+  const labels = points.map((p) => describeProgressPoint(p, kind, shownMetric, unit));
   // Valgt punkt huskes pr. træning, så det forsvinder hvis måling/periode skjuler det
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = points.findIndex((p) => p.workoutId === selectedId);

@@ -1,12 +1,14 @@
-import { formatKg, formatTotalTime, monthNameDa, recapChangeTexts, type MonthRecap } from '../lib/logic';
+import { useUnit } from '../lib/store';
+import { formatWeight, formatTotalTime, monthNameDa, recapChangeTexts, type MonthRecap } from '../lib/logic';
 
 /** Tallene i en månedsopsummering (#169) – bruges både i kortet i Historik og i dialogen fra kalenderen */
 export function MonthRecapStats({ r }: { r: MonthRecap }) {
+  const unit = useUnit();
   const changes = recapChangeTexts(r);
   const stats: [string, string][] = [
     ['Træninger', String(r.workouts)],
     ['Tid', formatTotalTime(r.durationMs)],
-    ['Volumen', formatKg(r.volume)],
+    ['Volumen', formatWeight(r.volume, unit)],
     ['Rekorder', `🏆 ${r.records}`],
     ['Muskelgruppe', r.topMuscle ?? '–'],
     ['Længste stime', r.longestStreak === 1 ? '1 dag' : `${r.longestStreak} dage`],

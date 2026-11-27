@@ -1,10 +1,11 @@
 import { daysAgoText, exerciseKind, formatTons, lifetimeStats } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 
 const longDate = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** "Gennem tiden" på øvelsessiden (#273): første gang, træninger, sæt, reps og samlet løftet vægt */
 export function LifetimeCard({ exerciseId }: { exerciseId: string }) {
+  const unit = useUnit();
   const { state } = useStore();
   const stats = lifetimeStats(state.history, exerciseId, state);
   if (!stats) return null;
@@ -15,7 +16,7 @@ export function LifetimeCard({ exerciseId }: { exerciseId: string }) {
     ...(reps
       ? ([
           ['Reps', stats.reps.toLocaleString('da-DK')],
-          ['Løftet i alt', formatTons(stats.volumeKg)],
+          ['Løftet i alt', formatTons(stats.volumeKg, unit)],
         ] as [string, string][])
       : []),
   ];

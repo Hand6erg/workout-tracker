@@ -1,12 +1,12 @@
 import { useState } from "react";
 import {
-  formatKg,
+  formatWeight,
   newRecordsInMonth,
   recordsWall,
   type RecordsWallRow,
 } from "../lib/logic";
-import { useStore } from "../lib/store";
-import { MUSCLES, type Muscle } from "../lib/types";
+import { useStore, useUnit } from "../lib/store";
+import { MUSCLES, type Muscle, type WeightUnit } from "../lib/types";
 import { ExerciseDetail } from "../views/ExercisesView";
 import { Chips, Empty } from "./ui";
 
@@ -18,13 +18,13 @@ const date = new Intl.DateTimeFormat("da-DK", {
 });
 
 /** De bedste resultater for en øvelse som korte linjer ("Tungeste: 100 kg") */
-export function recordLines(r: RecordsWallRow): string[] {
+export function recordLines(r: RecordsWallRow, unit: WeightUnit = 'kg'): string[] {
   const lines: string[] = [];
-  if (r.heaviest) lines.push(`Tungeste: ${formatKg(r.heaviest.weight)}`);
-  if (r.best1RM) lines.push(`1RM: ${formatKg(r.best1RM.value)}`);
+  if (r.heaviest) lines.push(`Tungeste: ${formatWeight(r.heaviest.weight, unit)}`);
+  if (r.best1RM) lines.push(`1RM: ${formatWeight(r.best1RM.value, unit)}`);
   if (r.bestVolume)
     lines.push(
-      `Bedste sæt: ${formatKg(r.bestVolume.weight)} × ${r.bestVolume.reps}`,
+      `Bedste sæt: ${formatWeight(r.bestVolume.weight, unit)} × ${r.bestVolume.reps}`,
     );
   else if (r.mostReps) lines.push(`Flest reps: ${r.mostReps.reps}`);
   if (r.longestHold) lines.push(`Længste hold: ${r.longestHold.seconds} sek.`);
@@ -37,6 +37,7 @@ export function recordLines(r: RecordsWallRow): string[] {
 
 /** "Rekorder" i Profil (#163): dine bedste resultater for hver øvelse, nyeste først */
 export function RecordsWall() {
+  const unit = useUnit();
   const { state } = useStore();
   const [muscle, setMuscle] = useState<Muscle | null>(null);
   const [all, setAll] = useState(false);
@@ -83,7 +84,7 @@ export function RecordsWall() {
                       <small className="muted">{date.format(r.latest)}</small>
                     </span>
                     <span className="rw-lines">
-                      {recordLines(r).map((l) => (
+                      {recordLines(r, unit).map((l) => (
                         <span key={l}>{l}</span>
                       ))}
                     </span>

@@ -15,7 +15,7 @@ import { TrainingDaysSection } from '../components/TrainingDays';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
   bodyToCsv,
-  formatKg,
+  formatWeight,
   num,
   initialState,
   loadState,
@@ -27,7 +27,7 @@ import {
   withLoads,
   workoutVolume,
 } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -39,6 +39,7 @@ function download(name: string, content: string, type: string) {
 }
 
 export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
+  const unit = useUnit();
   const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
@@ -55,7 +56,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
         </div>
         <div>
           <small>Samlet løftet</small>
-          <strong>{formatKg(total)}</strong>
+          <strong>{formatWeight(total, unit)}</strong>
         </div>
       </div>
 
@@ -258,6 +259,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
 }
 
 function WeeklyVolume() {
+  const unit = useUnit();
   const { state } = useStore();
   const weeks = weeklyVolume(state, 8, Date.now());
   const current = weeks[weeks.length - 1];
@@ -269,11 +271,11 @@ function WeeklyVolume() {
       ) : (
         <div className="card chart-card">
           <BarChart
-            label={`Volumen pr. uge, de seneste ${weeks.length} uger. Denne uge: ${formatKg(current.volume)}`}
+            label={`Volumen pr. uge, de seneste ${weeks.length} uger. Denne uge: ${formatWeight(current.volume, unit)}`}
             bars={weeks.map((w, i) => ({ label: `u${w.week}`, value: w.volume, highlight: i === weeks.length - 1 }))}
           />
           <p className="muted">
-            Denne uge: <strong>{formatKg(current.volume)}</strong>
+            Denne uge: <strong>{formatWeight(current.volume, unit)}</strong>
           </p>
         </div>
       )}

@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useReducer, useRef, 
 import { ACCOUNT_KEY, API_URL_OVERRIDE_KEY, parseAccount, resolveApiUrl, type Account } from './account';
 import { hasOwnData, lastDeletion, loadState, reducer, STORAGE_KEY, trackedReducer, type Action, type Deletion } from './logic';
 import { parseMeta, shouldAutoSync, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
-import type { AppState, Exercise } from './types';
+import type { AppState, Exercise, WeightUnit } from './types';
 
 interface Store {
   state: AppState;
@@ -145,6 +145,11 @@ export function useStore(): Store {
   const s = useContext(Ctx);
   if (!s) throw new Error('useStore skal bruges inden i StoreProvider');
   return s;
+}
+
+/** Den valgte vægtenhed (#346): vægte gemmes i kg, men vises i kg eller lb */
+export function useUnit(): WeightUnit {
+  return useStore().state.unit ?? 'kg';
 }
 
 /** Re-render hvert sekund (til ure og timere) */

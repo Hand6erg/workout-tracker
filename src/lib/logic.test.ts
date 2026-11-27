@@ -2350,7 +2350,7 @@ describe('mod sidst under træningen (#175)', () => {
       we('ohp', [set('50', '5', { done: false }), set('50', '5', { done: false })]),
       we('plank', [set('', '', { seconds: '90' }), set('', '', { seconds: '60' })]),
     ]))!;
-    expect(r.rows.map(vsRowCells)).toEqual([
+    expect(r.rows.map((x) => vsRowCells(x))).toEqual([
       { now: '1.275 kg', last: '1.200 kg' },
       { now: '120 kg', last: 'Ny i dag' },
       { now: '–', last: '500 kg' },
@@ -4461,5 +4461,44 @@ describe('vægtfeltet i pund (#345)', () => {
     expect(weightInputText('', 'lb')).toBe('');
     expect(weightInputText(weightFromInput('-45', 'lb'), 'lb')).toBe('-45');
     expect(weightFromInput('abc', 'lb')).toBe('abc');
+  });
+});
+
+describe('pund uden for træningen (#346)', () => {
+  it('samlet vægt, grafpunkter og delebillede vises i lb', () => {
+    expect(formatTons(850)).toBe('850 kg');
+    expect(formatTons(1000, 'lb')).toBe('2.205 lb');
+    const p = { workoutId: 'w', date: new Date(2026, 10, 12, 18).getTime(), value: 116.7, set: { weight: 102.0583, reps: 5 }, record: false };
+    expect(describeProgressPoint(p, 'reps', '1rm', 'lb')).toBe('12. nov. · 225 lb × 5 · est. 1RM 257,3 lb');
+    const card = shareCardLines(
+      {
+        workoutId: 'w1', name: 'Bryst', startedAt: T0, durationMs: 0, volume: 1000, sets: 1,
+        records: [], recordCount: 0, volumeChangePct: null, previousVolume: null,
+        goals: [{ goalId: 'g1', exerciseId: 'bench', name: 'Bænkpres', weight: 142.8816, reps: 1 }],
+      },
+      'lb',
+    );
+    expect(card.stats.find((x) => x.label === 'Volumen')?.value).toBe('2204,6 lb');
+    expect(card.records).toEqual(['🎯 Mål nået: Bænkpres 315 lb × 1']);
+  });
+
+  it('"Mod sidst" viser lb for vægtøvelser, men sek. og m uændret', () => {
+    const row = { weId: 'a', exerciseId: 'bench', name: 'Bænkpres', unit: 'kg' as const, doneSets: 1, complete: true, now: 100, last: 90, lastTotal: 90, status: null };
+    expect(vsRowCells(row, 'lb')).toEqual({ now: '220,5 lb', last: '198,4 lb' });
+    expect(vsRowCells({ ...row, unit: 'sek' }, 'lb').now).toBe('100 sek.');
+  });
+
+  it('CSV-eksport er altid i kg, uanset enhed', () => {
+    let s = startWith(initialState());
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['bench'] });
+    const we = s.active!.exercises[0];
+    s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId: we.sets[0].id, patch: { weight: weightFromInput('225', 'lb'), reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId: we.sets[0].id, now: T0 });
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 });
+    const kg = toCsv(s);
+    const lb = toCsv(reducer(s, { type: 'SET_UNIT', unit: 'lb' }));
+    expect(lb).toBe(kg);
+    expect(lb.split('\n')[0]).toContain('Vægt (kg)');
+    expect(lb).toContain('Bænkpres,1,102.0583,5,');
   });
 });
