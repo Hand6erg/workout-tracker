@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   actualRests,
+  repMaxTable,
+  repMaxesBeaten,
   nearestLoadableKg,
   platesText,
   warmupSetsFor,
@@ -4567,5 +4569,50 @@ describe('lb-skiver og -stang (#347)', () => {
     const s = reducer(initialState(), { type: 'SET_BODY_WEIGHT', kg: lb(180) });
     expect(toDisplay(s.bodyWeight!, 'lb')).toBe(180);
     expect(toDisplay(s.bodyWeight!, 'kg')).toBe(81.6);
+  });
+});
+
+describe('rep-maks-tabel (#354)', () => {
+  const set = (w: number, r: number, warmup = false) =>
+    ({ id: `s${w}x${r}${warmup}`, weight: String(w), reps: String(r), done: true, ...(warmup ? { warmup: true } : {}) }) as AppState['history'][number]['exercises'][number]['sets'][number];
+  const wk = (id: string, t: number, sets: ReturnType<typeof set>[]) => ({
+    id,
+    name: 'Bryst',
+    startedAt: t,
+    finishedAt: t + 1,
+    exercises: [{ id: `e-${id}`, exerciseId: 'bench', sets }],
+  });
+  const base = () => ({ ...initialState(), history: [wk('w1', 1000, [set(60, 10, true), set(100, 6), set(110, 3), set(120, 1)])] });
+
+  it('100×6, 110×3, 120×1 → 1RM 120, 2RM/3RM 110, 5RM 100, 8RM–12RM tomme', () => {
+    const rows = repMaxTable(base(), 'bench');
+    const best = Object.fromEntries(rows.map((r) => [r.reps, r.best?.weight ?? null]));
+    expect(best).toEqual({ 1: 120, 2: 110, 3: 110, 5: 100, 8: null, 10: null, 12: null });
+    expect(rows[0].best?.workoutId).toBe('w1');
+    expect(rows[0].best?.date).toBe(1000);
+  });
+
+  it('opvarmning ignoreres, og estimatet for 5 reps følger e1RM-formlen', () => {
+    const rows = repMaxTable(base(), 'bench');
+    // 60×10 er opvarmning → 10RM er stadig tom
+    expect(rows.find((r) => r.reps === 10)?.best).toBeNull();
+    const e1rm = Math.max(estimate1RM(100, 6), estimate1RM(110, 3), estimate1RM(120, 1));
+    const five = rows.find((r) => r.reps === 5)!;
+    expect(estimate1RM(five.estimated, 5)).toBeCloseTo(e1rm, 0);
+    expect(five.estimated % 0.5).toBe(0);
+    expect(rows[0].estimated).toBe(Math.round(e1rm * 2) / 2);
+  });
+
+  it('105×5 efter træningen ovenfor slår 5RM, men ikke 1–3RM; første gang er ingen rekord', () => {
+    const s = base();
+    s.history = [...s.history, wk('w2', 2000, [set(105, 5)])];
+    expect(repMaxesBeaten(s, 'w2', 'bench')).toEqual([5]);
+    expect(repMaxesBeaten(s, 'w1', 'bench')).toEqual([]);
+  });
+
+  it('tidsøvelser har ingen rækker, og gamle data indlæses uændret', () => {
+    expect(repMaxTable(base(), 'plank')).toEqual([]);
+    const s = base();
+    expect(loadState(JSON.stringify(s)).history).toEqual(s.history);
   });
 });
