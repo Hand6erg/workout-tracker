@@ -4403,3 +4403,68 @@ export function finisherWorkout(run: IntervalRun, now: number, rounds?: number |
     finishers: [f],
   };
 }
+
+/* ---------- Rep-maks-tabel (#354) ---------- */
+
+export const REP_MAX_COUNTS = [1, 2, 3, 5, 8, 10, 12] as const;
+
+export interface RepMaxRow {
+  reps: number;
+  /** Tungeste arbejdssæt med mindst så mange reps (kg, kropsvægt medregnet) – null = intet endnu */
+  best: { weight: number; reps: number; date: number; workoutId: string } | null;
+  /** Vægten for så mange reps ud fra din bedste e1RM (samme formel), afrundet til 0,5 kg. 0 = ingen data. */
+  estimated: number;
+}
+
+/** Hovedsæt (ikke opvarmning/drop) med belastning for en øvelse i de givne træninger */
+function repMaxSets(state: AppState, history: Workout[], exerciseId: string) {
+  const out: { weight: number; reps: number; date: number; workoutId: string }[] = [];
+  for (const raw of history) {
+    const w = withLoads(state, raw);
+    for (const we of w.exercises) {
+      if (we.exerciseId !== exerciseId) continue;
+      for (const s of we.sets) {
+        if (!isMainSet(s) || isTimedSet(s)) continue;
+        const weight = num(s.weight);
+        const reps = Math.floor(num(s.reps));
+        if (weight > 0 && reps > 0) out.push({ weight, reps, date: w.startedAt, workoutId: w.id });
+      }
+    }
+  }
+  return out;
+}
+
+/** Bedste vægt pr. rep-antal (1, 2, 3, 5, 8, 10, 12) og den estimerede vægt ud fra din bedste e1RM */
+export function repMaxTable(state: AppState, exerciseId: string): RepMaxRow[] {
+  if (exerciseKind(state, exerciseId) !== 'reps') return [];
+  const sets = repMaxSets(state, state.history, exerciseId);
+  const e1rm = sets.reduce((m, s) => Math.max(m, estimate1RM(s.weight, s.reps)), 0);
+  return REP_MAX_COUNTS.map((reps) => {
+    let best: RepMaxRow['best'] = null;
+    for (const s of sets) {
+      if (s.reps < reps) continue;
+      // Tungeste vinder; ved samme vægt det tidligste sæt (første gang man klarede det)
+      if (!best || s.weight > best.weight || (s.weight === best.weight && s.date < best.date)) best = s;
+    }
+    const estimated = e1rm > 0 ? Math.round((reps === 1 ? e1rm : e1rm / (1 + reps / 30)) * 2) / 2 : 0;
+    return { reps, best, estimated };
+  });
+}
+
+/**
+ * Hvilke rep-maks (1, 2, 3, 5 …) slog en afsluttet træning for en øvelse, sammenlignet med alle tidligere
+ * træninger? Første gang man laver øvelsen er ingen rekord.
+ */
+export function repMaxesBeaten(state: AppState, workoutId: string, exerciseId: string): number[] {
+  if (exerciseKind(state, exerciseId) !== 'reps') return [];
+  const w = state.history.find((x) => x.id === workoutId);
+  if (!w) return [];
+  const before = repMaxSets(state, state.history.filter((x) => x.startedAt < w.startedAt), exerciseId);
+  if (!before.length) return [];
+  const now = repMaxSets(state, [w], exerciseId);
+  return REP_MAX_COUNTS.filter((reps) => {
+    const best = (list: typeof now) => list.reduce((m, s) => (s.reps >= reps ? Math.max(m, s.weight) : m), 0);
+    const cur = best(now);
+    return cur > 0 && cur > best(before);
+  });
+}
