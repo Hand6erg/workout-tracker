@@ -6,6 +6,7 @@ import { FinisherList, IntervalBar, IntervalButton } from '../components/Interva
 import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
+  exerciseCues,
   canSwapInTemplate,
   doneSetCount,
   exerciseKind,
@@ -644,6 +645,9 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const name = ex?.name ?? 'Ukendt øvelse';
   const [restOpen, setRestOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
+  // Teknik-tips (#339): "?" vises kun når øvelsen har tips
+  const cues = exerciseCues(state, we.exerciseId);
+  const [cuesOpen, setCuesOpen] = useState(false);
   // Øvelsen fra skabelonen før byttet (#128) – null = ikke byttet, eller valget er truffet
   const [swappedFrom, setSwappedFrom] = useState<string | null>(null);
   const [savedInTemplate, setSavedInTemplate] = useState(false);
@@ -662,6 +666,11 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           {name}
           {vsStatus && <VsMark status={vsStatus} />}
         </h3>
+        {cues.length > 0 && (
+          <button className="btn-ghost small cues-btn" aria-label={`Teknik for ${name}`} onClick={() => setCuesOpen(true)}>
+            ?
+          </button>
+        )}
         {!edit && ex && (
           <button className="btn-ghost small rest-btn" aria-label={`Pause for ${name}: ${restLabel}`} onClick={() => setRestOpen(true)}>
             ⏱ {restLabel}
@@ -682,6 +691,15 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           Fjern
         </ConfirmButton>
       </header>
+      {cuesOpen && (
+        <Modal title={`Teknik: ${name}`} onClose={() => setCuesOpen(false)}>
+          <ul className="cues-list">
+            {cues.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </Modal>
+      )}
       {restOpen && <RestPicker exerciseId={we.exerciseId} onClose={() => setRestOpen(false)} />}
       {swapOpen && (
         <SwapPicker

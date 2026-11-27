@@ -212,6 +212,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .ex-block { background: var(--surface); border-radius: var(--radius); padding: 12px; margin: 12px 0; }
 .ex-block header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .ex-block header h3 { flex: 1; }
+.ex-block header .small { padding-left: 7px; padding-right: 7px; }
+.ex-block header h3 { min-width: 0; }
 .ex-block h3 { color: var(--accent); }
 .ex-block h3 .vs-mark { margin-left: 8px; font-size: 0.8em; vertical-align: 1px; }
 .vs-mark.up { color: var(--ok); }
@@ -423,6 +425,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 
 /* Pausetid pr. øvelse (#120) */
 .rest-btn { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ex-block header .cues-btn { margin-left: 4px; min-width: 28px; padding-left: 6px; padding-right: 6px; font-weight: 700; }
 .rest-picker { display: flex; flex-direction: column; gap: 12px; }
 .rest-picker-value { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .rest-picker-value output { font-size: 2.4rem; font-weight: 700; font-variant-numeric: tabular-nums; }
