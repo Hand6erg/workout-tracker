@@ -14,7 +14,12 @@ import { SetTargetsSection } from '../components/SetTargets';
 import { TrainingDaysSection } from '../components/TrainingDays';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
+  BAR_OPTIONS_KG,
+  BAR_OPTIONS_LB,
   bodyToCsv,
+  fromDisplay,
+  plateSetup,
+  weightInputText,
   formatWeight,
   num,
   initialState,
@@ -330,18 +335,21 @@ function MuscleSplit() {
 
 function BodyWeightSetting() {
   const { state, dispatch } = useStore();
+  const unit = useUnit();
   const stored = state.bodyWeight ?? null;
-  const [text, setText] = useState(stored === null ? '' : String(stored).replace('.', ','));
-  // Følg med, hvis værdien ændres udefra (fx fletning fra en anden enhed)
-  const [seen, setSeen] = useState(stored);
-  if (seen !== stored) {
-    setSeen(stored);
-    if (num(text) !== (stored ?? 0)) setText(stored === null ? '' : String(stored).replace('.', ','));
+  // Vist i den valgte enhed (#347); gemmes altid i kg
+  const shown = (kg: number | null) => (kg === null ? '' : weightInputText(String(kg), unit).replace('.', ','));
+  const [text, setText] = useState(() => shown(stored));
+  // Følg med, hvis værdien eller enheden ændres udefra (fx fletning fra en anden enhed)
+  const [seen, setSeen] = useState({ stored, unit });
+  if (seen.stored !== stored || seen.unit !== unit) {
+    setSeen({ stored, unit });
+    if (seen.unit !== unit || fromDisplay(num(text), unit) !== (stored ?? 0)) setText(shown(stored));
   }
   return (
     <>
       <label className="field">
-        Kropsvægt (kg)
+        Kropsvægt ({unit})
         <input
           type="text"
           inputMode="decimal"
@@ -349,7 +357,8 @@ function BodyWeightSetting() {
           value={text}
           onChange={(e) => {
             setText(e.target.value);
-            dispatch({ type: 'SET_BODY_WEIGHT', kg: num(e.target.value) });
+            const v = num(e.target.value);
+            dispatch({ type: 'SET_BODY_WEIGHT', kg: v > 0 ? fromDisplay(v, unit) : v });
           }}
         />
       </label>
@@ -360,14 +369,16 @@ function BodyWeightSetting() {
 
 function BarSetting() {
   const { state, dispatch } = useStore();
+  const unit = useUnit();
+  const { bar } = plateSetup(state, unit);
   return (
     <section aria-label="Stang">
       <label className="field">
         Stangvægt
-        <select value={state.barWeight} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
-          {[20, 15, 10, 7, 5].map((w) => (
+        <select value={bar} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
+          {(unit === 'lb' ? BAR_OPTIONS_LB : BAR_OPTIONS_KG).map((w) => (
             <option key={w} value={w}>
-              {w} kg
+              {w} {unit}
             </option>
           ))}
         </select>

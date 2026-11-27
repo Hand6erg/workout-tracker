@@ -32,6 +32,11 @@ export function uid(): string {
 
 export const DEFAULT_BAR = 20;
 export const DEFAULT_PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+/** Pund-stang og -skiver (#347) */
+export const DEFAULT_BAR_LB = 45;
+export const DEFAULT_PLATES_LB = [45, 35, 25, 10, 5, 2.5];
+export const BAR_OPTIONS_KG = [20, 15, 10, 7, 5];
+export const BAR_OPTIONS_LB = [45, 35, 25, 15];
 
 export function initialState(): AppState {
   return {
@@ -47,6 +52,8 @@ export function initialState(): AppState {
     restSeconds: 90,
     barWeight: DEFAULT_BAR,
     plates: [...DEFAULT_PLATES],
+    barWeightLb: DEFAULT_BAR_LB,
+    platesLb: [...DEFAULT_PLATES_LB],
     bodyLog: [],
     weeklyGoal: 2,
     showHints: true,
@@ -1914,19 +1921,53 @@ export interface PercentRow {
 
 /** Træningsvægte 95 %–50 % af 1RM, afrundet til vægte man kan lægge på stangen (#250) */
 export function percentTable(
-  state: Pick<AppState, 'history' | 'exercises' | 'barWeight' | 'plates'>,
+  state: Pick<AppState, 'history' | 'exercises' | 'barWeight' | 'plates'> & Partial<Pick<AppState, 'barWeightLb' | 'platesLb'>>,
   exerciseId: string,
+  unit: WeightUnit = 'kg',
 ): PercentRow[] {
   if (exerciseKind(state, exerciseId) !== 'reps' || isBodyweight(state, exerciseId)) return [];
   const base = tableOneRM(state, exerciseId);
   if (!base) return [];
   return PERCENT_STEPS.map((pct) => {
     const exact = Math.round(base.oneRM * pct) / 100;
-    return { pct, exact, weight: nearestLoadable(exact, state.barWeight, state.plates) };
+    return { pct, exact, weight: nearestLoadableKg(exact, state, unit) };
   });
 }
 
 /* ---------- Plader og opvarmning ---------- */
+
+type PlateState = Pick<AppState, 'barWeight' | 'plates'> & Partial<Pick<AppState, 'barWeightLb' | 'platesLb'>>;
+
+/** Stang og skiver i den valgte enhed (#347): kg-indstillingerne eller de separate lb-indstillinger */
+export function plateSetup(state: PlateState, unit: WeightUnit): { bar: number; plates: number[] } {
+  if (unit === 'lb') return { bar: state.barWeightLb ?? DEFAULT_BAR_LB, plates: state.platesLb?.length ? state.platesLb : DEFAULT_PLATES_LB };
+  return { bar: state.barWeight, plates: state.plates };
+}
+
+/** En kg-vægt i lb med 0,01 lb's nøjagtighed (så 102,0582 kg → 225 lb til skiveberegning) */
+function kgToLbExact(kg: number): number {
+  return Math.round((kg / KG_PER_LB) * 100) / 100;
+}
+
+/** Nærmeste vægt (i kg) der kan lægges på med stang og skiver i den valgte enhed (#347) */
+export function nearestLoadableKg(targetKg: number, state: PlateState, unit: WeightUnit = 'kg'): number {
+  const { bar, plates } = plateSetup(state, unit);
+  if (unit === 'kg') return nearestLoadable(targetKg, bar, plates);
+  return fromDisplay(nearestLoadable(kgToLbExact(targetKg), bar, plates), 'lb');
+}
+
+/** Skiver pr. side for en kg-vægt i den valgte enhed, fx "45 + 45 pr. side" for 225 lb (#347) */
+export function platesText(targetKg: number, state: PlateState, unit: WeightUnit = 'kg'): string {
+  const { bar, plates } = plateSetup(state, unit);
+  return unit === 'kg' ? formatPlates(targetKg, bar, plates) : formatPlates(kgToLbExact(targetKg), bar, plates, 'lb');
+}
+
+/** Opvarmningssæt (i kg) for en arbejdsvægt i kg: i lb bruges lb-stangen og spring på 5 lb (#347) */
+export function warmupSetsFor(workingKg: number, state: PlateState, unit: WeightUnit = 'kg'): WarmupSet[] {
+  if (unit === 'kg') return warmupSets(workingKg, state.barWeight);
+  const { bar } = plateSetup(state, 'lb');
+  return warmupSets(kgToLbExact(workingKg), bar, 5).map((w) => ({ ...w, weight: fromDisplay(w.weight, 'lb') }));
+}
 
 export interface PlateResult {
   /** Skiver på HVER side, tungeste først */
@@ -1954,12 +1995,13 @@ export function platesPerSide(target: number, barWeight = DEFAULT_BAR, plates = 
 }
 
 /** Skiverne pr. side som tekst, fx "20 + 10 + 2,5 pr. side" (#251) */
-export function formatPlates(target: number, barWeight = DEFAULT_BAR, plates = DEFAULT_PLATES): string {
+export function formatPlates(target: number, barWeight = DEFAULT_BAR, plates = DEFAULT_PLATES, unit: WeightUnit = 'kg'): string {
   const r = platesPerSide(target, barWeight, plates);
   if (r.belowBar) return 'Under stangens vægt';
   if (!r.perSide.length) return 'Kun stangen';
   const txt = r.perSide.map((p) => String(p).replace('.', ',')).join(' + ') + ' pr. side';
-  return r.remainder > 0 ? `${txt} (mangler ${formatKg(r.remainder)})` : txt;
+  const missing = unit === 'lb' ? `${displayNumber(r.remainder)} lb` : formatKg(r.remainder);
+  return r.remainder > 0 ? `${txt} (mangler ${missing})` : txt;
 }
 
 export interface WarmupSet {
@@ -1968,7 +2010,7 @@ export interface WarmupSet {
 }
 
 /** Forslag til opvarmning før et arbejdssæt: tom stang × 10, 40 % × 5, 60 % × 3, 80 % × 2 */
-export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR): WarmupSet[] {
+export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR, step = 2.5): WarmupSet[] {
   if (workingWeight <= barWeight) return [];
   const steps: [number, number][] = [
     [0, 10],
@@ -1978,7 +2020,7 @@ export function warmupSets(workingWeight: number, barWeight = DEFAULT_BAR): Warm
   ];
   const out: WarmupSet[] = [];
   for (const [pct, reps] of steps) {
-    const w = pct === 0 ? barWeight : Math.max(barWeight, Math.round((workingWeight * pct) / 2.5) * 2.5);
+    const w = pct === 0 ? barWeight : Math.max(barWeight, Math.round((workingWeight * pct) / step) * step);
     if (w >= workingWeight) continue;
     if (out.length && out[out.length - 1].weight === w) continue;
     out.push({ weight: w, reps });
@@ -3243,7 +3285,9 @@ export function reducer(state: AppState, action: Action): AppState {
           const work = e.sets.filter((x) => !x.warmup);
           const base = warmupBaseWeight(state.history, e);
           if (!base) return e;
-          const warm = warmupSets(base, action.barWeight ?? state.barWeight).map(
+          const sets =
+            action.barWeight !== undefined ? warmupSets(base, action.barWeight) : warmupSetsFor(base, state, state.unit ?? 'kg');
+          const warm = sets.map(
             (ws): SetEntry => ({ ...emptySet(), weight: String(ws.weight).replace('.', ','), reps: String(ws.reps), warmup: true }),
           );
           return { ...e, sets: [...warm, ...work] };
@@ -3474,7 +3518,7 @@ export function reducer(state: AppState, action: Action): AppState {
       return days.length === cur.length && days.every((d, i) => d === cur[i]) ? state : { ...state, trainingDays: days };
     }
     case 'SET_BODY_WEIGHT': {
-      const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10) / 10 : null;
+      const kg = Number.isFinite(action.kg) && action.kg > 0 && action.kg <= 400 ? Math.round(action.kg * 10000) / 10000 : null;
       return kg === (state.bodyWeight ?? null) ? state : { ...state, bodyWeight: kg };
     }
     case 'TOGGLE_FAVORITE': {
@@ -3513,8 +3557,20 @@ export function reducer(state: AppState, action: Action): AppState {
     case 'SET_WEEKLY_GOAL':
       return { ...state, weeklyGoal: Math.max(1, Math.min(7, Math.round(action.goal) || 1)) };
     case 'SET_BAR_WEIGHT':
+      // Med lb ændres lb-stangen, så kg-indstillingen bevares (#347)
+      if (state.unit === 'lb') {
+        return action.weight > 0 && action.weight <= 110 ? { ...state, barWeightLb: action.weight } : state;
+      }
       return action.weight > 0 && action.weight <= 50 ? { ...state, barWeight: action.weight } : state;
     case 'TOGGLE_PLATE': {
+      if (state.unit === 'lb') {
+        if (!DEFAULT_PLATES_LB.includes(action.plate)) return state;
+        const cur = state.platesLb?.length ? state.platesLb : DEFAULT_PLATES_LB;
+        const onLb = cur.includes(action.plate);
+        if (onLb && cur.length === 1) return state;
+        const platesLb = onLb ? cur.filter((p) => p !== action.plate) : [...cur, action.plate];
+        return { ...state, platesLb: platesLb.sort((a, b) => b - a) };
+      }
       if (!DEFAULT_PLATES.includes(action.plate)) return state;
       const on = state.plates.includes(action.plate);
       if (on && state.plates.length === 1) return state; // mindst én skive
@@ -3763,6 +3819,8 @@ const SETTINGS = [
   'restSeconds',
   'barWeight',
   'plates',
+  'barWeightLb',
+  'platesLb',
   'weeklyGoal',
   'showHints',
   'restSound',
@@ -3975,6 +4033,12 @@ export function loadState(raw: string | null): AppState {
       showRpe: typeof parsed.showRpe === 'boolean' ? parsed.showRpe : true,
       // Vægtenheden fra før #344 findes ikke – alt var i kg
       unit: isWeightUnit(parsed.unit) ? parsed.unit : 'kg',
+      // Lb-stang og -skiver fra før #347 findes ikke; gamle barWeight/plates er kg-indstillingerne
+      barWeightLb: typeof parsed.barWeightLb === 'number' && parsed.barWeightLb > 0 ? parsed.barWeightLb : DEFAULT_BAR_LB,
+      platesLb:
+        Array.isArray(parsed.platesLb) && parsed.platesLb.some((p) => typeof p === 'number' && p > 0)
+          ? parsed.platesLb.filter((p) => typeof p === 'number' && p > 0)
+          : [...DEFAULT_PLATES_LB],
       showTimeLeft: typeof parsed.showTimeLeft === 'boolean' ? parsed.showTimeLeft : true,
       // Tema fra før #293 findes ikke – appen var altid mørk
       theme: isTheme(parsed.theme) ? parsed.theme : 'dark',
