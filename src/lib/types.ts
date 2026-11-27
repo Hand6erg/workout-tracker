@@ -181,6 +181,14 @@ export interface IntervalRun {
   startedAt: number;
 }
 
+/** En skjult "står stille"-påmindelse (#360). Den vises igen ved ny bedste e1RM eller 3 træninger mere. */
+export interface StallDismissal {
+  /** Bedste estimerede 1RM (kg), da påmindelsen blev skjult */
+  best: number;
+  /** Antal træninger med øvelsen, da påmindelsen blev skjult */
+  sessions: number;
+}
+
 export interface AppState {
   version: 1;
   exercises: Exercise[];
@@ -231,6 +239,8 @@ export interface AppState {
   recapDismissed: string | null;
   /** År, hvis "Dit træningsår"-kort brugeren har skjult i Historik (#309) */
   yearReviewHidden: number[];
+  /** Skjulte "står stille"-påmindelser (#360): øvelses-id → bedste e1RM og antal træninger, da den blev skjult */
+  stallDismissed: Record<string, StallDismissal>;
   /** Favoritøvelser (øvelses-id'er) – vises øverst i øvelsesvælgeren (#190) */
   favorites: string[];
   /** Kropsvægt (kg) fra Profil – bruges til kropsvægtsøvelser, når der ikke er et kropsmål (#206). null = ikke angivet. */
