@@ -3,6 +3,7 @@ import {
   actualRests,
   repMaxTable,
   repMaxesBeaten,
+  isStrongRepMax,
   nearestLoadableKg,
   platesText,
   warmupSetsFor,
@@ -4614,5 +4615,13 @@ describe('rep-maks-tabel (#354)', () => {
     expect(repMaxTable(base(), 'plank')).toEqual([]);
     const s = base();
     expect(loadState(JSON.stringify(s)).history).toEqual(s.history);
+  });
+
+  it('"stærk" når det faktiske sæt er over estimatet (#355)', () => {
+    const rows = repMaxTable(base(), 'bench');
+    // e1RM kommer fra 110×3 / 120×1 → 5RM-estimatet er højere end 100 → ikke stærk; tom række er aldrig stærk
+    expect(isStrongRepMax(rows.find((r) => r.reps === 5)!)).toBe(false);
+    expect(isStrongRepMax(rows.find((r) => r.reps === 8)!)).toBe(false);
+    expect(isStrongRepMax({ reps: 5, best: { weight: 105, reps: 5, date: 1, workoutId: 'w' }, estimated: 100 })).toBe(true);
   });
 });

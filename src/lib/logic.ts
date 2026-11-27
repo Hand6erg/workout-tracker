@@ -4468,3 +4468,8 @@ export function repMaxesBeaten(state: AppState, workoutId: string, exerciseId: s
     return cur > 0 && cur > best(before);
   });
 }
+
+/** "Stærk" rep-område (#355): dit faktiske bedste sæt ligger over vægten, din e1RM forudsiger */
+export function isStrongRepMax(row: RepMaxRow): boolean {
+  return !!row.best && row.estimated > 0 && row.best.weight > row.estimated;
+}
