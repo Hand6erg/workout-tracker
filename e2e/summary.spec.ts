@@ -80,3 +80,99 @@ test('"Del" downloader opsummeringen som PNG, når telefonen ikke kan dele filer
   expect(data.subarray(1, 4).toString('ascii')).toBe('PNG');
   await download.saveAs('test-results/share-card.png');
 });
+
+test('vurdér træningen på opsummeringen, og den gemmes på træningen (#382)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  const picker = summary.getByRole('region', { name: 'Hvordan føltes det?' });
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'true');
+  await picker.getByRole('button', { name: 'Høj' }).click();
+  await expect(picker.getByRole('button', { name: 'Høj' })).toHaveAttribute('aria-pressed', 'true');
+  // Tryk igen rydder – og tryk igen sætter den tilbage
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'false');
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await page.screenshot({ path: 'test-results/summary-feeling.png' });
+
+  await summary.getByRole('button', { name: 'Luk' }).click();
+  await page.reload();
+  const saved = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}');
+    return { feeling: s.history?.[0]?.feeling, energy: s.history?.[0]?.energy };
+  });
+  expect(saved).toEqual({ feeling: 4, energy: 'high' });
+});
+
+test('man kan lukke opsummeringen uden at vurdere (#382)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  await page.getByRole('region', { name: 'Opsummering' }).getByRole('button', { name: 'Luk' }).click();
+  const w = await page.evaluate(() => JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}').history?.[0]);
+  expect(w.feeling).toBeUndefined();
+  expect(w.energy).toBeUndefined();
+});
+
+test('vurderingen vises i Historik og kan rettes under "Redigér" (#383)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  await summary.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await summary.getByRole('group', { name: 'Energi før' }).getByRole('button', { name: 'Høj' }).click();
+  await summary.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card.getByLabel('Føltes 4 af 5, energi høj')).toHaveText('💪 · Energi: høj');
+  await page.screenshot({ path: 'test-results/history-feeling.png' });
+
+  await card.click();
+  const detail = page.getByRole('dialog', { name: 'Push' });
+  await expect(detail.getByLabel('Føltes 4 af 5, energi høj')).toBeVisible();
+  await detail.getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  const picker = editor.getByRole('region', { name: 'Hvordan føltes det?' });
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'true');
+  await picker.getByRole('button', { name: 'Føltes 5 af 5' }).click();
+  await picker.getByRole('group', { name: 'Energi før' }).getByRole('button', { name: 'Høj' }).click(); // ryd energi
+  await editor.getByRole('button', { name: 'Gem' }).click();
+
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.getByRole('button', { name: 'Træning Push' }).getByLabel('Føltes 5 af 5')).toHaveText('🔥');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}').history?.[0]);
+  expect(saved.feeling).toBe(5);
+  expect(saved.energy).toBeUndefined();
+});
+
+test('en træning uden vurdering viser ingen vurdering i Historik (#383)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  await page.getByRole('region', { name: 'Opsummering' }).getByRole('button', { name: 'Luk' }).click();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.locator('.feeling-line')).toHaveCount(0);
+});
+
+test('"Sådan føltes det" i Profil: tom tekst uden vurderinger, graf og tip med vurderinger (#384)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const card = page.getByRole('region', { name: 'Sådan føltes det' });
+  await expect(card).toContainText('Bedøm dine træninger på opsummeringen for at se, hvordan de føles over tid.');
+  await expect(card.getByRole('img', { name: 'Gennemsnitlig vurdering pr. uge' })).toHaveCount(0);
+
+  // 10 vurderede træninger over de sidste uger: morgen føles 5, aften føles 2
+  await page.evaluate(() => {
+    const DAY = 86_400_000;
+    const history = Array.from({ length: 10 }, (_, i) => {
+      const d = new Date(Date.now() - (i * 2 + 1) * DAY);
+      d.setHours(i % 2 ? 8 : 19, 0, 0, 0);
+      const t = d.getTime();
+      return { id: `w${i}`, name: 'Træning', startedAt: t, finishedAt: t + 3_600_000, exercises: [], feeling: i % 2 ? 5 : 2 };
+    });
+    const s = JSON.parse(localStorage.getItem('loeft-state-v1')!);
+    localStorage.setItem('loeft-state-v1', JSON.stringify({ ...s, history }));
+  });
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(card.getByRole('img', { name: 'Gennemsnitlig vurdering pr. uge' })).toBeVisible();
+  await expect(card).toContainText('Snit de sidste 4 uger');
+  await expect(card).toContainText('Dine bedste træninger er om morgenen');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/profile-feeling.png' });
+});

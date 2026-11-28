@@ -1,15 +1,21 @@
-import { createContext, Fragment, useContext, useState, type ReactNode } from 'react';
+import { SetTargetRings } from '../components/SetTargets';
+import { createContext, Fragment, useContext, useEffect, useState, type ReactNode } from 'react';
 import { ExercisePicker } from '../components/ExercisePicker';
 import { RestPicker, formatRest } from '../components/RestPicker';
+import { FinisherList, IntervalBar, IntervalButton } from '../components/IntervalTimer';
 import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
+  canMoveExercise,
+  exerciseCues,
   canSwapInTemplate,
   doneSetCount,
   exerciseKind,
   isSetFilled,
   formatClock,
+  actualRests,
   formatDuration,
+  timeLeftEstimate,
   parseClock,
   stopwatchSeconds,
   lastExerciseNote,
@@ -17,6 +23,10 @@ import {
   num,
   previousSetsFor,
   progressionHint,
+  exerciseStall,
+  isStallDismissed,
+  deloadWeightInput,
+  deloadWeightText,
   restFor,
   recordsBrokenBy,
   supersetGroups,
@@ -32,9 +42,23 @@ import {
   type VsLastTime,
   type VsStatus,
   type WorkoutChange,
+  bodyweightText,
+  formatWeight,
+  toDisplay,
+  weightFromInput,
+  weightInputText,
+  bodyWeightOn,
+  isBodyweightReps,
+  formatRpe,
+  parseRpe,
+  setLabel,
+  SET_TAGS,
+  formatRepRange,
 } from '../lib/logic';
-import { useNow, useStore } from '../lib/store';
+import type { SetTag, WeightUnit } from '../lib/types';
+import { useNow, useStore, useUnit } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
+import { FeelingPicker } from '../components/FeelingPicker';
 
 /**
  * Den træning, der vises i editoren: enten den aktive træning eller en kladde af en afsluttet træning (#92).
@@ -62,6 +86,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
   const unchecked = uncheckedFilledCount(w, state);
   const finish = (includeUnchecked: boolean) => dispatch({ type: 'FINISH_WORKOUT', now: Date.now(), includeUnchecked });
   const vs = vsLastTime(state, w);
+  const timeLeft = state.showTimeLeft !== false ? timeLeftEstimate(state, now) : null;
 
   return (
     <WorkoutCtx.Provider value={{ w, base: state, edit: false, send: dispatch, vs }}>
@@ -70,8 +95,11 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         <button className="btn-ghost" onClick={onMinimize} aria-label="Minimér">
           ⌄
         </button>
-        <span className={`timer ${w.pausedAt ? 'paused' : ''}`} data-testid="elapsed">
-          {formatDuration(workoutDuration(w, now))}
+        <span className="timer-wrap">
+          <span className={`timer ${w.pausedAt ? 'paused' : ''}`} data-testid="elapsed">
+            {formatDuration(workoutDuration(w, now))}
+          </span>
+          {timeLeft !== null && <span className="time-left">ca. {timeLeft} min tilbage</span>}
         </span>
         <button
           className="btn-ghost small"
@@ -87,7 +115,7 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         ) : (
           <ConfirmButton
             className="btn-primary"
-            confirmText={done ? 'Bekræft' : 'Intet udfyldt – kassér?'}
+            confirmText={done || w.finishers?.length ? 'Bekræft' : 'Intet udfyldt – kassér?'}
             onConfirm={() => finish(false)}
           >
             Afslut
@@ -95,17 +123,22 @@ export function ActiveWorkout({ onMinimize }: { onMinimize: () => void }) {
         )}
       </header>
 
+      <SetTargetRings compact />
+
       {w.pausedAt && (
         <p className="paused-banner" role="status">
           Træningen er sat på pause – uret står stille.
         </p>
       )}
       <WorkoutBody top={vs?.started ? <VsLastBar vs={vs} /> : null}>
+        <FinisherList finishers={w.finishers} onRemove={(finisherId) => dispatch({ type: 'REMOVE_FINISHER', finisherId })} />
+        <IntervalButton />
         <ConfirmButton className="btn-danger wide" onConfirm={() => dispatch({ type: 'CANCEL_WORKOUT' })}>
           Annullér træning
         </ConfirmButton>
       </WorkoutBody>
 
+      <IntervalBar />
       <RestBar />
 
       {finishing && (
@@ -163,7 +196,18 @@ export function WorkoutEditor() {
             Gem
           </button>
         </header>
-        <WorkoutBody top={<WorkoutTiming w={w} onError={setTimingError} />}>
+        <WorkoutBody
+          top={
+            <>
+              <WorkoutTiming w={w} onError={setTimingError} />
+              <label className="toggle">
+                <input type="checkbox" checked={w.deload === true} onChange={(e) => send({ type: 'SET_DELOAD', on: e.target.checked })} />
+                Let uge (tæller ikke med i "vs. sidst" og stilstand)
+              </label>
+            </>
+          }
+        >
+          <FeelingPicker workout={w} edit />
           {error && (
             <p className="error" role="alert">
               {error}
@@ -318,13 +362,15 @@ function VsMark({ status }: { status: VsStatus }) {
 }
 
 /** "+320 kg vs. sidst" – løbende forskel mod sidste gang samme skabelon blev lavet (#176) */
-function vsBarText(diffKg: number): string {
+function vsBarText(diffKg: number, unit: WeightUnit = 'kg'): string {
   if (diffKg === 0) return 'Som sidst';
   const sign = diffKg > 0 ? '+' : '−';
-  return `${sign}${Math.abs(diffKg).toLocaleString('da-DK', { maximumFractionDigits: 1 })} kg vs. sidst`;
+  const v = Math.abs(unit === 'lb' ? toDisplay(diffKg, 'lb') : diffKg);
+  return `${sign}${v.toLocaleString('da-DK', { maximumFractionDigits: 1 })} ${unit} vs. sidst`;
 }
 
 function VsLastBar({ vs }: { vs: VsLastTime }) {
+  const unit = useStore().state.unit ?? 'kg';
   const [open, setOpen] = useState(false);
   const tone = vs.diffKg > 0 ? 'up' : vs.diffKg < 0 ? 'down' : 'same';
   return (
@@ -332,12 +378,12 @@ function VsLastBar({ vs }: { vs: VsLastTime }) {
       <button
         type="button"
         className={`vs-bar ${tone}`}
-        aria-label={`Mod sidst: ${vsBarText(vs.diffKg)}. Vis pr. øvelse`}
+        aria-label={`Mod sidst: ${vsBarText(vs.diffKg, unit)}. Vis pr. øvelse`}
         aria-haspopup="dialog"
         data-testid="vs-bar"
         onClick={() => setOpen(true)}
       >
-        {vsBarText(vs.diffKg)}
+        {vsBarText(vs.diffKg, unit)}
       </button>
       {open && <VsLastSheet vs={vs} onClose={() => setOpen(false)} />}
     </>
@@ -346,6 +392,7 @@ function VsLastBar({ vs }: { vs: VsLastTime }) {
 
 /** Oversigt pr. øvelse: denne gang / sidst (#177) */
 function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
+  const unit = useUnit();
   const date = new Date(vs.previousDate).toLocaleDateString('da-DK', { weekday: 'short', day: 'numeric', month: 'long' });
   return (
     <Modal title="Mod sidst" onClose={onClose}>
@@ -361,7 +408,7 @@ function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
         </thead>
         <tbody>
           {vs.rows.map((r) => {
-            const c = vsRowCells(r);
+            const c = vsRowCells(r, unit);
             return (
               <tr key={r.weId} aria-label={r.name}>
                 <th scope="row">{r.name}</th>
@@ -378,10 +425,11 @@ function VsLastSheet({ vs, onClose }: { vs: VsLastTime; onClose: () => void }) {
 }
 
 /** "Forrige"-kolonnen i samme format som sættet */
-function prevText(p: SetEntry, kind: ExerciseKind): string {
+function prevText(p: SetEntry, kind: ExerciseKind, bodyweight = false, unit: WeightUnit = 'kg'): string {
+  if (bodyweight && kind === 'reps') return `${bodyweightText(p.weight, unit)}×${p.reps}`;
   if (kind === 'time') return p.seconds ? `${num(p.seconds)} sek.` : '–';
   if (kind === 'distance') return p.meters ? `${p.meters.replace('.', ',')} m${p.seconds ? ` · ${formatClock(num(p.seconds))}` : ''}` : '–';
-  return `${p.weight || 0}×${p.reps}`;
+  return `${weightInputText(p.weight, unit) || 0}×${p.reps}`;
 }
 
 /** Felt til en tid som m:ss. Mens man skriver, vises teksten som skrevet; sættet gemmer sekunder. */
@@ -414,7 +462,45 @@ function ClockInput({
   );
 }
 
-function recordText(kinds: RecordKind[], weight: string): string {
+/**
+ * Vægtfelt (#345): sættet gemmer kg, men feltet viser og tager imod den valgte enhed.
+ * Mens man skriver, vises teksten som skrevet; ændres vægten udefra (fx et forslag), vises den gemte værdi.
+ */
+function WeightInput({
+  label,
+  weight,
+  unit,
+  placeholder,
+  inputMode,
+  onChange,
+}: {
+  label: string;
+  weight: string;
+  unit: WeightUnit;
+  placeholder: string;
+  inputMode: 'text' | 'decimal';
+  onChange: (kg: string) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (draft !== null && weightFromInput(draft, unit) !== weight) setDraft(null);
+  }, [weight, unit]);
+  return (
+    <input
+      inputMode={inputMode}
+      aria-label={label}
+      placeholder={placeholder}
+      value={draft ?? weightInputText(weight, unit)}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        onChange(weightFromInput(e.target.value, unit));
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
+
+function recordText(kinds: RecordKind[], weight: string, bodyweight = false, unit: WeightUnit = 'kg'): string {
   const names = kinds.map((k) =>
     k === 'heaviest'
       ? 'tungeste vægt'
@@ -426,12 +512,52 @@ function recordText(kinds: RecordKind[], weight: string): string {
             ? 'længste distance'
             : k === 'pace'
               ? 'hurtigste tid'
-              : `flest reps på ${num(weight) || 0} kg`,
+              : `flest reps på ${bodyweight ? bodyweightText(weight, unit) : formatWeight(num(weight), unit)}`,
   );
   return `Ny rekord: ${names.join(', ')}`;
 }
 
 const kgText = (n: number) => String(n).replace('.', ',');
+
+/**
+ * RPE-felt (#238): kun gyldige værdier (6–10 i halve trin) gemmes. En ugyldig værdi bliver stående i feltet
+ * med rød ramme og "RPE 6–10", men gemmes som tom, så den aldrig påvirker forslag eller historik.
+ */
+function RpeInput({ label, value, onChange }: { label: string; value: string; onChange: (rpe: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+  const valid = (t: string) => t.trim() === '' || parseRpe(t) !== null;
+  // Ændret udefra (fx Fortryd eller hint): vis den gemte værdi
+  useEffect(() => {
+    if ((valid(draft) ? draft : '') !== value) setDraft(value);
+  }, [value]);
+  const invalid = !valid(draft);
+  const showError = invalid && !focused;
+  return (
+    <>
+      <input
+        inputMode="decimal"
+        aria-label={label}
+        aria-invalid={showError || undefined}
+        className={`rpe ${showError ? 'invalid' : ''}`}
+        value={draft}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        onChange={(e) => {
+          const t = e.target.value;
+          setDraft(t);
+          const next = valid(t) ? t.trim() : '';
+          if (next !== value) onChange(next);
+        }}
+      />
+      {showError && (
+        <small className="rpe-error" role="alert">
+          RPE 6–10
+        </small>
+      )}
+    </>
+  );
+}
 
 function HintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
   if (hint.timed) return <TimedHintButton weId={weId} timed={hint.timed} />;
@@ -462,11 +588,33 @@ function TimedHintButton({ weId, timed }: { weId: string; timed: NonNullable<Pro
 
 function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint }) {
   const { send: dispatch } = useWorkout();
+  const unit = useStore().state.unit ?? 'kg';
   const { last, next } = hint;
   const same = last.repsList.every((r) => r === last.reps);
   const repsText = same ? `${last.sets} × ${last.reps}` : `${last.repsList.join(', ')} reps`;
-  const lastText = `${repsText}${last.weight ? ` @ ${kgText(last.weight)} kg` : ''}`;
-  const nextText = next.weight && next.weight !== last.weight ? `${kgText(next.weight)} kg` : `${next.reps} reps`;
+  // Kropsvægtsøvelser (#209): "@ KV +10" og "prøv KV −17,5"
+  const w = (n: number) =>
+    hint.bodyweight ? bodyweightText(String(n), unit) : unit === 'lb' ? formatWeight(n, 'lb') : `${kgText(n)} kg`;
+  // RPE (#238): forklar hvorfor forslaget blev ændret, fx "(RPE 10)"
+  const rpeText = hint.rpe !== undefined ? ` (RPE ${formatRpe(String(hint.rpe))})` : '';
+  const lastText = `${repsText}${last.weight ? ` @ ${w(last.weight)}` : ''}${rpeText}`;
+  const nextText = next.weight !== last.weight ? w(next.weight) : `${next.reps} reps`;
+  // Dobbelt progression (#259): "Alle sæt nåede 12 – prøv 62,5 kg × 8" / "Bliv på 60 kg og gå efter 10 reps"
+  if (hint.range) {
+    const weightText = next.weight ? w(next.weight) : '';
+    const advice = hint.range.topReached
+      ? `Alle sæt nåede ${hint.range.max} – prøv ${weightText ? `${weightText} × ` : ''}${next.reps}`
+      : `${weightText ? `Bliv på ${weightText} og gå` : 'Gå'} efter ${next.reps} reps`;
+    return (
+      <button
+        className="hint"
+        aria-label={`Sidst: ${lastText}. ${advice}. Tryk for at udfylde.`}
+        onClick={() => dispatch({ type: 'APPLY_HINT', weId, weight: next.weight, reps: next.reps })}
+      >
+        Sidst: {lastText} → <strong>{advice}</strong>
+      </button>
+    );
+  }
   return (
     <button
       className="hint"
@@ -478,6 +626,84 @@ function RepsHintButton({ weId, hint }: { weId: string; hint: ProgressionHint })
   );
 }
 
+/** "Står stille – prøv en let uge" med "Let uge"-knap (#361). Skjules, hvis påmindelsen er skjult på startskærmen. */
+function StallHint({ we }: { we: WorkoutExercise }) {
+  const { base: state, send: dispatch } = useWorkout();
+  const stall = exerciseStall(state, we.exerciseId);
+  if (!stall || isStallDismissed(state, we.exerciseId)) return null;
+  const unit = state.unit ?? 'kg';
+  const weightText = deloadWeightText(stall, unit);
+  return (
+    <div className="stall-hint" role="group" aria-label={`Står stille: ${stall.name}`}>
+      <span>
+        Står stille i {stall.sessions} træninger – prøv en let uge med {weightText}
+      </span>
+      <button
+        className="btn-secondary small"
+        aria-label={`Let uge: udfyld ${stall.name} med ${weightText}`}
+        onClick={() => dispatch({ type: 'APPLY_DELOAD', weId: we.id, weight: deloadWeightInput(stall, unit), reps: stall.lastReps })}
+      >
+        Let uge
+      </button>
+    </div>
+  );
+}
+
+const TAG_ORDER: SetTag[] = ['drop', 'failure', 'amrap'];
+
+/** Menu fra sæt-nummeret (#244): opvarmning, drop-sæt, til failure, AMRAP, fjern mærke, tilføj drop-sæt og slet */
+function SetMenu({
+  title,
+  deleteLabel,
+  warmup,
+  tag,
+  onClose,
+  onWarmup,
+  onTag,
+  onAddDrop,
+  onDelete,
+}: {
+  title: string;
+  deleteLabel: string;
+  warmup: boolean;
+  tag: SetTag | undefined;
+  onClose: () => void;
+  onWarmup: () => void;
+  onTag: (tag: SetTag | null) => void;
+  onAddDrop: () => void;
+  onDelete: () => void;
+}) {
+  const pick = (fn: () => void) => () => {
+    fn();
+    onClose();
+  };
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="set-menu" role="group" aria-label="Mærke">
+        <button className={`set-menu-item ${warmup ? 'on' : ''}`} aria-pressed={warmup} onClick={pick(onWarmup)}>
+          <span className="set-menu-letter warmup">O</span> Opvarmning
+        </button>
+        {TAG_ORDER.map((t) => (
+          <button key={t} className={`set-menu-item ${tag === t ? 'on' : ''}`} aria-pressed={tag === t} onClick={pick(() => onTag(t))}>
+            <span className={`set-menu-letter tag-${t}`}>{SET_TAGS[t].letter}</span> {SET_TAGS[t].name}
+          </button>
+        ))}
+        <button className="set-menu-item" disabled={!warmup && !tag} onClick={pick(() => onTag(null))}>
+          <span className="set-menu-letter">–</span> Fjern mærke
+        </button>
+      </div>
+      <div className="set-menu-actions">
+        <button className="btn-secondary" onClick={pick(onAddDrop)}>
+          + Tilføj drop-sæt
+        </button>
+        <button className="btn-danger" aria-label={deleteLabel} onClick={pick(onDelete)}>
+          Slet sæt
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const { exerciseById } = useStore();
   const { w, base: state, edit, send: dispatch, vs } = useWorkout();
@@ -486,19 +712,39 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const prev = previousSetsFor(state.history, w, we.exerciseId);
   const kind = exerciseKind(state, we.exerciseId);
   const now = useNow(we.sets.some((x) => !!x.timerStartedAt));
-  const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId) : null;
+  const hint = state.showHints && !edit ? progressionHint(state, we.exerciseId, we) : null;
+  // "Vis RPE-felt" i Profil (#238): slået fra → ingen RPE-kolonne; loggede værdier beholdes
+  const showRpe = state.showRpe !== false;
   const [warmupMsg, setWarmupMsg] = useState(false);
+  // Sæt-menuen (#244): id for sættet hvis menu er åben
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const isBarbell = ex?.equipment === 'Stang';
+  // Kropsvægtsøvelse (#208): vægtfeltet er ekstra vægt (+10) eller assistance (−20)
+  const bw = isBodyweightReps(state, we.exerciseId);
+  // Enhed (#345): sæt gemmes i kg, men vises og indtastes i kg eller lb
+  const unit: WeightUnit = state.unit ?? 'kg';
+  const bwMissing = bw && bodyWeightOn(state, w.startedAt) === null;
   const all = w.exercises;
   const pos = all.findIndex((e) => e.id === we.id);
   const next = all[pos + 1];
   const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
+  // Flyt op/ned (#376): et supersæt flytter som én blok
+  const canUp = canMoveExercise(all, we.id, 'up');
+  const canDown = canMoveExercise(all, we.id, 'down');
+  const move = (direction: 'up' | 'down') => {
+    dispatch({ type: 'MOVE_EXERCISE', weId: we.id, direction });
+    // Vis kortet, hvor det landede
+    setTimeout(() => document.getElementById(`ex-${we.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30);
+  };
   const lastNote = lastExerciseNote(state.history, we.exerciseId);
   const [noteOpen, setNoteOpen] = useState(!!we.note);
   const [noteDraft, setNoteDraft] = useState(we.note ?? '');
   const name = ex?.name ?? 'Ukendt øvelse';
   const [restOpen, setRestOpen] = useState(false);
   const [swapOpen, setSwapOpen] = useState(false);
+  // Teknik-tips (#339): "?" vises kun når øvelsen har tips
+  const cues = exerciseCues(state, we.exerciseId);
+  const [cuesOpen, setCuesOpen] = useState(false);
   // Øvelsen fra skabelonen før byttet (#128) – null = ikke byttet, eller valget er truffet
   const [swappedFrom, setSwappedFrom] = useState<string | null>(null);
   const [savedInTemplate, setSavedInTemplate] = useState(false);
@@ -507,14 +753,21 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
     !edit && !!swappedFrom && swappedFrom !== we.exerciseId && canSwapInTemplate(live, w.templateId, swappedFrom);
   const templateName = live.templates.find((t) => t.id === w.templateId)?.name ?? '';
   const restLabel = formatRest(restFor(live, we.exerciseId));
+  // Reel pause før hvert afkrydset sæt (#316)
+  const restBefore = new Map(actualRests(w).filter((r) => r.weId === we.id).map((r) => [r.setId, r.seconds]));
 
   return (
-    <article className="ex-block" aria-label={ex?.name}>
+    <article className="ex-block" id={`ex-${we.id}`} aria-label={ex?.name}>
       <header>
         <h3>
           {name}
           {vsStatus && <VsMark status={vsStatus} />}
         </h3>
+        {cues.length > 0 && (
+          <button className="btn-ghost small cues-btn" aria-label={`Teknik for ${name}`} onClick={() => setCuesOpen(true)}>
+            ?
+          </button>
+        )}
         {!edit && ex && (
           <button className="btn-ghost small rest-btn" aria-label={`Pause for ${name}: ${restLabel}`} onClick={() => setRestOpen(true)}>
             ⏱ {restLabel}
@@ -535,6 +788,15 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           Fjern
         </ConfirmButton>
       </header>
+      {cuesOpen && (
+        <Modal title={`Teknik: ${name}`} onClose={() => setCuesOpen(false)}>
+          <ul className="cues-list">
+            {cues.map((c, i) => (
+              <li key={i}>{c}</li>
+            ))}
+          </ul>
+        </Modal>
+      )}
       {restOpen && <RestPicker exerciseId={we.exerciseId} onClose={() => setRestOpen(false)} />}
       {swapOpen && (
         <SwapPicker
@@ -575,6 +837,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </p>
       )}
       {hint && <HintButton weId={we.id} hint={hint} />}
+      {!edit && <StallHint we={we} />}
       {lastNote && <p className="last-note">📝 Sidst: {lastNote.note}</p>}
       {noteOpen && (
         <textarea
@@ -590,6 +853,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
           }}
         />
       )}
+      {bwMissing && <p className="muted bw-hint">Angiv din kropsvægt i Profil for at tælle den med</p>}
       <table className="sets">
         <thead>
           <tr>
@@ -597,9 +861,9 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
             <th>Forrige</th>
             {kind === 'reps' && (
               <>
-                <th>kg</th>
+                <th>{bw ? `+${unit}` : unit}</th>
                 <th>Reps</th>
-                <th>RPE</th>
+                {showRpe && <th>RPE</th>}
               </>
             )}
             {kind === 'time' && <th colSpan={2}>Sek.</th>}
@@ -614,26 +878,43 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         </thead>
         <tbody>
           {we.sets.map((s, idx) => {
-            // Opvarmningssæt nummereres for sig ("O"), så arbejdssæt beholder 1, 2, 3 …
-            const before = we.sets.slice(0, idx);
-            const i = before.filter((x) => x.warmup === s.warmup).length;
-            const what = s.warmup ? 'opvarmning' : 'sæt';
-            const p = s.warmup ? undefined : prev[i];
+            // Opvarmning ("O") og drop-sæt ("D") nummereres for sig, så arbejdssæt beholder 1, 2, 3 … (#244)
+            const label = setLabel(we.sets, idx);
+            const i = label.no - 1;
+            const what = label.kind === 'warmup' ? 'opvarmning' : label.kind === 'drop' ? 'drop-sæt' : 'sæt';
+            const p = label.kind === 'work' ? prev[i] : undefined;
             const records = s.done ? recordsBrokenBy(state, we.exerciseId, s) : [];
             return (
               <Fragment key={s.id}>
-              <tr className={`${s.done ? 'done' : ''} ${s.warmup ? 'warmup' : ''}`}>
+              <tr className={`${s.done ? 'done' : ''} ${s.warmup ? 'warmup' : ''} ${s.tag ? `tag-${s.tag}` : ''}`}>
                 <td>
                   <button
                     className="set-no"
-                    title="Slet sæt"
-                    aria-label={`Slet ${what} ${i + 1}`}
-                    onClick={() => dispatch({ type: 'REMOVE_SET', weId: we.id, setId: s.id })}
+                    title="Mærke eller slet sæt"
+                    aria-label={`Valg for ${what} ${i + 1}`}
+                    aria-haspopup="dialog"
+                    onClick={() => setMenuFor(s.id)}
                   >
-                    {s.warmup ? 'O' : i + 1}
+                    {label.text}
                   </button>
+                  {menuFor === s.id && (
+                    <SetMenu
+                      title={`${what[0].toUpperCase()}${what.slice(1)} ${i + 1}`}
+                      deleteLabel={`Slet ${what} ${i + 1}`}
+                      warmup={!!s.warmup}
+                      tag={s.tag}
+                      onClose={() => setMenuFor(null)}
+                      onWarmup={() => dispatch({ type: 'SET_SET_WARMUP', weId: we.id, setId: s.id, warmup: true })}
+                      onTag={(tag) => {
+                        if (s.warmup) dispatch({ type: 'SET_SET_WARMUP', weId: we.id, setId: s.id, warmup: false });
+                        dispatch({ type: 'SET_SET_TAG', weId: we.id, setId: s.id, tag });
+                      }}
+                      onAddDrop={() => dispatch({ type: 'ADD_DROP_SET', weId: we.id, setId: s.id })}
+                      onDelete={() => dispatch({ type: 'REMOVE_SET', weId: we.id, setId: s.id })}
+                    />
+                  )}
                 </td>
-                <td className="prev">{p ? prevText(p, kind) : '–'}</td>
+                <td className="prev">{p ? prevText(p, kind, bw, unit) : '–'}</td>
                 {kind === 'time' && (
                   <>
                     <td>
@@ -690,32 +971,33 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                 {kind === 'reps' && (
                 <>
                 <td>
-                  <input
-                    inputMode="decimal"
-                    aria-label={`Vægt ${what} ${i + 1}`}
-                    placeholder={p?.weight || ''}
-                    value={s.weight}
-                    onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight: e.target.value } })}
+                  <WeightInput
+                    inputMode={bw ? 'text' : 'decimal'}
+                    label={`${bw ? 'Ekstra vægt' : 'Vægt'} ${what} ${i + 1}`}
+                    unit={unit}
+                    placeholder={(p && weightInputText(p.weight, unit)) || (bw ? 'KV' : '')}
+                    weight={s.weight}
+                    onChange={(weight) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { weight } })}
                   />
                 </td>
                 <td>
                   <input
                     inputMode="numeric"
                     aria-label={`Reps ${what} ${i + 1}`}
-                    placeholder={p?.reps || ''}
+                    placeholder={p?.reps || formatRepRange(we) || ''}
                     value={s.reps}
                     onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { reps: e.target.value } })}
                   />
                 </td>
-                <td>
-                  <input
-                    inputMode="decimal"
-                    aria-label={`RPE ${what} ${i + 1}`}
-                    className="rpe"
-                    value={s.rpe}
-                    onChange={(e) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe: e.target.value } })}
-                  />
-                </td>
+                {showRpe && (
+                  <td>
+                    <RpeInput
+                      label={`RPE ${what} ${i + 1}`}
+                      value={s.rpe}
+                      onChange={(rpe) => dispatch({ type: 'UPDATE_SET', weId: we.id, setId: s.id, patch: { rpe } })}
+                    />
+                  </td>
+                )}
                 </>
                 )}
                 <td>
@@ -729,13 +1011,18 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
                   </button>
                 </td>
               </tr>
+              {s.done && restBefore.has(s.id) && (
+                <tr className="rest-row">
+                  <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>hvilede {formatClock(restBefore.get(s.id)!)}</td>
+                </tr>
+              )}
               {records.length > 0 && (
                 <tr className="pr-row">
-                  <td colSpan={6}>
-                    <span role="img" aria-label={recordText(records, s.weight)}>
+                  <td colSpan={showRpe && kind === 'reps' ? 6 : 5}>
+                    <span role="img" aria-label={recordText(records, s.weight, bw, unit)}>
                       🏆
                     </span>{' '}
-                    {recordText(records, s.weight)}
+                    {recordText(records, s.weight, bw, unit)}
                   </td>
                 </tr>
               )}
@@ -748,6 +1035,16 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         + Tilføj sæt
       </button>
       <div className="ex-actions">
+        {canUp && (
+          <button className="btn-ghost small move-btn" aria-label={`Flyt ${name} op`} onClick={() => move('up')}>
+            ↑
+          </button>
+        )}
+        {canDown && (
+          <button className="btn-ghost small move-btn" aria-label={`Flyt ${name} ned`} onClick={() => move('down')}>
+            ↓
+          </button>
+        )}
         {canLink && (
           <button className="btn-ghost small" onClick={() => dispatch({ type: 'LINK_SUPERSET', weId: we.id })}>
             Supersæt med næste

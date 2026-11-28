@@ -6,20 +6,35 @@ import { BarChart } from '../components/BarChart';
 import { BodySection } from '../components/BodySection';
 import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
+import { ProfileGoals } from '../components/GoalsSection';
+import { MostLifted } from '../components/MostLifted';
+import { BalanceCard } from '../components/BalanceCard';
+import { FeelingCard } from '../components/FeelingCard';
 import { MilestonesSection } from '../components/MilestonesSection';
+import { YearHeatmap } from '../components/YearHeatmap';
+import { SetTargetsSection } from '../components/SetTargets';
+import { TrainingDaysSection } from '../components/TrainingDays';
 import { ConfirmButton, Empty } from '../components/ui';
 import {
+  BAR_OPTIONS_KG,
+  BAR_OPTIONS_LB,
   bodyToCsv,
-  formatKg,
+  fromDisplay,
+  plateSetup,
+  weightInputText,
+  formatWeight,
+  num,
   initialState,
   loadState,
   muscleDistribution,
+  THEMES,
   toCsv,
   weekStreak,
   weeklyVolume,
+  withLoads,
   workoutVolume,
 } from '../lib/logic';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
 
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
@@ -30,11 +45,12 @@ function download(name: string, content: string, type: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function ProfileView() {
+export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = {}) {
+  const unit = useUnit();
   const { state, dispatch, account } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [msg, setMsg] = useState('');
-  const total = state.history.reduce((a, w) => a + workoutVolume(w), 0);
+  const total = state.history.reduce((a, w) => a + workoutVolume(withLoads(state, w)), 0);
   const stamp = new Date().toISOString().slice(0, 10);
 
   return (
@@ -47,19 +63,60 @@ export function ProfileView() {
         </div>
         <div>
           <small>Samlet løftet</small>
-          <strong>{formatKg(total)}</strong>
+          <strong>{formatWeight(total, unit)}</strong>
         </div>
       </div>
 
       <StreakCard />
+      <YearHeatmap onOpenWorkout={onOpenWorkout} />
       <WeeklyVolume />
       <MuscleSplit />
+      <BalanceCard />
+      <FeelingCard />
+      <TrainingDaysSection />
+      <SetTargetsSection />
+      <ProfileGoals />
       <RecordsWall />
+      <MostLifted />
       <MilestonesSection />
       <BodySection />
       <ProgramSection />
 
       <h2 className="section">Indstillinger</h2>
+      <div className="theme-setting">
+        <span id="theme-label">Tema</span>
+        <div className="seg" role="group" aria-labelledby="theme-label">
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              aria-pressed={(state.theme ?? 'dark') === t.id}
+              onClick={() => dispatch({ type: 'SET_THEME', theme: t.id })}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="theme-setting">
+        <span id="unit-label">Enhed</span>
+        <div className="seg" role="group" aria-labelledby="unit-label">
+          {(['kg', 'lb'] as const).map((u) => (
+            <button key={u} type="button" aria-pressed={state.unit === u} onClick={() => dispatch({ type: 'SET_UNIT', unit: u })}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <p className="muted unit-note">Dine sæt gemmes altid i kg, så du kan skifte frem og tilbage uden at ændre din log.</p>
+      </div>
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.largeText === true}
+          onChange={(e) => dispatch({ type: 'SET_LARGE_TEXT', on: e.target.checked })}
+        />
+        Stor tekst (større felter og knapper i træningen)
+      </label>
       <label className="field">
         Pausetimer efter hvert sæt (sekunder, 0 = slået fra)
         <input
@@ -109,6 +166,24 @@ export function ProfileView() {
         />
         Hold skærmen tændt under træning
       </label>
+
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.showRpe !== false}
+          onChange={(e) => dispatch({ type: 'SET_SHOW_RPE', on: e.target.checked })}
+        />
+        Vis RPE-felt (hvor hårdt sættet føltes, 6–10)
+      </label>
+
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={state.showTimeLeft !== false}
+          onChange={(e) => dispatch({ type: 'SET_SHOW_TIME_LEFT', on: e.target.checked })}
+        />
+        Vis tid tilbage i træningen
+      </label>
       {!wakeLockSupported() && <p className="muted rest-global-note">Understøttes ikke i denne browser</p>}
 
       <label className="field">
@@ -131,6 +206,8 @@ export function ProfileView() {
         />
         Vis forslag til næste vægt
       </label>
+
+      <BodyWeightSetting />
 
       <BarSetting />
 
@@ -191,6 +268,7 @@ export function ProfileView() {
 }
 
 function WeeklyVolume() {
+  const unit = useUnit();
   const { state } = useStore();
   const weeks = weeklyVolume(state, 8, Date.now());
   const current = weeks[weeks.length - 1];
@@ -202,11 +280,11 @@ function WeeklyVolume() {
       ) : (
         <div className="card chart-card">
           <BarChart
-            label={`Volumen pr. uge, de seneste ${weeks.length} uger. Denne uge: ${formatKg(current.volume)}`}
+            label={`Volumen pr. uge, de seneste ${weeks.length} uger. Denne uge: ${formatWeight(current.volume, unit)}`}
             bars={weeks.map((w, i) => ({ label: `u${w.week}`, value: w.volume, highlight: i === weeks.length - 1 }))}
           />
           <p className="muted">
-            Denne uge: <strong>{formatKg(current.volume)}</strong>
+            Denne uge: <strong>{formatWeight(current.volume, unit)}</strong>
           </p>
         </div>
       )}
@@ -259,16 +337,52 @@ function MuscleSplit() {
   );
 }
 
+function BodyWeightSetting() {
+  const { state, dispatch } = useStore();
+  const unit = useUnit();
+  const stored = state.bodyWeight ?? null;
+  // Vist i den valgte enhed (#347); gemmes altid i kg
+  const shown = (kg: number | null) => (kg === null ? '' : weightInputText(String(kg), unit).replace('.', ','));
+  const [text, setText] = useState(() => shown(stored));
+  // Følg med, hvis værdien eller enheden ændres udefra (fx fletning fra en anden enhed)
+  const [seen, setSeen] = useState({ stored, unit });
+  if (seen.stored !== stored || seen.unit !== unit) {
+    setSeen({ stored, unit });
+    if (seen.unit !== unit || fromDisplay(num(text), unit) !== (stored ?? 0)) setText(shown(stored));
+  }
+  return (
+    <>
+      <label className="field">
+        Kropsvægt ({unit})
+        <input
+          type="text"
+          inputMode="decimal"
+          placeholder="fx 80"
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            const v = num(e.target.value);
+            dispatch({ type: 'SET_BODY_WEIGHT', kg: v > 0 ? fromDisplay(v, unit) : v });
+          }}
+        />
+      </label>
+      <p className="muted rest-global-note">Bruges til kropsvægtsøvelser, når du ikke har et kropsmål.</p>
+    </>
+  );
+}
+
 function BarSetting() {
   const { state, dispatch } = useStore();
+  const unit = useUnit();
+  const { bar } = plateSetup(state, unit);
   return (
     <section aria-label="Stang">
       <label className="field">
         Stangvægt
-        <select value={state.barWeight} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
-          {[20, 15, 10, 7, 5].map((w) => (
+        <select value={bar} onChange={(e) => dispatch({ type: 'SET_BAR_WEIGHT', weight: Number(e.target.value) })}>
+          {(unit === 'lb' ? BAR_OPTIONS_LB : BAR_OPTIONS_KG).map((w) => (
             <option key={w} value={w}>
-              {w} kg
+              {w} {unit}
             </option>
           ))}
         </select>

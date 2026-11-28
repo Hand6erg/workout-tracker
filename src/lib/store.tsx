@@ -1,8 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useReducer, useRef, useState, type Dispatch, type ReactNode } from 'react';
 import { ACCOUNT_KEY, API_URL_OVERRIDE_KEY, parseAccount, resolveApiUrl, type Account } from './account';
-import { hasOwnData, loadState, STORAGE_KEY, trackedReducer, type Action } from './logic';
+import { hasOwnData, lastDeletion, loadState, reducer, STORAGE_KEY, trackedReducer, type Action, type Deletion } from './logic';
 import { parseMeta, shouldAutoSync, SYNC_KEY, SyncEngine, type Choice, type SyncStatus } from './sync';
-import type { AppState, Exercise } from './types';
+import type { AppState, Exercise, WeightUnit } from './types';
 
 interface Store {
   state: AppState;
@@ -16,6 +16,12 @@ interface Store {
   resolveSync: (choice: Choice) => void;
   /** "Synkronisér nu" */
   syncNow: () => void;
+  /** Den seneste sletning, der kan fortrydes (#222) – kun i hukommelsen */
+  undo: Deletion | null;
+  /** Læg den seneste sletning tilbage */
+  undoDelete: () => void;
+  /** Glem den seneste sletning (bjælken lukkes) */
+  clearUndo: () => void;
 }
 
 const Ctx = createContext<Store | null>(null);
@@ -31,10 +37,28 @@ function readStorage(key = STORAGE_KEY): string | null {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, rawDispatch] = useReducer(trackedReducer, null, () => loadState(readStorage()));
   // Hver handling får et tidspunkt, så ændringer kan flettes korrekt mellem enheder (#38)
-  const dispatch: Dispatch<Action> = useCallback((a: Action) => rawDispatch({ ...a, at: Date.now() }), []);
-
   const stateRef = useRef(state);
   stateRef.current = state;
+  const [undo, setUndo] = useState<Deletion | null>(null);
+  const dispatch: Dispatch<Action> = useCallback((a: Action) => {
+    // Husk sletninger, så de kan fortrydes (#222). Synk-handlinger tæller ikke.
+    if (a.type !== 'MERGE_REMOTE' && a.type !== 'IMPORT_STATE' && a.type !== 'UNDO_DELETE') {
+      const prev = stateRef.current;
+      const d = lastDeletion(prev, a, reducer(prev, a));
+      if (d) setUndo(d);
+    }
+    rawDispatch({ ...a, at: Date.now() });
+  }, []);
+  const undoRef = useRef(undo);
+  undoRef.current = undo;
+  const undoDelete = useCallback(() => {
+    const d = undoRef.current;
+    if (!d) return;
+    undoRef.current = null;
+    setUndo(null);
+    rawDispatch({ type: 'UNDO_DELETE', deletion: d, at: Date.now() });
+  }, []);
+  const clearUndo = useCallback(() => setUndo(null), []);
   const prevState = useRef(state);
   const engineRef = useRef<SyncEngine | null>(null);
 
@@ -114,13 +138,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const syncNow = () => void engineRef.current?.syncNow();
 
   const map = new Map(state.exercises.map((e) => [e.id, e]));
-  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount, sync, resolveSync, syncNow }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ state, dispatch, exerciseById: (id) => map.get(id), apiUrl, account, setAccount, sync, resolveSync, syncNow, undo, undoDelete, clearUndo }}>{children}</Ctx.Provider>;
 }
 
 export function useStore(): Store {
   const s = useContext(Ctx);
   if (!s) throw new Error('useStore skal bruges inden i StoreProvider');
   return s;
+}
+
+/** Den valgte vægtenhed (#346): vægte gemmes i kg, men vises i kg eller lb */
+export function useUnit(): WeightUnit {
+  return useStore().state.unit ?? 'kg';
 }
 
 /** Re-render hvert sekund (til ure og timere) */

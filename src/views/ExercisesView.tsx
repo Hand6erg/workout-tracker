@@ -1,19 +1,32 @@
+import { CuesSection } from '../components/CuesSection';
+import { StrengthChart } from '../components/StrengthChart';
 import { useMemo, useState } from 'react';
+import { GoalsSection } from '../components/GoalsSection';
+import { LifetimeCard } from '../components/LifetimeCard';
+import { PercentTable } from '../components/PercentTable';
+import { RepMaxTable } from '../components/RepMaxTable';
 import { RestControls } from '../components/RestPicker';
 import { Chips, Empty, Modal } from '../components/ui';
 import {
   exerciseHistory,
+  formatRpe,
   exerciseKind,
   formatClock,
-  formatKg,
+  formatWeight,
   formatSet,
+  setTagSuffix,
+  isBodyweightReps,
   num,
   personalRecords,
   uid,
+  defaultPattern,
+  exercisePattern,
+  MOVEMENT_PATTERNS,
+  PATTERN_NAMES,
   type PersonalRecords,
 } from '../lib/logic';
-import { useStore } from '../lib/store';
-import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type Muscle } from '../lib/types';
+import { useStore, useUnit } from '../lib/store';
+import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type MovementPattern, type Muscle } from '../lib/types';
 
 const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
 
@@ -101,10 +114,13 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   const [muscle, setMuscle] = useState<Muscle>('Bryst');
   const [equipment, setEquipment] = useState<Equipment>('Stang');
   const [kind, setKind] = useState<ExerciseKind>('reps');
+  // Bevægelse (#369): følger muskelgruppen, indtil brugeren selv vælger
+  const [pickedPattern, setPickedPattern] = useState<MovementPattern | null>(null);
+  const pattern = pickedPattern ?? defaultPattern(muscle, name);
 
   const save = () => {
     if (!name.trim()) return;
-    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind });
+    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind, pattern });
     onClose();
   };
 
@@ -130,6 +146,7 @@ function NewExercise({ onClose }: { onClose: () => void }) {
           ))}
         </select>
       </label>
+      <PatternField value={pattern} onChange={setPickedPattern} />
       <label className="field">
         Udstyr
         <select value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)}>
@@ -152,10 +169,28 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** "Bevægelse": pres, træk, ben eller mave – bruges i Balance (#369) */
+function PatternField({ value, onChange }: { value: MovementPattern; onChange: (p: MovementPattern) => void }) {
+  return (
+    <label className="field">
+      Bevægelse
+      <select value={value} onChange={(e) => onChange(e.target.value as MovementPattern)}>
+        {MOVEMENT_PATTERNS.map((p) => (
+          <option key={p} value={p}>
+            {PATTERN_NAMES[p]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 /** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
 export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
-  const { state } = useStore();
-  const hist = exerciseHistory(state.history, ex.id);
+  const unit = useUnit();
+  const { state, dispatch } = useStore();
+  const hist = exerciseHistory(state.history, ex.id, state);
+  const pattern = exercisePattern(ex);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
   const kind = exerciseKind(state, ex.id);
   // Tids- og distanceøvelser måles i sekunder/meter i stedet for 1RM (#136)
@@ -167,14 +202,26 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
     <Modal title={ex.name} onClose={onClose}>
       <div className="row-between">
         <p className="muted">
-          {ex.muscle} · {ex.equipment}
+          {ex.muscle} · {PATTERN_NAMES[pattern]} · {ex.equipment}
+          {isBodyweightReps(state, ex.id) && (
+            <>
+              <br />
+              <small>Kropsvægt + ekstra vægt</small>
+            </>
+          )}
         </p>
         <FavoriteButton exerciseId={ex.id} big />
       </div>
+      {ex.custom && (
+        <PatternField value={pattern} onChange={(p) => dispatch({ type: 'SET_EXERCISE_PATTERN', exerciseId: ex.id, pattern: p })} />
+      )}
+      <CuesSection exerciseId={ex.id} />
       <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
         <h3 className="section">⏱ Pause mellem sæt</h3>
         <RestControls exerciseId={ex.id} />
       </section>
+      {kind === 'reps' && <GoalsSection exerciseId={ex.id} />}
+      <PercentTable exerciseId={ex.id} />
       {!hist.length ? (
         <>
           <Empty>Du har ikke lavet denne øvelse endnu.</Empty>
@@ -186,7 +233,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
             {kind === 'reps' ? (
               <div>
                 <small>Est. 1RM</small>
-                <strong data-testid="best-1rm">{formatKg(best)}</strong>
+                <strong data-testid="best-1rm">{formatWeight(best, unit)}</strong>
               </div>
             ) : (
               <div>
@@ -199,10 +246,9 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <strong>{hist.length}</strong>
             </div>
           </div>
-          <Sparkline
-            values={[...hist].reverse().map((h) => (kind === 'reps' ? h.best1RM : bestOf(h)))}
-            label={kind === 'reps' ? 'Udvikling i estimeret 1RM' : kind === 'time' ? 'Udvikling i længste hold' : 'Udvikling i længste distance'}
-          />
+          <LifetimeCard exerciseId={ex.id} />
+          <StrengthChart exerciseId={ex.id} />
+          <RepMaxTable exerciseId={ex.id} />
           <Records records={personalRecords(state, ex.id)} />
           <h3 className="section">Historik</h3>
           <ul className="list">
@@ -210,9 +256,13 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
               <li key={h.workoutId} className="list-row static">
                 <span>
                   <strong>{shortDate.format(h.date)}</strong>
-                  <small>{h.sets.map(formatSet).join(' · ')}</small>
+                  <small>
+                    {h.sets
+                      .map((s) => formatSet(s, isBodyweightReps(state, ex.id), unit) + (formatRpe(s.rpe) ? ` @ RPE ${formatRpe(s.rpe)}` : '') + setTagSuffix(s))
+                      .join(' · ')}
+                  </small>
                 </span>
-                <span className="muted">{kind === 'reps' ? formatKg(h.best1RM) : fmt(bestOf(h))}</span>
+                <span className="muted">{kind === 'reps' ? formatWeight(h.best1RM, unit) : fmt(bestOf(h))}</span>
               </li>
             ))}
           </ul>
@@ -223,11 +273,12 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
 }
 
 function Records({ records }: { records: PersonalRecords }) {
+  const unit = useUnit();
   const reps = Object.entries(records.repsAtWeight)
     .map(([w, r]) => ({ weight: Number(w), ...r }))
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 5);
-  const kg = (n: number) => (n > 0 ? formatKg(n) : 'Kropsvægt');
+  const kg = (n: number) => (n > 0 ? formatWeight(n, unit) : 'Kropsvægt');
   return (
     <section aria-label="Rekorder">
       <h3 className="section">🏆 Rekorder</h3>
@@ -273,7 +324,7 @@ function Records({ records }: { records: PersonalRecords }) {
                 <small>{shortDate.format(records.heaviest.date)}</small>
               </span>
               <span>
-                {formatKg(records.heaviest.weight)} × {records.heaviest.reps}
+                {formatWeight(records.heaviest.weight, unit)} × {records.heaviest.reps}
               </span>
             </li>
           )}
@@ -282,10 +333,10 @@ function Records({ records }: { records: PersonalRecords }) {
               <span>
                 <strong>Bedste est. 1RM</strong>
                 <small>
-                  {formatKg(records.best1RM.weight)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
+                  {formatWeight(records.best1RM.weight, unit)} × {records.best1RM.reps} · {shortDate.format(records.best1RM.date)}
                 </small>
               </span>
-              <span>{formatKg(records.best1RM.value)}</span>
+              <span>{formatWeight(records.best1RM.value, unit)}</span>
             </li>
           )}
           {reps.map((r) => (
@@ -300,23 +351,5 @@ function Records({ records }: { records: PersonalRecords }) {
         </ul>
       )}
     </section>
-  );
-}
-
-function Sparkline({ values, label }: { values: number[]; label: string }) {
-  if (values.length < 2) return null;
-  const w = 300;
-  const h = 80;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const pts = values.map((v, i) => [(i / (values.length - 1)) * w, h - 8 - ((v - min) / span) * (h - 16)]);
-  return (
-    <svg className="spark" viewBox={`0 0 ${w} ${h}`} role="img" aria-label={label}>
-      <polyline points={pts.map((p) => p.join(',')).join(' ')} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinejoin="round" />
-      {pts.map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r="3.5" fill="currentColor" />
-      ))}
-    </svg>
   );
 }

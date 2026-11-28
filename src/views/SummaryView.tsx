@@ -1,16 +1,23 @@
 import { useState } from 'react';
-import { formatDuration, formatKg, milestonesUnlockedBy, RECORD_NAMES, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
+import { formatDuration, formatWeight, milestonesUnlockedBy, RECORD_NAMES, repMaxLine, restSummary, workoutRepMaxes, shareCardLines, volumeChangeText, workoutSummary } from '../lib/logic';
 import { shareSummaryImage } from '../lib/shareImage';
-import { useStore } from '../lib/store';
+import { useStore, useUnit } from '../lib/store';
+import { formatRest } from '../components/RestPicker';
+import { FinisherList } from '../components/IntervalTimer';
+import { FeelingPicker } from '../components/FeelingPicker';
 
 /** Opsummering lige efter "Afslut" (#143) */
 export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
-  const { state } = useStore();
+  const unit = useUnit();
+  const { state, exerciseById } = useStore();
   const [sharing, setSharing] = useState(false);
   const s = state.lastFinishedId ? workoutSummary(state, state.lastFinishedId) : null;
   if (!s) return null;
   const pct = s.volumeChangePct;
   const newBadges = milestonesUnlockedBy(state, s.workoutId);
+  const w = state.history.find((h) => h.id === s.workoutId);
+  const rest = w ? restSummary(w, state) : null;
+  const repMaxes = workoutRepMaxes(state, s.workoutId);
 
   return (
     <section className="page summary" aria-label="Opsummering">
@@ -24,7 +31,7 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         </div>
         <div className="summary-stat">
           <span className="muted">Volumen</span>
-          <strong>{formatKg(s.volume)}</strong>
+          <strong>{formatWeight(s.volume, unit)}</strong>
         </div>
         <div className="summary-stat">
           <span className="muted">Sæt</span>
@@ -40,6 +47,26 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         <p className={`summary-change ${pct > 0 ? 'up' : pct < 0 ? 'down' : ''}`} role="status">
           {volumeChangeText(pct)}
         </p>
+      )}
+
+      {w && <FeelingPicker workout={w} />}
+
+      {rest && rest.count >= 2 && (
+        <p className="card summary-rest" aria-label="Pauser">
+          <span>
+            ⏱ Gns. pause <strong>{formatRest(rest.average)}</strong> <span className="muted">(planlagt {formatRest(rest.planned)})</span>
+          </span>
+          <small className="muted">
+            Længst pause: {exerciseById(rest.longest.exerciseId)?.name ?? 'Ukendt øvelse'} ({formatRest(rest.longest.seconds)})
+          </small>
+        </p>
+      )}
+
+      {!!w?.finishers?.length && (
+        <section className="card summary-finishers" aria-label="Finisher">
+          <h2>⏱ Finisher</h2>
+          <FinisherList finishers={w.finishers} />
+        </section>
       )}
 
       {newBadges.length > 0 && (
@@ -58,6 +85,19 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         </section>
       )}
 
+      {s.goals.length > 0 && (
+        <section className="card summary-goals" aria-label="Mål nået">
+          <h2>🎯 Mål nået!</h2>
+          <ul className="summary-records">
+            {s.goals.map((g) => (
+              <li key={g.goalId}>
+                <strong>{g.name}</strong> <span>{formatWeight(g.weight, unit)} × {g.reps}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       {s.records.length > 0 && (
         <section className="card" aria-label="Nye rekorder">
           <h2>🏆 Nye rekorder</h2>
@@ -71,13 +111,23 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
         </section>
       )}
 
+      {repMaxes.length > 0 && (
+        <section className="card" aria-label="Nye rep-maks">
+          <ul className="summary-records repmax-lines">
+            {repMaxes.map((r) => (
+              <li key={r.exerciseId}>{repMaxLine(r, unit)}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <button
         className="btn-secondary wide"
         disabled={sharing}
         onClick={async () => {
           setSharing(true);
           try {
-            await shareSummaryImage(shareCardLines(s));
+            await shareSummaryImage(shareCardLines(s, unit));
           } finally {
             setSharing(false);
           }
