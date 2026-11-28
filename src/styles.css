@@ -358,6 +358,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .line-chart .dot { fill: var(--bg); stroke: var(--accent); stroke-width: 2; }
 .line-chart .dot.record, .line-chart .dot.selected { fill: var(--accent); }
 .line-chart .dot.selected { stroke: var(--text); }
+.line-chart .dot.hollow { fill: none; stroke: var(--muted); stroke-dasharray: 2 2; }
+.deload-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; vertical-align: middle; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); }
 .line-chart .mark { font-size: 11px; text-anchor: middle; }
 .line-chart-wrap { position: relative; }
 .chart-tap {
