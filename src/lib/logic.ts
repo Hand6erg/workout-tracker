@@ -4703,3 +4703,154 @@ export function deloadWeightText(stall: Pick<StalledExercise, 'lightWeight' | 'l
 export function stallText(stall: StalledExercise, unit: WeightUnit = 'kg'): string {
   return `${stall.name} står stille (${stall.sessions} træninger) – prøv en let uge med ${deloadWeightText(stall, unit)}`;
 }
+
+/* ---------- Træningsbalance (#367) ---------- */
+
+/** Bevægelsesmønster: pres, træk, ben eller mave */
+export type MovementPattern = 'push' | 'pull' | 'legs' | 'core';
+
+export const PATTERN_NAMES: Record<MovementPattern, string> = { push: 'Pres', pull: 'Træk', legs: 'Ben', core: 'Mave' };
+
+/** Faste mønstre for de indbyggede øvelser */
+const SEED_PATTERNS: Record<string, MovementPattern> = {
+  bench: 'push',
+  'incline-db': 'push',
+  dips: 'push',
+  'cable-fly': 'push',
+  ohp: 'push',
+  lateral: 'push',
+  pushdown: 'push',
+  skullcrusher: 'push',
+  deadlift: 'legs',
+  rdl: 'legs',
+  squat: 'legs',
+  'leg-press': 'legs',
+  lunge: 'legs',
+  'leg-curl': 'legs',
+  'leg-ext': 'legs',
+  calf: 'legs',
+  pullup: 'pull',
+  row: 'pull',
+  'lat-pulldown': 'pull',
+  'face-pull': 'pull',
+  curl: 'pull',
+  hammer: 'pull',
+  'dead-hang': 'pull',
+  'farmers-walk': 'pull',
+  rower: 'pull',
+  plank: 'core',
+  crunch: 'core',
+};
+
+/** Forslag til en indbygget øvelse pr. mønster, i prioriteret rækkefølge */
+const PATTERN_SUGGESTIONS: Record<MovementPattern, string[]> = {
+  push: ['bench', 'ohp', 'incline-db', 'dips', 'pushdown'],
+  pull: ['row', 'lat-pulldown', 'pullup', 'face-pull', 'curl'],
+  legs: ['squat', 'leg-press', 'lunge', 'rdl', 'leg-curl'],
+  core: ['plank', 'crunch'],
+};
+
+/**
+ * Mønsteret for en øvelse (#367). Indbyggede øvelser har et fast mønster; egne øvelser får et ud fra
+ * muskelgruppen: Bryst/Skuldre → pres, Ryg → træk, Ben → ben, Mave → mave, Arme → pres (træk hvis navnet indeholder "curl").
+ */
+export function exercisePattern(ex: Pick<Exercise, 'id' | 'name' | 'muscle' | 'custom'>): MovementPattern {
+  if (!ex.custom && SEED_PATTERNS[ex.id]) return SEED_PATTERNS[ex.id];
+  switch (ex.muscle) {
+    case 'Ryg':
+      return 'pull';
+    case 'Ben':
+      return 'legs';
+    case 'Mave':
+      return 'core';
+    case 'Arme':
+      return /curl/i.test(ex.name) ? 'pull' : 'push';
+    default:
+      return 'push';
+  }
+}
+
+/** Antal dage tilbage, der tæller med i balancen */
+export const BALANCE_DAYS = 28;
+/** Mindst så mange sæt i alt (for de to sider), før der gives et tip */
+export const BALANCE_MIN_SETS = 10;
+
+export interface BalanceTip {
+  kind: 'push-pull' | 'upper-lower';
+  strong: 'push' | 'pull' | 'upper' | 'lower';
+  weak: 'push' | 'pull' | 'upper' | 'lower';
+  /** Hvor mange gange flere sæt den stærke side har (null = den svage side har 0 sæt) */
+  ratio: number | null;
+  /** En indbygget øvelse til den svage side, som ikke er lavet i perioden */
+  suggestion: { id: string; name: string } | null;
+  /** Fx "Du træner 3× mere pres end træk – prøv at tilføje Roning" */
+  text: string;
+}
+
+export interface TrainingBalance {
+  push: number;
+  pull: number;
+  legs: number;
+  core: number;
+  /** Overkrop = pres + træk */
+  upper: number;
+  /** Underkrop = ben */
+  lower: number;
+  tips: BalanceTip[];
+}
+
+const SIDE_WORDS: Record<BalanceTip['strong'], string> = { push: 'pres', pull: 'træk', upper: 'overkrop', lower: 'ben' };
+
+/**
+ * Pres/træk- og overkrop/underkrop-balancen de sidste 28 dage (#367): udførte arbejdssæt (ikke opvarmning).
+ * Et tip, når den ene side har under halvt så mange sæt som den anden (og der er mindst 10 sæt på de to sider).
+ */
+export function trainingBalance(state: Pick<AppState, 'history' | 'exercises'>, now: number): TrainingBalance {
+  const since = now - BALANCE_DAYS * DAY_MS;
+  const byId = new Map(state.exercises.map((e) => [e.id, e]));
+  const counts: Record<MovementPattern, number> = { push: 0, pull: 0, legs: 0, core: 0 };
+  const done = new Set<string>();
+  for (const w of state.history) {
+    if (w.startedAt < since || w.startedAt > now) continue;
+    for (const we of w.exercises) {
+      const ex = byId.get(we.exerciseId);
+      if (!ex) continue;
+      const n = we.sets.filter((s) => s.done && !s.warmup).length;
+      if (!n) continue;
+      done.add(ex.id);
+      counts[exercisePattern(ex)] += n;
+    }
+  }
+  const upper = counts.push + counts.pull;
+  const lower = counts.legs;
+  const suggest = (p: MovementPattern) => {
+    const id = PATTERN_SUGGESTIONS[p].find((x) => !done.has(x) && byId.has(x));
+    return id ? { id, name: byId.get(id)!.name } : null;
+  };
+  const tips: BalanceTip[] = [];
+  const check = (
+    kind: BalanceTip['kind'],
+    a: BalanceTip['strong'],
+    an: number,
+    b: BalanceTip['strong'],
+    bn: number,
+    suggestFor: (weak: BalanceTip['strong']) => MovementPattern,
+  ) => {
+    if (an + bn < BALANCE_MIN_SETS) return;
+    const [strong, sn, weak, wn] = an >= bn ? [a, an, b, bn] : [b, bn, a, an];
+    if (wn * 2 >= sn) return;
+    const ratio = wn > 0 ? Math.round((sn / wn) * 10) / 10 : null;
+    const suggestion = suggest(suggestFor(weak));
+    const head =
+      ratio === null
+        ? `Du træner ${SIDE_WORDS[strong]}, men ingen ${SIDE_WORDS[weak]}`
+        : `Du træner ${String(ratio).replace('.', ',')}× mere ${SIDE_WORDS[strong]} end ${SIDE_WORDS[weak]}`;
+    tips.push({ kind, strong, weak, ratio, suggestion, text: suggestion ? `${head} – prøv at tilføje ${suggestion.name}` : head });
+  };
+  check('push-pull', 'push', counts.push, 'pull', counts.pull, (weak) => weak as MovementPattern);
+  check('upper-lower', 'upper', upper, 'lower', lower, () =>
+    // Overkrop for lidt: foreslå den svageste af pres og træk
+    lower > upper ? (counts.pull < counts.push ? 'pull' : 'push') : 'legs',
+  );
+  return { ...counts, upper, lower, tips };
+}
