@@ -3028,6 +3028,55 @@ export function feelingInsights(history: Workout[]): string[] {
   return out.sort((a, b) => b.diff - a.diff).slice(0, 2).map((x) => x.text);
 }
 
+/* ---------- Flyt øvelser (#375) ---------- */
+
+/** Deler en liste i blokke: et supersæt (øvelser i træk med samme supersetId) er én blok, ellers én øvelse pr. blok */
+function exerciseBlocks<T extends { supersetId?: string }>(list: T[]): T[][] {
+  const blocks: T[][] = [];
+  for (const e of list) {
+    const last = blocks[blocks.length - 1];
+    if (last && e.supersetId && last[0].supersetId === e.supersetId) last.push(e);
+    else blocks.push([e]);
+  }
+  return blocks;
+}
+
+/**
+ * Flytter øvelsen (og hele dens supersæt) én plads op eller ned. Et nabo-supersæt springes over som én blok,
+ * så øvelsen aldrig lander midt i det. Første op / sidste ned (eller ukendt id) giver samme liste tilbage.
+ */
+export function moveExerciseBlock<T extends { id: string; supersetId?: string }>(
+  list: T[],
+  weId: string,
+  direction: 'up' | 'down',
+): T[] {
+  const blocks = exerciseBlocks(list);
+  const i = blocks.findIndex((b) => b.some((e) => e.id === weId));
+  const j = direction === 'up' ? i - 1 : i + 1;
+  if (i < 0 || j < 0 || j >= blocks.length) return list;
+  [blocks[i], blocks[j]] = [blocks[j], blocks[i]];
+  return blocks.flat();
+}
+
+/** Kan øvelsen flyttes op/ned? (til at skjule knapperne i kanten) */
+export function canMoveExercise(list: { id: string; supersetId?: string }[], weId: string, direction: 'up' | 'down'): boolean {
+  return moveExerciseBlock(list, weId, direction) !== list;
+}
+
+/**
+ * Er øvelsernes rækkefølge i træningen en anden end i dens skabelon? (#375)
+ * Kun øvelser, der findes begge steder, sammenlignes – tilføjede eller fjernede øvelser tæller ikke som flytning.
+ */
+export function orderDiffersFromTemplate(state: AppState, workout: Workout): boolean {
+  const tpl = workout.templateId ? state.templates.find((t) => t.id === workout.templateId) : undefined;
+  if (!tpl) return false;
+  const inTpl = new Set(tpl.exercises.map((e) => e.exerciseId));
+  const inWorkout = new Set(workout.exercises.map((e) => e.exerciseId));
+  const a = workout.exercises.map((e) => e.exerciseId).filter((id) => inTpl.has(id));
+  const b = tpl.exercises.map((e) => e.exerciseId).filter((id) => inWorkout.has(id));
+  return a.length !== b.length || a.some((id, k) => id !== b[k]);
+}
+
 /* ---------- Reducer ---------- */
 
 /** Handlinger på en træning, der også virker på kladden (`edit: true`) i stedet for den aktive træning */
@@ -3040,6 +3089,8 @@ export type WorkoutChange =
   | { type: 'SWAP_EXERCISE'; weId: string; exerciseId: string }
   | { type: 'LINK_SUPERSET'; weId: string }
   | { type: 'UNLINK_SUPERSET'; weId: string }
+  /** Flyt en øvelse (eller hele dens supersæt) én plads op eller ned (#375) */
+  | { type: 'MOVE_EXERCISE'; weId: string; direction: 'up' | 'down' }
   | { type: 'ADD_SET'; weId: string }
   | { type: 'ADD_WARMUP_SETS'; weId: string; barWeight?: number }
   | { type: 'APPLY_HINT'; weId: string; weight: number; reps: number; seconds?: number; meters?: number }
@@ -3073,6 +3124,7 @@ const WORKOUT_CHANGES = new Set<string>([
   'SWAP_EXERCISE',
   'LINK_SUPERSET',
   'UNLINK_SUPERSET',
+  'MOVE_EXERCISE',
   'ADD_SET',
   'ADD_WARMUP_SETS',
   'APPLY_HINT',
@@ -3143,6 +3195,8 @@ export type Action =
   | { type: 'DELETE_TEMPLATE'; templateId: string }
   | { type: 'SET_TEMPLATE_REPS'; templateId: string; index: number; min: number | null; max: number | null }
   | { type: 'SWAP_IN_TEMPLATE'; templateId: string; fromExerciseId: string; toExerciseId: string }
+  /** Ny rækkefølge for skabelonens øvelser (#375): alle øvelsernes exerciseId i den nye rækkefølge */
+  | { type: 'REORDER_TEMPLATE'; templateId: string; exerciseIds: string[] }
   | { type: 'DELETE_WORKOUT'; workoutId: string }
   | { type: 'IMPORT_STATE'; state: AppState }
   | { type: 'CLOSE_SUMMARY' }
@@ -3434,6 +3488,11 @@ export function reducer(state: AppState, action: Action): AppState {
           w.exercises.map((e) => (e.id === action.weId ? { ...e, supersetId: undefined } : e)),
         ),
       }));
+    case 'MOVE_EXERCISE':
+      return mapActive(state, (w) => {
+        const exercises = moveExerciseBlock(w.exercises, action.weId, action.direction);
+        return exercises === w.exercises ? w : { ...w, exercises };
+      });
     case 'ADD_SET':
       return mapActive(state, (w) =>
         mapExercise(w, action.weId, (e) => {
@@ -3833,6 +3892,23 @@ export function reducer(state: AppState, action: Action): AppState {
       if (!tpl || i < 0) return state;
       const exercises = tpl.exercises.map((e, k) => (k === i ? { ...e, exerciseId: action.toExerciseId } : e));
       return { ...state, templates: state.templates.map((t) => (t === tpl ? { ...t, exercises } : t)) };
+    }
+    case 'REORDER_TEMPLATE': {
+      // Samme øvelser (samme antal af hver), ny rækkefølge – sæt, supersæt og rep-interval følger med (#375)
+      const tpl = state.templates.find((t) => t.id === action.templateId);
+      if (!tpl || action.exerciseIds.length !== tpl.exercises.length) return state;
+      const left = [...tpl.exercises];
+      const exercises: TemplateExercise[] = [];
+      for (const id of action.exerciseIds) {
+        const k = left.findIndex((e) => e.exerciseId === id);
+        if (k < 0) return state;
+        exercises.push(left.splice(k, 1)[0]);
+      }
+      if (exercises.every((e, k) => e === tpl.exercises[k])) return state;
+      return {
+        ...state,
+        templates: state.templates.map((t) => (t === tpl ? { ...t, exercises: normalizeSupersets(exercises) } : t)),
+      };
     }
     case 'SET_TEMPLATE_REPS': {
       // Rep-interval på en øvelse i en skabelon (#257). null/null fjerner intervallet.
