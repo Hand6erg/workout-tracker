@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  moveExerciseBlock,
+  canMoveExercise,
+  orderDiffersFromTemplate,
   deloadWeightInput,
   deloadWeightText,
   stallText,
@@ -4927,5 +4930,155 @@ describe('træningsbalance (#367)', () => {
     const plain = reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'p', name: 'Kickback', muscle: 'Arme', equipment: 'Kabel' });
     expect('pattern' in plain.exercises.find((e) => e.id === 'p')!).toBe(false);
     expect(defaultPattern('Ryg')).toBe('pull');
+  });
+});
+
+describe('flyt øvelser (#375)', () => {
+  const ids = (s: AppState) => s.active!.exercises.map((e) => e.exerciseId);
+  function withSuperset() {
+    // bench, ohp, [incline-db + lateral], pushdown
+    let s = startWith(initialState(), 'tpl-push');
+    const lateral = s.active!.exercises[2];
+    s = reducer(s, { type: 'LINK_SUPERSET', weId: lateral.id });
+    return s;
+  }
+
+  it('flytter en øvelse op og ned ved at bytte med naboen', () => {
+    let s = startWith(initialState(), 'tpl-push');
+    const [bench, ohp] = s.active!.exercises;
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: bench.id, direction: 'down' });
+    expect(ids(s)).toEqual(['ohp', 'bench', 'incline-db', 'lateral', 'pushdown']);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ohp.id, direction: 'down' });
+    expect(ids(s)).toEqual(['bench', 'ohp', 'incline-db', 'lateral', 'pushdown']);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ohp.id, direction: 'up' });
+    expect(ids(s)).toEqual(['ohp', 'bench', 'incline-db', 'lateral', 'pushdown']);
+  });
+
+  it('første op og sidste ned gør intet', () => {
+    const s = startWith(initialState(), 'tpl-push');
+    const ex = s.active!.exercises;
+    expect(reducer(s, { type: 'MOVE_EXERCISE', weId: ex[0].id, direction: 'up' })).toBe(s);
+    expect(reducer(s, { type: 'MOVE_EXERCISE', weId: ex[4].id, direction: 'down' })).toBe(s);
+    expect(reducer(s, { type: 'MOVE_EXERCISE', weId: 'ukendt', direction: 'down' })).toBe(s);
+    expect(reducer(initialState(), { type: 'MOVE_EXERCISE', weId: 'x', direction: 'up' })).toEqual(initialState());
+    expect(canMoveExercise(ex, ex[0].id, 'up')).toBe(false);
+    expect(canMoveExercise(ex, ex[0].id, 'down')).toBe(true);
+    expect(canMoveExercise(ex, ex[4].id, 'down')).toBe(false);
+  });
+
+  it('et supersæt flytter som én blok', () => {
+    let s = withSuperset();
+    const ex = s.active!.exercises;
+    const ss = ex[2].supersetId;
+    expect(ss).toBeDefined();
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ex[3].id, direction: 'up' });
+    expect(ids(s)).toEqual(['bench', 'incline-db', 'lateral', 'ohp', 'pushdown']);
+    expect(s.active!.exercises[1].supersetId).toBe(ss);
+    expect(s.active!.exercises[2].supersetId).toBe(ss);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ex[2].id, direction: 'up' });
+    expect(ids(s)).toEqual(['incline-db', 'lateral', 'bench', 'ohp', 'pushdown']);
+    expect(canMoveExercise(s.active!.exercises, ex[3].id, 'up')).toBe(false);
+  });
+
+  it('en øvelse springer over et helt nabo-supersæt', () => {
+    let s = withSuperset();
+    const ex = s.active!.exercises;
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ex[1].id, direction: 'down' });
+    expect(ids(s)).toEqual(['bench', 'incline-db', 'lateral', 'ohp', 'pushdown']);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ex[4].id, direction: 'up' });
+    expect(ids(s)).toEqual(['bench', 'incline-db', 'lateral', 'pushdown', 'ohp']);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: ex[4].id, direction: 'up' });
+    expect(ids(s)).toEqual(['bench', 'pushdown', 'incline-db', 'lateral', 'ohp']);
+    expect(s.active!.exercises[2].supersetId).toBe(s.active!.exercises[3].supersetId);
+    expect(s.active!.exercises[1].supersetId).toBeUndefined();
+  });
+
+  it('sæt, afkrydsning og noter er uændrede efter en flytning', () => {
+    let s = startWith(initialState(), 'tpl-push');
+    const bench = s.active!.exercises[0];
+    const setId = bench.sets[0].id;
+    s = reducer(s, { type: 'UPDATE_SET', weId: bench.id, setId, patch: { weight: '80', reps: '5' } });
+    s = reducer(s, { type: 'TOGGLE_SET', weId: bench.id, setId, now: T0 });
+    s = reducer(s, { type: 'SET_EXERCISE_NOTE', weId: bench.id, note: 'smal greb' });
+    const before = s.active!.exercises[0];
+    const out = reducer(s, { type: 'MOVE_EXERCISE', weId: bench.id, direction: 'down' });
+    expect(out.active!.exercises[1]).toBe(before);
+    expect(out.active!.exercises[1].sets[0]).toMatchObject({ weight: '80', reps: '5', done: true });
+    expect(out.rest).toBe(s.rest);
+    expect({ ...out.active!, exercises: [] }).toEqual({ ...s.active!, exercises: [] });
+  });
+
+  it('virker på kladden (edit: true) uden at røre den aktive træning eller historikken', () => {
+    let s = startWith(initialState(), 'tpl-push');
+    for (const we of s.active!.exercises.slice(0, 2)) {
+      const setId = we.sets[0].id;
+      s = reducer(s, { type: 'UPDATE_SET', weId: we.id, setId, patch: { weight: '50', reps: '5' } });
+      s = reducer(s, { type: 'TOGGLE_SET', weId: we.id, setId, now: T0 });
+    }
+    s = reducer(s, { type: 'FINISH_WORKOUT', now: T0 + 3600_000 });
+    s = reducer(s, { type: 'CLOSE_SUMMARY' });
+    const done = s.history[0];
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: done.id });
+    s = startWith(s);
+    const active = s.active;
+    const out = reducer(s, { type: 'MOVE_EXERCISE', weId: s.editing!.exercises[1].id, direction: 'up', edit: true });
+    expect(out.editing!.exercises.map((e) => e.exerciseId).slice(0, 2)).toEqual(['ohp', 'bench']);
+    expect(out.active).toBe(active);
+    expect(out.history[0].exercises[0].exerciseId).toBe('bench');
+  });
+
+  it('moveExerciseBlock giver samme liste tilbage, når intet kan flyttes', () => {
+    const list = [{ id: 'a' }, { id: 'b' }];
+    expect(moveExerciseBlock(list, 'a', 'up')).toBe(list);
+    expect(moveExerciseBlock(list, 'a', 'down').map((e) => e.id)).toEqual(['b', 'a']);
+  });
+
+  it('REORDER_TEMPLATE ændrer rækkefølgen og beholder sæt, supersæt og rep-interval', () => {
+    let s = initialState();
+    s = {
+      ...s,
+      templates: [
+        {
+          id: 't',
+          name: 'T',
+          exercises: [
+            { exerciseId: 'bench', sets: 4, repMin: 6, repMax: 8 },
+            { exerciseId: 'ohp', sets: 3, supersetId: 'x' },
+            { exerciseId: 'lateral', sets: 2, supersetId: 'x' },
+          ],
+        },
+      ],
+    };
+    const out = reducer(s, { type: 'REORDER_TEMPLATE', templateId: 't', exerciseIds: ['ohp', 'lateral', 'bench'] });
+    expect(out.templates[0].exercises).toEqual([
+      { exerciseId: 'ohp', sets: 3, supersetId: 'x' },
+      { exerciseId: 'lateral', sets: 2, supersetId: 'x' },
+      { exerciseId: 'bench', sets: 4, repMin: 6, repMax: 8 },
+    ]);
+    // Et supersæt, der bliver delt, opløses
+    const split = reducer(s, { type: 'REORDER_TEMPLATE', templateId: 't', exerciseIds: ['ohp', 'bench', 'lateral'] });
+    expect(split.templates[0].exercises.every((e) => !e.supersetId)).toBe(true);
+  });
+
+  it('REORDER_TEMPLATE afviser ukendte, manglende eller dobbelte øvelser', () => {
+    const s = initialState();
+    const push = ['bench', 'ohp', 'incline-db', 'lateral', 'pushdown'];
+    expect(reducer(s, { type: 'REORDER_TEMPLATE', templateId: 'tpl-push', exerciseIds: push.slice(1) })).toBe(s);
+    expect(reducer(s, { type: 'REORDER_TEMPLATE', templateId: 'tpl-push', exerciseIds: [...push.slice(1), 'squat'] })).toBe(s);
+    expect(reducer(s, { type: 'REORDER_TEMPLATE', templateId: 'tpl-push', exerciseIds: [...push.slice(1), 'ohp'] })).toBe(s);
+    expect(reducer(s, { type: 'REORDER_TEMPLATE', templateId: 'ukendt', exerciseIds: push })).toBe(s);
+    expect(reducer(s, { type: 'REORDER_TEMPLATE', templateId: 'tpl-push', exerciseIds: push })).toBe(s);
+  });
+
+  it('orderDiffersFromTemplate er falsk for en urørt træning og sand efter en flytning', () => {
+    let s = startWith(initialState(), 'tpl-push');
+    expect(orderDiffersFromTemplate(s, s.active!)).toBe(false);
+    // Tilføjede øvelser tæller ikke som flytning
+    s = reducer(s, { type: 'ADD_EXERCISES', exerciseIds: ['squat'] });
+    expect(orderDiffersFromTemplate(s, s.active!)).toBe(false);
+    s = reducer(s, { type: 'MOVE_EXERCISE', weId: s.active!.exercises[0].id, direction: 'down' });
+    expect(orderDiffersFromTemplate(s, s.active!)).toBe(true);
+    const free = startWith(initialState());
+    expect(orderDiffersFromTemplate(free, free.active!)).toBe(false);
   });
 });
