@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feelingInsights, feelingLine, feelingTrend, toCsv, initialState, loadState, reducer, startOfWeek, stampChanges } from './logic';
+import { feelingInsights, feelingLine, recentFeeling, feelingTrend, toCsv, initialState, loadState, reducer, startOfWeek, stampChanges } from './logic';
 import type { AppState, Workout } from './types';
 
 const DAY = 86_400_000;
@@ -137,5 +137,16 @@ describe('vurdering i Historik og eksport (#383)', () => {
     expect(s.history[0].feeling).toBe(2);
     expect(s.editing?.feeling).toBe(5);
     expect(reducer(s, { type: 'CANCEL_EDIT' }).history[0].feeling).toBe(2);
+  });
+});
+
+describe('recentFeeling (#384)', () => {
+  it('gennemsnit af de seneste 4 uger, ældre og uvurderede tæller ikke', () => {
+    const now = T0 + 2 * DAY;
+    const history = [wk('a', T0, 5), wk('b', T0 - 7 * DAY, 4), wk('c', T0 - 21 * DAY, 3), wk('d', T0 - 28 * DAY, 1), wk('e', T0 - DAY)];
+    expect(recentFeeling(history, 4, now)).toEqual({ avg: 4, count: 3 });
+  });
+  it('null uden vurderinger', () => {
+    expect(recentFeeling([wk('a', T0)], 4, T0)).toBeNull();
   });
 });

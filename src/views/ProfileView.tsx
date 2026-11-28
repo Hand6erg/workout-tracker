@@ -9,6 +9,7 @@ import { RecordsWall } from '../components/RecordsWall';
 import { ProfileGoals } from '../components/GoalsSection';
 import { MostLifted } from '../components/MostLifted';
 import { BalanceCard } from '../components/BalanceCard';
+import { FeelingCard } from '../components/FeelingCard';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { YearHeatmap } from '../components/YearHeatmap';
 import { SetTargetsSection } from '../components/SetTargets';
@@ -71,6 +72,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
       <WeeklyVolume />
       <MuscleSplit />
       <BalanceCard />
+      <FeelingCard />
       <TrainingDaysSection />
       <SetTargetsSection />
       <ProfileGoals />

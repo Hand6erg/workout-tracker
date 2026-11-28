@@ -466,6 +466,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .feeling-btn.on { border-color: var(--accent); background: var(--accent-soft); }
 .feeling-line { white-space: nowrap; }
 p.feeling-line { margin: 4px 0 8px; }
+.feeling-avg { margin: 0 0 6px; }
 .feeling-energy { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* Rekordvæg i Profil (#163) */

@@ -2953,6 +2953,15 @@ export function feelingTrend(history: Workout[], weeks: number, now: number): Fe
   }));
 }
 
+/** Gennemsnitlig vurdering for de seneste `weeks` uger inkl. denne (#384), eller null uden vurderede træninger */
+export function recentFeeling(history: Workout[], weeks: number, now: number): { avg: number; count: number } | null {
+  let from = startOfWeek(now);
+  for (let i = 1; i < weeks; i++) from = startOfWeek(from - DAY_MS);
+  const xs = history.filter((w) => isFeeling(w.feeling) && w.startedAt >= from && w.startedAt <= now).map((w) => w.feeling!);
+  if (!xs.length) return null;
+  return { avg: Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10, count: xs.length };
+}
+
 /** Mindst så mange vurderede træninger før der vises tips */
 export const FEELING_INSIGHT_MIN = 8;
 /** Mindste forskel i gennemsnit, før et tip vises */
