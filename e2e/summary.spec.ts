@@ -149,3 +149,30 @@ test('en træning uden vurdering viser ingen vurdering i Historik (#383)', async
   await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
   await expect(page.locator('.feeling-line')).toHaveCount(0);
 });
+
+test('"Sådan føltes det" i Profil: tom tekst uden vurderinger, graf og tip med vurderinger (#384)', async ({ page }) => {
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  const card = page.getByRole('region', { name: 'Sådan føltes det' });
+  await expect(card).toContainText('Bedøm dine træninger på opsummeringen for at se, hvordan de føles over tid.');
+  await expect(card.getByRole('img', { name: 'Gennemsnitlig vurdering pr. uge' })).toHaveCount(0);
+
+  // 10 vurderede træninger over de sidste uger: morgen føles 5, aften føles 2
+  await page.evaluate(() => {
+    const DAY = 86_400_000;
+    const history = Array.from({ length: 10 }, (_, i) => {
+      const d = new Date(Date.now() - (i * 2 + 1) * DAY);
+      d.setHours(i % 2 ? 8 : 19, 0, 0, 0);
+      const t = d.getTime();
+      return { id: `w${i}`, name: 'Træning', startedAt: t, finishedAt: t + 3_600_000, exercises: [], feeling: i % 2 ? 5 : 2 };
+    });
+    const s = JSON.parse(localStorage.getItem('loeft-state-v1')!);
+    localStorage.setItem('loeft-state-v1', JSON.stringify({ ...s, history }));
+  });
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Profil/ }).click();
+  await expect(card.getByRole('img', { name: 'Gennemsnitlig vurdering pr. uge' })).toBeVisible();
+  await expect(card).toContainText('Snit de sidste 4 uger');
+  await expect(card).toContainText('Dine bedste træninger er om morgenen');
+  await card.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: 'test-results/profile-feeling.png' });
+});
