@@ -745,3 +745,6 @@ button.year-cell { cursor: pointer; }
 .bal-right { background: var(--purple); }
 .bal-tip { font-size: 0.9rem; line-height: 1.4; }
 .bal-tip .link { color: var(--accent); font-weight: 600; text-decoration: underline; padding: 0; background: none; border: 0; font: inherit; cursor: pointer; }
+
+/* Flyt øvelser (#376) */
+.ex-actions .move-btn { min-width: 40px; font-weight: 700; font-size: 1.05rem; }
