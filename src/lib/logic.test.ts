@@ -100,6 +100,7 @@ import {
   vsLastTime,
   trainingBalance,
   exercisePattern,
+  defaultPattern,
   dropSetWeight,
   setTagInfo,
   setTagSuffix,
@@ -4899,5 +4900,32 @@ describe('træningsbalance (#367)', () => {
     expect(own('Ab wheel', 'Mave')).toBe('core');
     expect(own('Preacher Curl', 'Arme')).toBe('pull');
     expect(own('Kickback', 'Arme')).toBe('push');
+  });
+
+  it('egne øvelser kan få et valgt mønster (#369); gamle data uden feltet bruger standarden', () => {
+    let s = reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'rc', name: 'Reverse curl', muscle: 'Arme', equipment: 'Stang', pattern: 'pull' });
+    const rc = s.exercises.find((e) => e.id === 'rc')!;
+    expect(rc.pattern).toBe('pull');
+    expect(exercisePattern({ id: 'x', name: 'Reverse grip', muscle: 'Arme', custom: true, pattern: 'pull' })).toBe('pull');
+    // Tæller som træk i balancen, selvom muskelgruppen er Arme
+    s = { ...s, history: [wk(1, ['rc', sets(6)], ['bench', sets(6)])] };
+    expect(trainingBalance(s, NOW)).toMatchObject({ push: 6, pull: 6 });
+    // Skift mønster; ugyldigt mønster og indbyggede øvelser ignoreres
+    s = reducer(s, { type: 'SET_EXERCISE_PATTERN', exerciseId: 'rc', pattern: 'core' });
+    expect(s.exercises.find((e) => e.id === 'rc')!.pattern).toBe('core');
+    expect(reducer(s, { type: 'SET_EXERCISE_PATTERN', exerciseId: 'rc', pattern: 'core' })).toBe(s);
+    expect(reducer(s, { type: 'SET_EXERCISE_PATTERN', exerciseId: 'bench', pattern: 'pull' })).toBe(s);
+    expect(reducer(s, { type: 'SET_EXERCISE_PATTERN', exerciseId: 'rc', pattern: 'nope' as never })).toBe(s);
+    // Gamle gemte data uden feltet indlæses og bruger standarden; feltet overlever gem/indlæs
+    const raw = JSON.stringify({ ...initialState(), exercises: [{ id: 'old', name: 'Old curl', muscle: 'Arme', equipment: 'Stang', custom: true }, { ...rc }] });
+    const loaded = loadState(raw);
+    const old = loaded.exercises.find((e) => e.id === 'old')!;
+    expect(old.pattern).toBeUndefined();
+    expect(exercisePattern(old)).toBe('pull');
+    expect(loaded.exercises.find((e) => e.id === 'rc')!.pattern).toBe('pull');
+    // Uden valgt mønster gemmes intet felt
+    const plain = reducer(initialState(), { type: 'ADD_CUSTOM_EXERCISE', id: 'p', name: 'Kickback', muscle: 'Arme', equipment: 'Kabel' });
+    expect('pattern' in plain.exercises.find((e) => e.id === 'p')!).toBe(false);
+    expect(defaultPattern('Ryg')).toBe('pull');
   });
 });

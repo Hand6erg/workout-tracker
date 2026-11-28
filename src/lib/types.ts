@@ -24,7 +24,12 @@ export interface Exercise {
   testedOneRM?: number;
   /** Egne teknik-tips til en egen øvelse (#337), ét tip pr. linje. Mangler = ingen */
   cues?: string;
+  /** Bevægelsesmønster for en egen øvelse (#369). Mangler = standard ud fra muskelgruppen */
+  pattern?: MovementPattern;
 }
+
+/** Bevægelsesmønster: pres, træk, ben eller mave (#367) */
+export type MovementPattern = 'push' | 'pull' | 'legs' | 'core';
 
 export interface SetEntry {
   id: string;
