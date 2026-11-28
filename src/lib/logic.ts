@@ -2895,6 +2895,19 @@ export function isEnergy(v: unknown): v is Energy {
 }
 
 /** Sætter/rydder vurdering og energi. `undefined` = uændret, `null` = ryd, ugyldigt = uændret. */
+/** Energi før træningen på dansk (#383), fx "Høj" */
+export const ENERGY_NAMES: Record<Energy, string> = { low: 'Lav', normal: 'Normal', high: 'Høj' };
+
+/** Kort tekst til Historik (#383), fx "💪 · Energi: høj". Tom, når træningen ikke er vurderet. */
+export function feelingLine(w: Pick<Workout, 'feeling' | 'energy'>): string {
+  const parts: string[] = [];
+  if (isFeeling(w.feeling)) parts.push(FEELING_EMOJIS[w.feeling - 1]);
+  if (isEnergy(w.energy)) parts.push(`Energi: ${ENERGY_NAMES[w.energy].toLowerCase()}`);
+  return parts.join(' · ');
+}
+
+export const FEELING_EMOJIS = ['😫', '😕', '🙂', '💪', '🔥'];
+
 export function withFeeling(w: Workout, feeling?: number | null, energy?: Energy | null): Workout {
   let out = w;
   if (feeling === null && out.feeling !== undefined) {
@@ -4280,20 +4293,22 @@ export function toCsv(state: AppState): string {
   const esc = (v: string) => (/[",;\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
   // "Belastning (kg)" (#209): kropsvægt + ekstra vægt for kropsvægtsøvelser, tom for andre sæt
   // "Mærke" (#245): Opvarmning, Drop-sæt, Til failure eller AMRAP – tom for almindelige sæt
-  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)', 'Mærke']];
+  // "Følelse" og "Energi" (#383): træningens vurdering 1–5 og energi før – gentages på hver række i træningen
+  const rows = [['Dato', 'Træning', 'Øvelse', 'Sæt', 'Vægt (kg)', 'Reps', 'RPE', 'Sek.', 'Meter', 'Belastning (kg)', 'Mærke', 'Følelse', 'Energi']];
   for (const w of [...state.history].reverse()) {
     const date = new Date(w.startedAt).toISOString();
+    const feel = [isFeeling(w.feeling) ? String(w.feeling) : '', isEnergy(w.energy) ? ENERGY_NAMES[w.energy] : ''];
     for (const ex of w.exercises) {
       const bw = isBodyweightReps(state, ex.exerciseId);
       ex.sets.forEach((s, i) => {
         const load = bw && !isTimedSet(s) ? String(setLoad(state, w, ex.exerciseId, s)) : '';
         const mark = s.warmup ? 'Opvarmning' : (setTagInfo(s.tag)?.name ?? '');
-        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load, mark]);
+        rows.push([date, w.name, name.get(ex.exerciseId) ?? ex.exerciseId, String(i + 1), s.weight, s.reps, s.rpe, s.seconds ?? '', (s.meters ?? '').replace(',', '.'), load, mark, ...feel]);
       });
     }
     // Finishers (#331): én række hver, med beskrivelsen som "Øvelse" og tiden i "Sek."
     (w.finishers ?? []).forEach((f, i) => {
-      rows.push([date, w.name, finisherLabel(f), String(i + 1), '', f.rounds != null ? String(f.rounds) : '', '', String(f.seconds), '', '', 'Finisher']);
+      rows.push([date, w.name, finisherLabel(f), String(i + 1), '', f.rounds != null ? String(f.rounds) : '', '', String(f.seconds), '', '', 'Finisher', ...feel]);
     });
   }
   return rows.map((r) => r.map(esc).join(',')).join('\n');

@@ -111,3 +111,41 @@ test('man kan lukke opsummeringen uden at vurdere (#382)', async ({ page }) => {
   expect(w.feeling).toBeUndefined();
   expect(w.energy).toBeUndefined();
 });
+
+test('vurderingen vises i Historik og kan rettes under "Redigér" (#383)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  await summary.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await summary.getByRole('group', { name: 'Energi før' }).getByRole('button', { name: 'Høj' }).click();
+  await summary.getByRole('button', { name: 'Luk' }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const card = page.getByRole('button', { name: 'Træning Push' });
+  await expect(card.getByLabel('Føltes 4 af 5, energi høj')).toHaveText('💪 · Energi: høj');
+  await page.screenshot({ path: 'test-results/history-feeling.png' });
+
+  await card.click();
+  const detail = page.getByRole('dialog', { name: 'Push' });
+  await expect(detail.getByLabel('Føltes 4 af 5, energi høj')).toBeVisible();
+  await detail.getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  const picker = editor.getByRole('region', { name: 'Hvordan føltes det?' });
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'true');
+  await picker.getByRole('button', { name: 'Føltes 5 af 5' }).click();
+  await picker.getByRole('group', { name: 'Energi før' }).getByRole('button', { name: 'Høj' }).click(); // ryd energi
+  await editor.getByRole('button', { name: 'Gem' }).click();
+
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.getByRole('button', { name: 'Træning Push' }).getByLabel('Føltes 5 af 5')).toHaveText('🔥');
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}').history?.[0]);
+  expect(saved.feeling).toBe(5);
+  expect(saved.energy).toBeUndefined();
+});
+
+test('en træning uden vurdering viser ingen vurdering i Historik (#383)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  await page.getByRole('region', { name: 'Opsummering' }).getByRole('button', { name: 'Luk' }).click();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(page.locator('.feeling-line')).toHaveCount(0);
+});

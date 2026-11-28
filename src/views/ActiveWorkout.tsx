@@ -57,6 +57,7 @@ import {
 import type { SetTag, WeightUnit } from '../lib/types';
 import { useNow, useStore, useUnit } from '../lib/store';
 import type { AppState, ExerciseKind, SetEntry, Workout, WorkoutExercise } from '../lib/types';
+import { FeelingPicker } from '../components/FeelingPicker';
 
 /**
  * Den træning, der vises i editoren: enten den aktive træning eller en kladde af en afsluttet træning (#92).
@@ -205,6 +206,7 @@ export function WorkoutEditor() {
             </>
           }
         >
+          <FeelingPicker workout={w} edit />
           {error && (
             <p className="error" role="alert">
               {error}

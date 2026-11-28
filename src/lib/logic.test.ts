@@ -1857,10 +1857,10 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
   it('CSV har kolonnerne "Sek." og "Meter", tomme for vægt × reps', () => {
     const s = finishedWith({ bench: { weight: '80', reps: '5' }, plank: { seconds: '45' }, rower: { meters: '500,5', seconds: '125' } });
     const lines = toCsv(s).split('\n');
-    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter,Belastning (kg),Mærke');
-    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,,,$/);
-    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,,,$/);
-    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5,,$/);
+    expect(lines[0]).toBe('Dato,Træning,Øvelse,Sæt,Vægt (kg),Reps,RPE,Sek.,Meter,Belastning (kg),Mærke,Følelse,Energi');
+    expect(lines.find((l) => l.includes('Bænkpres'))).toMatch(/,Bænkpres,1,80,5,,,,,,,$/);
+    expect(lines.find((l) => l.includes('Planke'))).toMatch(/,Planke,1,,,,45,,,,,$/);
+    expect(lines.find((l) => l.includes('Romaskine'))).toMatch(/,Romaskine,1,,,,125,500\.5,,,,$/);
   });
 
   it('backup og gendan beholder type, sekunder og meter', () => {
@@ -1881,7 +1881,7 @@ describe('tids- og distancesæt i skabeloner, eksport og backup (#137)', () => {
     };
     const s = reducer(initialState(), { type: 'IMPORT_STATE', state: loadState(JSON.stringify(old)) });
     expect(s.history[0].exercises[0].sets[0]).toEqual(set);
-    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,,,$/);
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Gammel,Squat,1,100,5,8,,,,,,$/);
   });
 
   it('fletning mellem to enheder holder tidssæt intakte', () => {
@@ -2923,18 +2923,18 @@ describe('kropsvægtsøvelser: progression, egne øvelser og eksport (#209)', ()
     expect(isBodyweightReps(s, id)).toBe(true);
     s = logged(id, [['5', '10']], { exercises: s.exercises, bodyWeight: 80 });
     expect(progressionHint(s, id)).toMatchObject({ bodyweight: true });
-    expect(toCsv(s).split('\n')[1]).toMatch(/,Ringrows,1,5,10,,,,85,$/);
+    expect(toCsv(s).split('\n')[1]).toMatch(/,Ringrows,1,5,10,,,,85,,,$/);
   });
 
   it('CSV: "Belastning (kg)" = kropsvægt + ekstra for kropsvægtssæt, tom for andre', () => {
     const s = logged('pullup', [['', '10'], ['10', '8'], ['-20', '6']], { bodyWeight: 80 });
     const lines = toCsv(s).split('\n');
-    expect(lines[0].split(',').at(-2)).toBe('Belastning (kg)');
-    expect(lines[1]).toMatch(/,Pull-up,1,,10,,,,80,$/);
-    expect(lines[2]).toMatch(/,Pull-up,2,10,8,,,,90,$/);
-    expect(lines[3]).toMatch(/,Pull-up,3,-20,6,,,,60,$/);
+    expect(lines[0].split(',').at(-4)).toBe('Belastning (kg)');
+    expect(lines[1]).toMatch(/,Pull-up,1,,10,,,,80,,,$/);
+    expect(lines[2]).toMatch(/,Pull-up,2,10,8,,,,90,,,$/);
+    expect(lines[3]).toMatch(/,Pull-up,3,-20,6,,,,60,,,$/);
     const b = logged('bench', [['100', '5']], { bodyWeight: 80 });
-    expect(toCsv(b).split('\n')[1]).toMatch(/,Bænkpres,1,100,5,,,,,$/);
+    expect(toCsv(b).split('\n')[1]).toMatch(/,Bænkpres,1,100,5,,,,,,,$/);
   });
 
   it('backup med kropsvægtssæt gendannes uændret', () => {
@@ -3566,8 +3566,8 @@ describe('sæt-mærker: drop-sæt, failure og AMRAP (#243)', () => {
   it('CSV har kolonnen "Mærke", og backup → gendan beholder mærkerne (#245)', () => {
     const s = finish(workout([['100', '5', 'failure'], ['80', '8', 'drop'], ['60', '12', 'amrap'], ['100', '5']]));
     const lines = toCsv(s).split('\n');
-    expect(lines[0].split(',').at(-1)).toBe('Mærke');
-    expect(lines.slice(1).map((l) => l.split(',').at(-1))).toEqual(['Til failure', 'Drop-sæt', 'AMRAP', '']);
+    expect(lines[0].split(',').at(-3)).toBe('Mærke');
+    expect(lines.slice(1).map((l) => l.split(',').at(-3))).toEqual(['Til failure', 'Drop-sæt', 'AMRAP', '']);
     const restored = loadState(JSON.stringify(s));
     expect(restored.history[0].exercises[0].sets.map((x) => x.tag)).toEqual(['failure', 'drop', 'amrap', undefined]);
   });

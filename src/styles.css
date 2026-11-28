@@ -464,6 +464,8 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .feeling-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
 .feeling-btn { min-height: 48px; border-radius: var(--radius); background: var(--surface-2); border: 2px solid transparent; font-size: 1.6rem; line-height: 1; cursor: pointer; }
 .feeling-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.feeling-line { white-space: nowrap; }
+p.feeling-line { margin: 4px 0 8px; }
 .feeling-energy { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* Rekordvæg i Profil (#163) */
