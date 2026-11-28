@@ -460,6 +460,11 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .rest-typical { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap; margin: 4px 0; }
 .summary-records { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; }
 .summary .card { margin-bottom: 16px; }
+.feeling-picker h2 { margin: 0 0 10px; font-size: 1rem; }
+.feeling-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.feeling-btn { min-height: 48px; border-radius: var(--radius); background: var(--surface-2); border: 2px solid transparent; font-size: 1.6rem; line-height: 1; cursor: pointer; }
+.feeling-btn.on { border-color: var(--accent); background: var(--accent-soft); }
+.feeling-energy { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* Rekordvæg i Profil (#163) */
 .records-wall { list-style: none; margin: 0 0 8px; padding: 4px 14px; }
