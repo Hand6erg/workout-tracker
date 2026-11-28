@@ -98,6 +98,8 @@ import {
   toCsv,
   workoutSummary,
   vsLastTime,
+  trainingBalance,
+  exercisePattern,
   dropSetWeight,
   setTagInfo,
   setTagSuffix,
@@ -4840,5 +4842,62 @@ describe('let uge i historikken (#362)', () => {
     const points = exerciseProgress(stateWith(wk(1, 100), wk(2, 90, true)), 'bench', '1rm', 'all', 3 * 86400000);
     expect(points.map((p) => !!p.deload)).toEqual([false, true]);
     expect(describeProgressPoint(points[1], 'reps', '1rm')).toContain('let uge');
+  });
+});
+
+describe('træningsbalance (#367)', () => {
+  const NOW = 100 * 86400000;
+  const sets = (n: number, extra: Partial<AppState['history'][number]['exercises'][number]['sets'][number]> = {}) =>
+    Array.from({ length: n }, () => ({ id: uid(), weight: '60', reps: '8', rpe: '', done: true, ...extra }));
+  let k = 0;
+  const wk = (daysAgo: number, ...ex: [string, ReturnType<typeof sets>][]): AppState['history'][number] => ({
+    id: `b${++k}`,
+    name: 'x',
+    startedAt: NOW - daysAgo * 86400000,
+    finishedAt: NOW - daysAgo * 86400000 + 3600000,
+    exercises: ex.map(([exerciseId, s]) => ({ id: uid(), exerciseId, sets: s })),
+  });
+  const st = (...h: AppState['history']): AppState => ({ ...initialState(), history: h });
+
+  it('12 bænkpres-sæt + 4 roningssæt → pres 12, træk 4, tip med en trækøvelse', () => {
+    const b = trainingBalance(st(wk(2, ['bench', sets(6)], ['row', sets(4)]), wk(9, ['bench', sets(6)])), NOW);
+    expect(b.push).toBe(12);
+    expect(b.pull).toBe(4);
+    expect(b.upper).toBe(16);
+    const tip = b.tips.find((t) => t.kind === 'push-pull')!;
+    expect(tip).toMatchObject({ strong: 'push', weak: 'pull', ratio: 3 });
+    expect(tip.suggestion).toEqual({ id: 'lat-pulldown', name: 'Lat pulldown' }); // Roning er allerede lavet
+    expect(tip.text).toBe('Du træner 3× mere pres end træk – prøv at tilføje Lat pulldown');
+    // Ingen ben: overkrop-tip med en benøvelse
+    expect(b.tips.find((t) => t.kind === 'upper-lower')!.text).toBe('Du træner overkrop, men ingen ben – prøv at tilføje Squat');
+  });
+
+  it('gamle sæt og opvarmning tæller ikke; under 10 sæt eller balanceret → intet tip', () => {
+    const b = trainingBalance(st(wk(2, ['bench', sets(4)], ['row', sets(4)]), wk(30, ['bench', sets(20)]), wk(3, ['bench', sets(10, { warmup: true })])), NOW);
+    expect(b.push).toBe(4);
+    expect(b.pull).toBe(4);
+    expect(b.tips).toEqual([]);
+    expect(trainingBalance(st(wk(1, ['bench', sets(6)], ['row', sets(2)])), NOW).tips).toEqual([]);
+    const even = trainingBalance(st(wk(1, ['bench', sets(6)], ['row', sets(5)], ['squat', sets(10)])), NOW);
+    expect(even.tips).toEqual([]);
+    expect(even.lower).toBe(10);
+    // Ikke-udførte sæt tæller ikke
+    expect(trainingBalance(st(wk(1, ['bench', sets(12, { done: false })])), NOW).push).toBe(0);
+  });
+
+  it('mønstre: faste for indbyggede øvelser, ud fra muskelgruppen for egne', () => {
+    const seed = (id: string) => initialState().exercises.find((e) => e.id === id)!;
+    expect(exercisePattern(seed('curl'))).toBe('pull');
+    expect(exercisePattern(seed('pushdown'))).toBe('push');
+    expect(exercisePattern(seed('farmers-walk'))).toBe('pull');
+    expect(exercisePattern(seed('plank'))).toBe('core');
+    const own = (name: string, muscle: AppState['exercises'][number]['muscle']) => exercisePattern({ id: uid(), name, muscle, custom: true });
+    expect(own('Kabel pres', 'Bryst')).toBe('push');
+    expect(own('Arnold press', 'Skuldre')).toBe('push');
+    expect(own('T-bar row', 'Ryg')).toBe('pull');
+    expect(own('Hack squat', 'Ben')).toBe('legs');
+    expect(own('Ab wheel', 'Mave')).toBe('core');
+    expect(own('Preacher Curl', 'Arme')).toBe('pull');
+    expect(own('Kickback', 'Arme')).toBe('push');
   });
 });
