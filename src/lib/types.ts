@@ -92,7 +92,15 @@ export interface Workout {
   finishers?: Finisher[];
   /** Let uge (#361): træningen blev lavet med lettere vægt efter "Let uge". Mangler i gamle data. */
   deload?: boolean;
+  /** Hvordan træningen føltes (#381): 1 = 😫 … 5 = 🔥. Mangler = ikke vurderet (også i gamle data). */
+  feeling?: number;
+  /** Energi før træningen (#381). Mangler = ikke angivet. */
+  energy?: Energy;
 }
+
+/** Energi før en træning (#381) */
+export type Energy = 'low' | 'normal' | 'high';
+export const ENERGIES: Energy[] = ['low', 'normal', 'high'];
 
 export interface TemplateExercise {
   exerciseId: string;

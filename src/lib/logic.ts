@@ -1,10 +1,11 @@
 import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
 import { BUILT_IN_CUES } from './cues';
-import { MAX_TEMPLATE_REPS, MUSCLES } from './types';
+import { ENERGIES, MAX_TEMPLATE_REPS, MUSCLES } from './types';
 import type {
   MovementPattern,
   AppState,
   BodyMeasurement,
+  Energy,
   Equipment,
   Exercise,
   ExerciseKind,
@@ -2882,6 +2883,129 @@ export function swapSuggestions(state: AppState, exerciseId: string, workout: Wo
     .map((x) => x.e);
 }
 
+/* ---------- Sådan føltes det (#381) ---------- */
+
+/** Gyldig vurdering: heltal 1–5 */
+export function isFeeling(v: unknown): v is number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 1 && v <= 5;
+}
+
+export function isEnergy(v: unknown): v is Energy {
+  return typeof v === 'string' && (ENERGIES as string[]).includes(v);
+}
+
+/** Sætter/rydder vurdering og energi. `undefined` = uændret, `null` = ryd, ugyldigt = uændret. */
+export function withFeeling(w: Workout, feeling?: number | null, energy?: Energy | null): Workout {
+  let out = w;
+  if (feeling === null && out.feeling !== undefined) {
+    const { feeling: _f, ...rest } = out;
+    out = rest;
+  } else if (isFeeling(feeling) && feeling !== out.feeling) out = { ...out, feeling };
+  if (energy === null && out.energy !== undefined) {
+    const { energy: _e, ...rest } = out;
+    out = rest;
+  } else if (isEnergy(energy) && energy !== out.energy) out = { ...out, energy };
+  return out;
+}
+
+export interface FeelingWeek {
+  weekStart: number;
+  week: number;
+  /** Gennemsnitlig vurdering (1–5) i ugen, eller null uden vurderede træninger */
+  avg: number | null;
+  count: number;
+}
+
+/** Gennemsnitlig vurdering pr. uge for de seneste `weeks` uger (ældste først) */
+export function feelingTrend(history: Workout[], weeks: number, now: number): FeelingWeek[] {
+  const starts: number[] = [];
+  let ws = startOfWeek(now);
+  for (let i = 0; i < weeks; i++) {
+    starts.unshift(ws);
+    ws = startOfWeek(ws - DAY_MS);
+  }
+  const sums = starts.map(() => ({ sum: 0, count: 0 }));
+  for (const w of history) {
+    if (!isFeeling(w.feeling)) continue;
+    const i = starts.indexOf(startOfWeek(w.startedAt));
+    if (i < 0) continue;
+    sums[i].sum += w.feeling;
+    sums[i].count++;
+  }
+  return starts.map((weekStart, i) => ({
+    weekStart,
+    week: isoWeek(weekStart),
+    count: sums[i].count,
+    avg: sums[i].count ? Math.round((sums[i].sum / sums[i].count) * 10) / 10 : null,
+  }));
+}
+
+/** Mindst så mange vurderede træninger før der vises tips */
+export const FEELING_INSIGHT_MIN = 8;
+/** Mindste forskel i gennemsnit, før et tip vises */
+const FEELING_INSIGHT_DIFF = 0.5;
+/** Mindst så mange træninger i hver gruppe, der sammenlignes */
+const FEELING_GROUP_MIN = 3;
+
+type DayPart = 'morning' | 'afternoon' | 'evening';
+const DAY_PART_TEXT: Record<DayPart, string> = { morning: 'om morgenen', afternoon: 'om eftermiddagen', evening: 'om aftenen' };
+
+function dayPart(t: number): DayPart {
+  const h = new Date(t).getHours();
+  return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening';
+}
+
+function avgOf(xs: number[]): number {
+  return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+/** Hele dage uden træning mellem to træninger (lokal kalender) */
+function restDaysBetween(earlier: number, later: number): number {
+  const a = new Date(earlier);
+  a.setHours(12, 0, 0, 0);
+  const b = new Date(later);
+  b.setHours(12, 0, 0, 0);
+  return Math.max(0, Math.round((b.getTime() - a.getTime()) / DAY_MS) - 1);
+}
+
+/** Op til 2 danske tips om, hvornår træningerne føles bedst – kun med nok data og en tydelig forskel */
+export function feelingInsights(history: Workout[]): string[] {
+  const sorted = [...history].sort((a, b) => a.startedAt - b.startedAt);
+  const rated = sorted.filter((w) => isFeeling(w.feeling));
+  if (rated.length < FEELING_INSIGHT_MIN) return [];
+  const out: { text: string; diff: number }[] = [];
+
+  // Tidspunkt på dagen: den bedste del af dagen mod resten
+  const parts = new Map<DayPart, number[]>();
+  for (const w of rated) {
+    const p = dayPart(w.startedAt);
+    parts.set(p, [...(parts.get(p) ?? []), w.feeling!]);
+  }
+  let best: { part: DayPart; diff: number } | null = null;
+  for (const [part, xs] of parts) {
+    const others = rated.filter((w) => dayPart(w.startedAt) !== part).map((w) => w.feeling!);
+    if (xs.length < FEELING_GROUP_MIN || others.length < FEELING_GROUP_MIN) continue;
+    const diff = avgOf(xs) - avgOf(others);
+    if (diff >= FEELING_INSIGHT_DIFF && (!best || diff > best.diff)) best = { part, diff };
+  }
+  if (best) out.push({ text: `Dine bedste træninger er ${DAY_PART_TEXT[best.part]}`, diff: best.diff });
+
+  // Hviledage før træningen: 2+ hviledage mod højst 1
+  const rested: number[] = [];
+  const close: number[] = [];
+  for (const w of rated) {
+    const i = sorted.indexOf(w);
+    if (i === 0) continue; // ingen træning før – hvilen er ukendt
+    (restDaysBetween(sorted[i - 1].startedAt, w.startedAt) >= 2 ? rested : close).push(w.feeling!);
+  }
+  if (rested.length >= FEELING_GROUP_MIN && close.length >= FEELING_GROUP_MIN) {
+    const diff = avgOf(rested) - avgOf(close);
+    if (diff >= FEELING_INSIGHT_DIFF) out.push({ text: 'Efter 2+ hviledage føles det bedre', diff });
+    else if (-diff >= FEELING_INSIGHT_DIFF) out.push({ text: 'Du har det bedst, når der højst er 1 hviledag imellem', diff: -diff });
+  }
+  return out.sort((a, b) => b.diff - a.diff).slice(0, 2).map((x) => x.text);
+}
+
 /* ---------- Reducer ---------- */
 
 /** Handlinger på en træning, der også virker på kladden (`edit: true`) i stedet for den aktive træning */
@@ -2911,7 +3035,12 @@ export type WorkoutChange =
   /** Gør et sæt til opvarmning eller tilbage til arbejdssæt (#244). Opvarmning fjerner et evt. mærke. */
   | { type: 'SET_SET_WARMUP'; weId: string; setId: string; warmup: boolean }
   /** Slå "Let uge" til/fra på træningen (#362) */
-  | { type: 'SET_DELOAD'; on: boolean };
+  | { type: 'SET_DELOAD'; on: boolean }
+  /**
+   * Hvordan træningen føltes (#381). `undefined` = uændret, `null` = ryd. Ugyldige værdier ignoreres.
+   * Med `workoutId` rettes en afsluttet træning i historikken; ellers den aktive træning (eller kladden med `edit`).
+   */
+  | { type: 'SET_WORKOUT_FEELING'; workoutId?: string; feeling?: number | null; energy?: Energy | null };
 
 const WORKOUT_CHANGES = new Set<string>([
   'RENAME_WORKOUT',
@@ -2934,6 +3063,7 @@ const WORKOUT_CHANGES = new Set<string>([
   'ADD_DROP_SET',
   'SET_SET_WARMUP',
   'SET_DELOAD',
+  'SET_WORKOUT_FEELING',
 ] satisfies WorkoutChange['type'][]);
 
 export type Action =
@@ -3227,6 +3357,14 @@ export function reducer(state: AppState, action: Action): AppState {
       return mapActive(state, (w) => mapExercise(w, action.weId, (e) => withNote(e, action.note)));
     case 'SET_WORKOUT_NOTE':
       return mapActive(state, (w) => withNote(w, action.note));
+    case 'SET_WORKOUT_FEELING': {
+      const fn = (w: Workout) => withFeeling(w, action.feeling, action.energy);
+      if (!action.workoutId || action.workoutId === state.active?.id) return mapActive(state, fn);
+      const target = state.history.find((w) => w.id === action.workoutId);
+      if (!target) return state;
+      const next = fn(target);
+      return next === target ? state : { ...state, history: state.history.map((w) => (w === target ? next : w)) };
+    }
     case 'SET_DELOAD':
       return mapActive(state, (w) => {
         if (!!w.deload === action.on) return w;
