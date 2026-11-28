@@ -6,6 +6,7 @@ import { FinisherList, IntervalBar, IntervalButton } from '../components/Interva
 import { SwapPicker } from '../components/SwapPicker';
 import { ConfirmButton, Empty, Modal } from '../components/ui';
 import {
+  canMoveExercise,
   exerciseCues,
   canSwapInTemplate,
   doneSetCount,
@@ -727,6 +728,14 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const pos = all.findIndex((e) => e.id === we.id);
   const next = all[pos + 1];
   const canLink = !!next && !(we.supersetId && we.supersetId === next.supersetId);
+  // Flyt op/ned (#376): et supersæt flytter som én blok
+  const canUp = canMoveExercise(all, we.id, 'up');
+  const canDown = canMoveExercise(all, we.id, 'down');
+  const move = (direction: 'up' | 'down') => {
+    dispatch({ type: 'MOVE_EXERCISE', weId: we.id, direction });
+    // Vis kortet, hvor det landede
+    setTimeout(() => document.getElementById(`ex-${we.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30);
+  };
   const lastNote = lastExerciseNote(state.history, we.exerciseId);
   const [noteOpen, setNoteOpen] = useState(!!we.note);
   const [noteDraft, setNoteDraft] = useState(we.note ?? '');
@@ -748,7 +757,7 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
   const restBefore = new Map(actualRests(w).filter((r) => r.weId === we.id).map((r) => [r.setId, r.seconds]));
 
   return (
-    <article className="ex-block" aria-label={ex?.name}>
+    <article className="ex-block" id={`ex-${we.id}`} aria-label={ex?.name}>
       <header>
         <h3>
           {name}
@@ -1026,6 +1035,16 @@ function ExerciseBlock({ we }: { we: WorkoutExercise }) {
         + Tilføj sæt
       </button>
       <div className="ex-actions">
+        {canUp && (
+          <button className="btn-ghost small move-btn" aria-label={`Flyt ${name} op`} onClick={() => move('up')}>
+            ↑
+          </button>
+        )}
+        {canDown && (
+          <button className="btn-ghost small move-btn" aria-label={`Flyt ${name} ned`} onClick={() => move('down')}>
+            ↓
+          </button>
+        )}
         {canLink && (
           <button className="btn-ghost small" onClick={() => dispatch({ type: 'LINK_SUPERSET', weId: we.id })}>
             Supersæt med næste
