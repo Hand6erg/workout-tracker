@@ -332,7 +332,12 @@ export function setTagSuffix(s: SetEntry): string {
 }
 
 /** De seneste udførte sæt for en øvelse (fra historikken, nyeste først) */
-export function previousSets(history: Workout[], exerciseId: string): SetEntry[] {
+export function previousSets(history: Workout[], exerciseId: string, skipDeload = false): SetEntry[] {
+  if (skipDeload) {
+    // Let uge (#362): sammenlign med seneste normale træning; findes kun lette uger, bruges de
+    const normal = previousSets(history.filter((w) => !w.deload), exerciseId);
+    if (normal.length) return normal;
+  }
   for (const w of history) {
     const ex = w.exercises.find((e) => e.exerciseId === exerciseId);
     if (ex) {
@@ -724,11 +729,11 @@ export interface WorkoutSummary {
 /** Den seneste afsluttede træning fra samme skabelon før `w` */
 function previousFromTemplate(history: Workout[], w: Workout): Workout | null {
   if (!w.templateId) return null;
-  return (
-    history
-      .filter((x) => x.id !== w.id && x.templateId === w.templateId && x.finishedAt && x.startedAt < w.startedAt)
-      .sort((a, b) => b.startedAt - a.startedAt)[0] ?? null
-  );
+  const earlier = history
+    .filter((x) => x.id !== w.id && x.templateId === w.templateId && x.finishedAt && x.startedAt < w.startedAt)
+    .sort((a, b) => b.startedAt - a.startedAt);
+  // Let uge (#362): en let træning sammenlignes ikke med – medmindre der kun er lette træninger
+  return earlier.find((x) => !x.deload) ?? earlier[0] ?? null;
 }
 
 /** Opsummering af en afsluttet træning: varighed, volumen, sæt, nye rekorder og sammenligning med sidst */
@@ -2304,7 +2309,7 @@ export function progressionHint(
 ): ProgressionHint | null {
   const kind = exerciseKind(state, exerciseId);
   if (kind !== 'reps') return timedHint(state, exerciseId, kind);
-  const sets = previousSets(state.history, exerciseId).filter((s) => num(s.reps) > 0);
+  const sets = previousSets(state.history, exerciseId, true).filter((s) => num(s.reps) > 0);
   if (!sets.length) return null;
   const reps = num(sets[0].reps);
   const weight = Math.max(...sets.map((s) => num(s.weight)));
@@ -2501,6 +2506,8 @@ export interface ProgressPoint {
   set?: { weight: number; reps: number; seconds?: number; meters?: number };
   /** Træningen slog alle tidligere træninger på denne måling (første gang er ingen rekord) */
   record: boolean;
+  /** Let uge (#362): tegnes som hul prik og trækker ikke linjen ned */
+  deload?: boolean;
 }
 
 /** Starttidspunkt for et interval talt tilbage fra `now` (0 = alt) */
@@ -2556,7 +2563,7 @@ export function exerciseProgress(
     const record = seen && value > best;
     best = Math.max(best, value);
     seen = true;
-    all.push({ workoutId: w.id, date: w.startedAt, value, ...(set ? { set } : {}), record });
+    all.push({ workoutId: w.id, date: w.startedAt, value, ...(set ? { set } : {}), record, ...(w.deload ? { deload: true } : {}) });
   }
   const from = progressRangeStart(range, now);
   return all.filter((p) => p.date >= from && p.date <= now);
@@ -2579,6 +2586,7 @@ export function describeProgressPoint(p: ProgressPoint, kind: ExerciseKind, metr
     if (metric === '1rm') parts.push(`est. 1RM ${w(p.value)}`);
   }
   if (p.record) parts.push('🏆 rekord');
+  if (p.deload) parts.push('let uge');
   return parts.join(' · ');
 }
 
@@ -2900,7 +2908,9 @@ export type WorkoutChange =
   /** Indsætter et drop-sæt lige under sættet med ~20 % lettere vægt (#243) */
   | { type: 'ADD_DROP_SET'; weId: string; setId: string }
   /** Gør et sæt til opvarmning eller tilbage til arbejdssæt (#244). Opvarmning fjerner et evt. mærke. */
-  | { type: 'SET_SET_WARMUP'; weId: string; setId: string; warmup: boolean };
+  | { type: 'SET_SET_WARMUP'; weId: string; setId: string; warmup: boolean }
+  /** Slå "Let uge" til/fra på træningen (#362) */
+  | { type: 'SET_DELOAD'; on: boolean };
 
 const WORKOUT_CHANGES = new Set<string>([
   'RENAME_WORKOUT',
@@ -2922,6 +2932,7 @@ const WORKOUT_CHANGES = new Set<string>([
   'SET_SET_TAG',
   'ADD_DROP_SET',
   'SET_SET_WARMUP',
+  'SET_DELOAD',
 ] satisfies WorkoutChange['type'][]);
 
 export type Action =
@@ -3213,6 +3224,13 @@ export function reducer(state: AppState, action: Action): AppState {
       return mapActive(state, (w) => mapExercise(w, action.weId, (e) => withNote(e, action.note)));
     case 'SET_WORKOUT_NOTE':
       return mapActive(state, (w) => withNote(w, action.note));
+    case 'SET_DELOAD':
+      return mapActive(state, (w) => {
+        if (!!w.deload === action.on) return w;
+        if (action.on) return { ...w, deload: true };
+        const { deload: _d, ...rest } = w;
+        return rest;
+      });
     case 'ADD_EXERCISES':
       return mapActive(state, (w) => ({
         ...w,
@@ -4565,7 +4583,8 @@ function stallSessions(state: Pick<AppState, 'history' | 'exercises'>, exerciseI
   if (!ex || (ex.kind ?? 'reps') !== 'reps' || ex.equipment === 'Kropsvægt') return [];
   const out: StallSession[] = [];
   for (const w of state.history) {
-    if (!w.finishedAt) continue;
+    // Let uge (#362) tæller ikke som stilstand
+    if (!w.finishedAt || w.deload) continue;
     const sets = w.exercises
       .filter((we) => we.exerciseId === exerciseId)
       .flatMap((we) => we.sets)

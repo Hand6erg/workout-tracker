@@ -120,7 +120,10 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
           const count = recordCount(records);
           return (
           <button key={w.id} className="card as-button" onClick={() => setOpenId(w.id)} aria-label={`Træning ${w.name}`}>
-            <h3>{w.name}</h3>
+            <h3>
+              {w.name}
+              {w.deload && <span className="deload-tag">Let uge</span>}
+            </h3>
             <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
             <p className="stats">
               <span>⏱ {formatDuration(workoutDuration(w, w.startedAt))}</span>
@@ -224,7 +227,10 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
         </>
       }
     >
-      <p className="muted cap">{dateFmt.format(w.startedAt)}</p>
+      <p className="muted cap">
+        {dateFmt.format(w.startedAt)}
+        {w.deload && <span className="deload-tag">Let uge</span>}
+      </p>
       {state.active ? (
         <ConfirmButton className="btn-primary wide repeat-btn" confirmText="Erstat igangværende træning?" onConfirm={repeat}>
           <span aria-hidden>🔁</span> Gentag

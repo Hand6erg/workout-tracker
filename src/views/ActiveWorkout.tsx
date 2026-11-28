@@ -194,7 +194,17 @@ export function WorkoutEditor() {
             Gem
           </button>
         </header>
-        <WorkoutBody top={<WorkoutTiming w={w} onError={setTimingError} />}>
+        <WorkoutBody
+          top={
+            <>
+              <WorkoutTiming w={w} onError={setTimingError} />
+              <label className="toggle">
+                <input type="checkbox" checked={w.deload === true} onChange={(e) => send({ type: 'SET_DELOAD', on: e.target.checked })} />
+                Let uge (tæller ikke med i "vs. sidst" og stilstand)
+              </label>
+            </>
+          }
+        >
           {error && (
             <p className="error" role="alert">
               {error}

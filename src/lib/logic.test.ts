@@ -4779,3 +4779,66 @@ describe('let uge (#361)', () => {
     expect(stallText(stall)).toBe('Bænkpres står stille (4 træninger) – prøv en let uge med 90 kg');
   });
 });
+
+describe('let uge i historikken (#362)', () => {
+  const set = (w: number, r: number) =>
+    ({ id: uid(), weight: String(w), reps: String(r), done: true }) as AppState['history'][number]['exercises'][number]['sets'][number];
+  const wk = (n: number, w: number, deload = false): AppState['history'][number] => ({
+    id: `w${n}`,
+    name: 'Bryst',
+    templateId: 'tpl',
+    startedAt: n * 86400000,
+    finishedAt: n * 86400000 + 3600000,
+    exercises: [{ id: `e${n}`, exerciseId: 'bench', sets: [set(w, 5), set(w, 5)] }],
+    ...(deload ? { deload: true } : {}),
+  });
+  const stateWith = (...workouts: AppState['history']): AppState => ({ ...initialState(), history: [...workouts].reverse() });
+
+  it('progressionsforslaget og "vs. sidst" sammenligner med seneste normale træning', () => {
+    const s = stateWith(wk(1, 100), wk(2, 90, true));
+    const hint = progressionHint(s, 'bench')!;
+    expect(hint.last.weight).toBe(100);
+    expect(hint.next.weight).toBe(102.5);
+    const active: AppState['history'][number] = {
+      id: 'a',
+      name: 'Bryst',
+      templateId: 'tpl',
+      startedAt: 3 * 86400000,
+      exercises: [{ id: 'ea', exerciseId: 'bench', sets: [set(100, 5), set(100, 5)] }],
+    };
+    const vs = vsLastTime(s, active)!;
+    expect(vs.rows[0].last).toBe(1000);
+    expect(vs.rows[0].status).toBe('same');
+    // Kun lette uger: så bruges de
+    expect(progressionHint(stateWith(wk(1, 90, true)), 'bench')!.last.weight).toBe(90);
+  });
+
+  it('stilstand ignorerer den lette uge', () => {
+    const flat = [1, 2, 3, 4].map((n) => wk(n, 100));
+    expect(exerciseStall(stateWith(...flat), 'bench')?.sessions).toBe(4);
+    // En let uge midt i tæller ikke med som en træning uden fremgang
+    const withLight = [wk(1, 100), wk(2, 100), wk(3, 90, true), wk(4, 100)];
+    expect(exerciseStall(stateWith(...withLight), 'bench')).toBeNull();
+    // Og en let uge til sidst gør den heller ikke "stille" med den lette vægt
+    expect(exerciseStall(stateWith(...flat, wk(5, 90, true)), 'bench')?.lastWeight).toBe(100);
+  });
+
+  it('"Let uge" kan slås til og fra, når en afsluttet træning rettes', () => {
+    let s = stateWith(wk(1, 90, true));
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: 'w1' });
+    s = reducer(s, { type: 'SET_DELOAD', on: false, edit: true });
+    expect(s.editing!.deload).toBeUndefined();
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.history[0].deload).toBeUndefined();
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: 'w1' });
+    s = reducer(s, { type: 'SET_DELOAD', on: true, edit: true });
+    s = reducer(s, { type: 'SAVE_EDIT' });
+    expect(s.history[0].deload).toBe(true);
+  });
+
+  it('styrkegrafen markerer lette uger', () => {
+    const points = exerciseProgress(stateWith(wk(1, 100), wk(2, 90, true)), 'bench', '1rm', 'all', 3 * 86400000);
+    expect(points.map((p) => !!p.deload)).toEqual([false, true]);
+    expect(describeProgressPoint(points[1], 'reps', '1rm')).toContain('let uge');
+  });
+});

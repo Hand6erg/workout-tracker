@@ -67,3 +67,41 @@ test('"Let uge" i træningen fylder bænkpres-sættene med den lette vægt (#361
     await expect(card.getByLabel(`Reps sæt ${n}`)).toHaveValue('5');
   }
 });
+
+test('"Let uge"-mærke i Historik, som kan slås fra, når træningen rettes (#362)', async ({ page }) => {
+  for (let i = 0; i < 4; i++) await logFlatBench(page);
+  const { workout, card } = await startWithBench(page);
+  await card.getByRole('button', { name: '+ Tilføj sæt' }).click();
+  await card.getByRole('group', { name: 'Står stille: Bænkpres' }).getByRole('button', { name: /^Let uge/ }).click();
+  await card.getByRole('button', { name: 'Udført sæt 1' }).click();
+  await card.getByRole('button', { name: 'Udført sæt 2' }).click();
+  await workout.getByRole('button', { name: 'Afslut' }).click();
+  await workout.getByRole('button', { name: 'Bekræft' }).click();
+  await page.getByRole('button', { name: 'Luk', exact: true }).click();
+
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  const cards = page.getByRole('button', { name: /^Træning / });
+  await expect(cards).toHaveCount(5);
+  await expect(cards.first()).toContainText('Let uge');
+  await expect(cards.nth(1)).not.toContainText('Let uge');
+
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.screenshot({ path: 'test-results/deload-history.png' });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+  expect(overflow).toBe(false);
+
+  await cards.first().click();
+  const detail = page.getByRole('dialog');
+  await expect(detail).toContainText('Let uge');
+  await detail.getByRole('button', { name: 'Redigér' }).click();
+  const editor = page.getByRole('region', { name: 'Redigér træning' });
+  const toggle = editor.getByRole('checkbox', { name: /^Let uge/ });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await editor.getByRole('button', { name: 'Gem' }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(cards.first()).not.toContainText('Let uge');
+  await page.reload();
+  await page.getByRole('navigation').getByRole('button', { name: /Historik/ }).click();
+  await expect(cards.first()).not.toContainText('Let uge');
+});

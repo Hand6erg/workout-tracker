@@ -8,6 +8,8 @@ interface Taps {
   pointLabels?: string[];
   /** Punkter der fremhæves med 🏆 (rekorder) */
   marks?: boolean[];
+  /** Punkter der tegnes hule og ikke indgår i linjen, fx lette uger (#362) */
+  hollow?: boolean[];
   selected?: number;
   onSelect?: (index: number) => void;
 }
@@ -19,6 +21,7 @@ export function LineChart({
   format,
   pointLabels,
   marks,
+  hollow,
   selected,
   onSelect,
 }: { points: Point[]; label: string; format: (n: number) => string } & Taps) {
@@ -37,7 +40,10 @@ export function LineChart({
   }
   const x = (t: number) => pad.l + ((t - t0) / Math.max(1, t1 - t0)) * (W - pad.l - pad.r);
   const y = (v: number) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
-  const path = points.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+  // Hule punkter (#362) springes over i linjen, så længe der er mindst to andre punkter
+  const solid = points.filter((_, i) => !hollow?.[i]);
+  const linePoints = solid.length >= 2 ? solid : points;
+  const path = linePoints.map((p, i) => `${i ? 'L' : 'M'}${x(p.t).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
   const dateFmt = new Intl.DateTimeFormat('da-DK', { day: 'numeric', month: 'short' });
 
   const svg = (
@@ -57,7 +63,7 @@ export function LineChart({
           cx={x(p.t)}
           cy={y(p.value)}
           r={marks?.[i] ? 4.5 : selected === i ? 4.5 : 3}
-          className={`dot${marks?.[i] ? ' record' : ''}${selected === i ? ' selected' : ''}`}
+          className={`dot${marks?.[i] ? ' record' : ''}${hollow?.[i] ? ' hollow' : ''}${selected === i ? ' selected' : ''}`}
         />
       ))}
       {points.map((p, i) =>

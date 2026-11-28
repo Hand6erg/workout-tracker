@@ -69,6 +69,7 @@ export function StrengthChart({ exerciseId }: { exerciseId: string }) {
           format={axis}
           pointLabels={labels}
           marks={points.map((p) => p.record)}
+          hollow={points.map((p) => !!p.deload)}
           selected={selected < 0 ? undefined : selected}
           onSelect={(i) => setSelectedId(points[i].workoutId === selectedId ? null : points[i].workoutId)}
         />
