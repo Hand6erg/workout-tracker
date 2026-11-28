@@ -19,10 +19,14 @@ import {
   num,
   personalRecords,
   uid,
+  defaultPattern,
+  exercisePattern,
+  MOVEMENT_PATTERNS,
+  PATTERN_NAMES,
   type PersonalRecords,
 } from '../lib/logic';
 import { useStore, useUnit } from '../lib/store';
-import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type Muscle } from '../lib/types';
+import { EQUIPMENT, MUSCLES, type Equipment, type Exercise, type ExerciseKind, type MovementPattern, type Muscle } from '../lib/types';
 
 const KIND_LABEL: Record<ExerciseKind, string> = { reps: 'Vægt × reps', time: 'Tid', distance: 'Distance' };
 
@@ -110,10 +114,13 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   const [muscle, setMuscle] = useState<Muscle>('Bryst');
   const [equipment, setEquipment] = useState<Equipment>('Stang');
   const [kind, setKind] = useState<ExerciseKind>('reps');
+  // Bevægelse (#369): følger muskelgruppen, indtil brugeren selv vælger
+  const [pickedPattern, setPickedPattern] = useState<MovementPattern | null>(null);
+  const pattern = pickedPattern ?? defaultPattern(muscle, name);
 
   const save = () => {
     if (!name.trim()) return;
-    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind });
+    dispatch({ type: 'ADD_CUSTOM_EXERCISE', id: uid(), name, muscle, equipment, kind, pattern });
     onClose();
   };
 
@@ -139,6 +146,7 @@ function NewExercise({ onClose }: { onClose: () => void }) {
           ))}
         </select>
       </label>
+      <PatternField value={pattern} onChange={setPickedPattern} />
       <label className="field">
         Udstyr
         <select value={equipment} onChange={(e) => setEquipment(e.target.value as Equipment)}>
@@ -161,11 +169,28 @@ function NewExercise({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** "Bevægelse": pres, træk, ben eller mave – bruges i Balance (#369) */
+function PatternField({ value, onChange }: { value: MovementPattern; onChange: (p: MovementPattern) => void }) {
+  return (
+    <label className="field">
+      Bevægelse
+      <select value={value} onChange={(e) => onChange(e.target.value as MovementPattern)}>
+        {MOVEMENT_PATTERNS.map((p) => (
+          <option key={p} value={p}>
+            {PATTERN_NAMES[p]}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 /** Øvelsens side med rekorder og graf – bruges også fra "Rekorder" i Profil (#164) */
 export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => void }) {
   const unit = useUnit();
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const hist = exerciseHistory(state.history, ex.id, state);
+  const pattern = exercisePattern(ex);
   const best = Math.max(0, ...hist.map((h) => h.best1RM));
   const kind = exerciseKind(state, ex.id);
   // Tids- og distanceøvelser måles i sekunder/meter i stedet for 1RM (#136)
@@ -177,7 +202,7 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
     <Modal title={ex.name} onClose={onClose}>
       <div className="row-between">
         <p className="muted">
-          {ex.muscle} · {ex.equipment}
+          {ex.muscle} · {PATTERN_NAMES[pattern]} · {ex.equipment}
           {isBodyweightReps(state, ex.id) && (
             <>
               <br />
@@ -187,6 +212,9 @@ export function ExerciseDetail({ ex, onClose }: { ex: Exercise; onClose: () => v
         </p>
         <FavoriteButton exerciseId={ex.id} big />
       </div>
+      {ex.custom && (
+        <PatternField value={pattern} onChange={(p) => dispatch({ type: 'SET_EXERCISE_PATTERN', exerciseId: ex.id, pattern: p })} />
+      )}
       <CuesSection exerciseId={ex.id} />
       <section className="rest-picker exercise-rest" aria-label="Pause mellem sæt">
         <h3 className="section">⏱ Pause mellem sæt</h3>

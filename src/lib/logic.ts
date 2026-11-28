@@ -2,6 +2,7 @@ import { SEED_EXERCISES, SEED_TEMPLATES } from './seed';
 import { BUILT_IN_CUES } from './cues';
 import { MAX_TEMPLATE_REPS, MUSCLES } from './types';
 import type {
+  MovementPattern,
   AppState,
   BodyMeasurement,
   Equipment,
@@ -2983,7 +2984,9 @@ export type Action =
   | { type: 'ADD_MEASUREMENT'; id: string; date: number; weight?: number; bodyFat?: number; waist?: number }
   | { type: 'DELETE_MEASUREMENT'; id: string }
   | { type: 'TOGGLE_PLATE'; plate: number }
-  | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment; kind?: ExerciseKind }
+  | { type: 'ADD_CUSTOM_EXERCISE'; id: string; name: string; muscle: Muscle; equipment: Equipment; kind?: ExerciseKind; pattern?: MovementPattern }
+  /** Vælg bevægelsesmønster for en egen øvelse (#369) */
+  | { type: 'SET_EXERCISE_PATTERN'; exerciseId: string; pattern: MovementPattern }
   | { type: 'SAVE_TEMPLATE_FROM_WORKOUT'; workoutId: string; name: string }
   | { type: 'DELETE_TEMPLATE'; templateId: string }
   | { type: 'SET_TEMPLATE_REPS'; templateId: string; index: number; min: number | null; max: number | null }
@@ -3504,6 +3507,11 @@ export function reducer(state: AppState, action: Action): AppState {
       const updated: Exercise = weight === undefined ? base : { ...base, testedOneRM: weight };
       return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? updated : e)) };
     }
+    case 'SET_EXERCISE_PATTERN': {
+      const ex = state.exercises.find((e) => e.id === action.exerciseId);
+      if (!ex || !ex.custom || !isPattern(action.pattern) || ex.pattern === action.pattern) return state;
+      return { ...state, exercises: state.exercises.map((e) => (e.id === ex.id ? { ...e, pattern: action.pattern } : e)) };
+    }
     case 'SET_EXERCISE_CUES': {
       const ex = state.exercises.find((e) => e.id === action.exerciseId);
       if (!ex || !ex.custom) return state;
@@ -3634,6 +3642,7 @@ export function reducer(state: AppState, action: Action): AppState {
             custom: true,
             // Kun tid og distance gemmes; alt andet er vægt × reps (#135)
             ...(action.kind === 'time' || action.kind === 'distance' ? { kind: action.kind } : {}),
+            ...(isPattern(action.pattern) ? { pattern: action.pattern } : {}),
           },
         ],
       };
@@ -4706,8 +4715,13 @@ export function stallText(stall: StalledExercise, unit: WeightUnit = 'kg'): stri
 
 /* ---------- Træningsbalance (#367) ---------- */
 
-/** Bevægelsesmønster: pres, træk, ben eller mave */
-export type MovementPattern = 'push' | 'pull' | 'legs' | 'core';
+export type { MovementPattern };
+
+export const MOVEMENT_PATTERNS: MovementPattern[] = ['push', 'pull', 'legs', 'core'];
+
+function isPattern(p: unknown): p is MovementPattern {
+  return typeof p === 'string' && (MOVEMENT_PATTERNS as string[]).includes(p);
+}
 
 export const PATTERN_NAMES: Record<MovementPattern, string> = { push: 'Pres', pull: 'Træk', legs: 'Ben', core: 'Mave' };
 
@@ -4751,12 +4765,11 @@ const PATTERN_SUGGESTIONS: Record<MovementPattern, string[]> = {
 };
 
 /**
- * Mønsteret for en øvelse (#367). Indbyggede øvelser har et fast mønster; egne øvelser får et ud fra
- * muskelgruppen: Bryst/Skuldre → pres, Ryg → træk, Ben → ben, Mave → mave, Arme → pres (træk hvis navnet indeholder "curl").
+ * Standardmønsteret for en egen øvelse ud fra muskelgruppen (#367): Bryst/Skuldre → pres, Ryg → træk,
+ * Ben → ben, Mave → mave, Arme → pres (træk hvis navnet indeholder "curl").
  */
-export function exercisePattern(ex: Pick<Exercise, 'id' | 'name' | 'muscle' | 'custom'>): MovementPattern {
-  if (!ex.custom && SEED_PATTERNS[ex.id]) return SEED_PATTERNS[ex.id];
-  switch (ex.muscle) {
+export function defaultPattern(muscle: Muscle, name = ''): MovementPattern {
+  switch (muscle) {
     case 'Ryg':
       return 'pull';
     case 'Ben':
@@ -4764,10 +4777,20 @@ export function exercisePattern(ex: Pick<Exercise, 'id' | 'name' | 'muscle' | 'c
     case 'Mave':
       return 'core';
     case 'Arme':
-      return /curl/i.test(ex.name) ? 'pull' : 'push';
+      return /curl/i.test(name) ? 'pull' : 'push';
     default:
       return 'push';
   }
+}
+
+/**
+ * Mønsteret for en øvelse (#367). Indbyggede øvelser har et fast mønster; egne øvelser bruger det valgte
+ * mønster (#369) og ellers standarden ud fra muskelgruppen.
+ */
+export function exercisePattern(ex: Pick<Exercise, 'id' | 'name' | 'muscle' | 'custom' | 'pattern'>): MovementPattern {
+  if (!ex.custom && SEED_PATTERNS[ex.id]) return SEED_PATTERNS[ex.id];
+  if (ex.custom && isPattern(ex.pattern)) return ex.pattern;
+  return defaultPattern(ex.muscle, ex.name);
 }
 
 /** Antal dage tilbage, der tæller med i balancen */
