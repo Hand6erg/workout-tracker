@@ -80,3 +80,34 @@ test('"Del" downloader opsummeringen som PNG, når telefonen ikke kan dele filer
   expect(data.subarray(1, 4).toString('ascii')).toBe('PNG');
   await download.saveAs('test-results/share-card.png');
 });
+
+test('vurdér træningen på opsummeringen, og den gemmes på træningen (#382)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  const summary = page.getByRole('region', { name: 'Opsummering' });
+  const picker = summary.getByRole('region', { name: 'Hvordan føltes det?' });
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'true');
+  await picker.getByRole('button', { name: 'Høj' }).click();
+  await expect(picker.getByRole('button', { name: 'Høj' })).toHaveAttribute('aria-pressed', 'true');
+  // Tryk igen rydder – og tryk igen sætter den tilbage
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await expect(picker.getByRole('button', { name: 'Føltes 4 af 5' })).toHaveAttribute('aria-pressed', 'false');
+  await picker.getByRole('button', { name: 'Føltes 4 af 5' }).click();
+  await page.screenshot({ path: 'test-results/summary-feeling.png' });
+
+  await summary.getByRole('button', { name: 'Luk' }).click();
+  await page.reload();
+  const saved = await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}');
+    return { feeling: s.history?.[0]?.feeling, energy: s.history?.[0]?.energy };
+  });
+  expect(saved).toEqual({ feeling: 4, energy: 'high' });
+});
+
+test('man kan lukke opsummeringen uden at vurdere (#382)', async ({ page }) => {
+  await pushWorkout(page, '80');
+  await page.getByRole('region', { name: 'Opsummering' }).getByRole('button', { name: 'Luk' }).click();
+  const w = await page.evaluate(() => JSON.parse(localStorage.getItem('loeft-state-v1') ?? '{}').history?.[0]);
+  expect(w.feeling).toBeUndefined();
+  expect(w.energy).toBeUndefined();
+});

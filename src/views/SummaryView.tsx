@@ -4,6 +4,7 @@ import { shareSummaryImage } from '../lib/shareImage';
 import { useStore, useUnit } from '../lib/store';
 import { formatRest } from '../components/RestPicker';
 import { FinisherList } from '../components/IntervalTimer';
+import { FeelingPicker } from '../components/FeelingPicker';
 
 /** Opsummering lige efter "Afslut" (#143) */
 export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void; onOpenMilestones: () => void }) {
@@ -47,6 +48,8 @@ export function SummaryView({ onClose, onOpenMilestones }: { onClose: () => void
           {volumeChangeText(pct)}
         </p>
       )}
+
+      {w && <FeelingPicker workout={w} />}
 
       {rest && rest.count >= 2 && (
         <p className="card summary-rest" aria-label="Pauser">
