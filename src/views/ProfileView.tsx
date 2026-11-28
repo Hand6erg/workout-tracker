@@ -8,6 +8,7 @@ import { ProgramSection } from '../components/ProgramSection';
 import { RecordsWall } from '../components/RecordsWall';
 import { ProfileGoals } from '../components/GoalsSection';
 import { MostLifted } from '../components/MostLifted';
+import { BalanceCard } from '../components/BalanceCard';
 import { MilestonesSection } from '../components/MilestonesSection';
 import { YearHeatmap } from '../components/YearHeatmap';
 import { SetTargetsSection } from '../components/SetTargets';
@@ -69,6 +70,7 @@ export function ProfileView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
       <YearHeatmap onOpenWorkout={onOpenWorkout} />
       <WeeklyVolume />
       <MuscleSplit />
+      <BalanceCard />
       <TrainingDaysSection />
       <SetTargetsSection />
       <ProfileGoals />
