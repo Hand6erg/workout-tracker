@@ -1,14 +1,13 @@
 import type { Energy, Workout } from '../lib/types';
 import { useStore } from '../lib/store';
-
-export const FEELING_EMOJI = ['😫', '😕', '🙂', '💪', '🔥'];
-const ENERGY_LABEL: Record<Energy, string> = { low: 'Lav', normal: 'Normal', high: 'Høj' };
+import { ENERGY_NAMES as ENERGY_LABEL, FEELING_EMOJIS as FEELING_EMOJI } from '../lib/logic';
 
 /** "Hvordan føltes det?" med fem knapper og "Energi før" (#382). Tryk igen på det valgte for at rydde. */
-export function FeelingPicker({ workout }: { workout: Workout }) {
+export function FeelingPicker({ workout, edit }: { workout: Workout; edit?: boolean }) {
   const { dispatch } = useStore();
+  // edit (#383): ændrer kladden, når en afsluttet træning rettes, så "Annullér" også fortryder vurderingen
   const set = (patch: { feeling?: number | null; energy?: Energy | null }) =>
-    dispatch({ type: 'SET_WORKOUT_FEELING', workoutId: workout.id, ...patch });
+    dispatch(edit ? { type: 'SET_WORKOUT_FEELING', ...patch, edit: true } : { type: 'SET_WORKOUT_FEELING', workoutId: workout.id, ...patch });
   return (
     <section className="card feeling-picker" aria-label="Hvordan føltes det?">
       <h2>Hvordan føltes det?</h2>

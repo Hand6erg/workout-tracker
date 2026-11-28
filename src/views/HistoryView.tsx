@@ -26,6 +26,8 @@ import {
   actualRests,
   formatClock,
   finisherLabel,
+  feelingLine,
+  ENERGY_NAMES,
 } from '../lib/logic';
 import { useStore, useUnit } from '../lib/store';
 import type { Workout } from '../lib/types';
@@ -35,6 +37,13 @@ function statusText(n: number, q: string, template?: string): string {
   const parts = [q && `med "${q}"`, template && `fra ${template}`].filter(Boolean).join(' ');
   if (!n) return q ? `Ingen træninger matcher "${q}"${template ? ` fra ${template}` : ''}` : `Ingen træninger ${parts}`;
   return `${n} ${n === 1 ? 'træning' : 'træninger'} ${parts}`;
+}
+
+/** Skærmlæser-tekst for vurderingen (#383), fx "Føltes 4 af 5, energi høj" */
+function feelingLabel(w: Workout): string {
+  return [w.feeling ? `Føltes ${w.feeling} af 5` : '', w.energy ? `energi ${ENERGY_NAMES[w.energy].toLowerCase()}` : '']
+    .filter(Boolean)
+    .join(', ');
 }
 
 const dateFmt = new Intl.DateTimeFormat('da-DK', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -130,6 +139,11 @@ export function HistoryView({ onOpenWorkout }: { onOpenWorkout?: () => void } = 
               <span>🏋️ {formatWeight(workoutVolume(withLoads(state, w)), unit)}</span>
               {count > 0 && (
                 <span className="pr-count">🏆 {count === 1 ? '1 rekord' : `${count} rekorder`}</span>
+              )}
+              {feelingLine(w) && (
+                <span className="feeling-line" aria-label={feelingLabel(w)}>
+                  {feelingLine(w)}
+                </span>
               )}
             </p>
             <table className="mini">
@@ -239,6 +253,11 @@ export function WorkoutDetail({ w, onClose, onOpenWorkout }: { w: Workout; onClo
         <button className="btn-primary wide repeat-btn" onClick={repeat}>
           <span aria-hidden>🔁</span> Gentag
         </button>
+      )}
+      {feelingLine(w) && (
+        <p className="feeling-line" aria-label={feelingLabel(w)}>
+          {feelingLine(w)}
+        </p>
       )}
       {w.note && <p className="workout-note-full">📝 {w.note}</p>}
       {repMaxes.length > 0 && (

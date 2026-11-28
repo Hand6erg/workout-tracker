@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { feelingInsights, feelingTrend, initialState, loadState, reducer, startOfWeek, stampChanges } from './logic';
+import { feelingInsights, feelingLine, feelingTrend, toCsv, initialState, loadState, reducer, startOfWeek, stampChanges } from './logic';
 import type { AppState, Workout } from './types';
 
 const DAY = 86_400_000;
@@ -106,5 +106,36 @@ describe('feelingInsights (#381)', () => {
   it('intet tip uden en tydelig forskel', () => {
     const history = Array.from({ length: 10 }, (_, i) => wk(`w${i}`, at(i * 2, i % 2 ? 8 : 19), i % 3 ? 4 : 3));
     expect(feelingInsights(history)).toEqual([]);
+  });
+});
+
+describe('vurdering i Historik og eksport (#383)', () => {
+  it('feelingLine viser emoji og energi, tom uden vurdering', () => {
+    expect(feelingLine({ feeling: 4, energy: 'high' })).toBe('💪 · Energi: høj');
+    expect(feelingLine({ feeling: 1 })).toBe('😫');
+    expect(feelingLine({ energy: 'low' })).toBe('Energi: lav');
+    expect(feelingLine({})).toBe('');
+  });
+
+  it('CSV har kolonnerne "Følelse" og "Energi"', () => {
+    const base = initialState();
+    const ex = base.exercises[0].id;
+    const w: Workout = {
+      ...wk('a', T0, 5),
+      energy: 'normal',
+      exercises: [{ id: 'e1', exerciseId: ex, sets: [{ id: 's1', weight: '50', reps: '5', rpe: '', done: true }] }],
+    };
+    const lines = toCsv({ ...base, history: [w, { ...w, id: 'b', feeling: undefined, energy: undefined }] }).split('\n');
+    expect(lines[0].split(',').slice(-2)).toEqual(['Følelse', 'Energi']);
+    expect(lines.slice(1).map((l) => l.split(',').slice(-2).join('|'))).toEqual(['|', '5|Normal']);
+  });
+
+  it('rettelse af vurderingen i kladden gemmes først ved "Gem"', () => {
+    let s = withHistory([{ ...wk('a', T0, 2), exercises: [] }]);
+    s = reducer(s, { type: 'EDIT_WORKOUT', workoutId: 'a' });
+    s = reducer(s, { type: 'SET_WORKOUT_FEELING', feeling: 5, energy: 'high', edit: true });
+    expect(s.history[0].feeling).toBe(2);
+    expect(s.editing?.feeling).toBe(5);
+    expect(reducer(s, { type: 'CANCEL_EDIT' }).history[0].feeling).toBe(2);
   });
 });
